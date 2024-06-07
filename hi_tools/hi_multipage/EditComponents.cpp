@@ -661,59 +661,16 @@ String CodeGenerator::createAddChild(const String& parentId, const var& childDat
     x << parentId << ".add" << itemType << "<" << typeId << ">({";
     
 	String cp;
-
-    NamedValueSet defaultValues;
-    defaultValues.set(mpid::Trigger, false);
-    defaultValues.set(mpid::Help, "");
-    defaultValues.set(mpid::Class, "");
-    defaultValues.set(mpid::Style, "");
-    defaultValues.set(mpid::Text, "LabelText");
-    defaultValues.set(mpid::UseInitValue, false);
-    defaultValues.set(mpid::InitValue, "");
-    defaultValues.set(mpid::Required, false);
-    defaultValues.set(mpid::UseOnValue, false);
-    defaultValues.set(mpid::Enabled, true);
-    defaultValues.set(mpid::Foldable, false);
-    defaultValues.set(mpid::Folded, false);
-    defaultValues.set(mpid::UseChildState, false);
-    defaultValues.set(mpid::EmptyText, "");
-    defaultValues.set(mpid::ParseArray, false);
-    defaultValues.set(mpid::Multiline, false);
-    defaultValues.set(mpid::EventTrigger, "OnPageLoad");
-    
-    static const Array<Identifier> deprecatedIds = { Identifier("Padding"),
-        Identifier("LabelPosition"),
-        Identifier("UseFilter"),
-        Identifier("Visible"),
-        Identifier("Comment"),
-		Identifier("valueList"),
-		Identifier("textList"),
-        Identifier("ManualAction"),
-        Identifier("CallOnNext")};
-    
+	
 	for(auto& nv: prop)
 	{
 		if(nv.name == mpid::Type || nv.name == mpid::ContentType || nv.name == mpid::Children)
 			continue;
 
-        if(deprecatedIds.contains(nv.name))
-            continue;
-        
-		if(nv.value.toString().isEmpty())
+        if(nv.value.toString().isEmpty())
 			continue;
-
-        if(nv.name == mpid::Code)
-        {
-            if(prop.contains(mpid::UseOnValue) && !prop[mpid::UseOnValue])
-                continue;
-
-            
-        }
-        
-        if(defaultValues.contains(nv.name) && nv.value == defaultValues[nv.name])
-            continue;
-        
-		cp << getNewLine() << "  { mpid::" << nv.name << ", ";
+		
+        cp << getNewLine() << "  { mpid::" << nv.name << ", ";
 
 		if(nv.value.isString())
 		{
@@ -851,10 +808,6 @@ void AllEditor::TokenProvider::addTokens(mcl::TokenCollection::List& tokens)
 	if(p == nullptr)
 		return;
 
-	auto infoObject = p->findParentComponentOfClass<Dialog>()->getState().globalState;
-
-	DBG(JSON::toString(infoObject));
-
 	if(auto ms = p->findParentComponentOfClass<ComponentWithSideTab>())
 	{
 		auto* state = ms->getMainState();
@@ -870,8 +823,9 @@ void AllEditor::TokenProvider::addTokens(mcl::TokenCollection::List& tokens)
 }
 
 
-AllEditor::AllEditor(const String& syntax):
+AllEditor::AllEditor(const String& syntax_):
 	codeDoc(doc),
+	syntax(syntax_),
 	editor(new mcl::TextEditor(codeDoc))
 {
 	if(syntax == "CSS")
@@ -900,9 +854,9 @@ AllEditor::~AllEditor()
 	editor = nullptr;
 }
 
-Result AllEditor::compile()
+Result AllEditor::compile(bool useCompileCallback)
 {
-	if(compileCallback)
+	if(compileCallback && useCompileCallback)
 		return compileCallback();
 
 	auto code = doc.getAllContent();
@@ -952,6 +906,11 @@ Result AllEditor::compile()
 
 		if(!ok.wasOk())
 			state->eventLogger.sendMessage(sendNotificationSync, MessageType::Javascript, ok.getErrorMessage());
+
+		if(auto d = state->currentDialog.get())
+		{
+			d->refreshCurrentPage();
+		}
 
 		return ok;
 	}
