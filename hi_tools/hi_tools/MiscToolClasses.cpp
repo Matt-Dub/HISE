@@ -1718,20 +1718,20 @@ void TempoSyncer::initTempoData()
 	setTempo(Whole, "1/1", 4.0f);
 	setTempo(HalfDuet, "1/2D", 2.0f * 1.5f);
 	setTempo(Half, "1/2", 2.0f);
-	setTempo(HalfTriplet, "1/2T", 4.0f / 3.0f);
 	setTempo(QuarterDuet, "1/4D", 1.0f * 1.5f);
+	setTempo(HalfTriplet, "1/2T", 4.0f / 3.0f);
 	setTempo(Quarter, "1/4", 1.0f);
-	setTempo(QuarterTriplet, "1/4T", 2.0f / 3.0f);
 	setTempo(EighthDuet, "1/8D", 0.5f * 1.5f);
+	setTempo(QuarterTriplet, "1/4T", 2.0f / 3.0f);
 	setTempo(Eighth, "1/8", 0.5f);
-	setTempo(EighthTriplet, "1/8T", 1.0f / 3.0f);
 	setTempo(SixteenthDuet, "1/16D", 0.25f * 1.5f);
+	setTempo(EighthTriplet, "1/8T", 1.0f / 3.0f);
 	setTempo(Sixteenth, "1/16", 0.25f);
-	setTempo(SixteenthTriplet, "1/16T", 0.5f / 3.0f);
 	setTempo(ThirtyTwoDuet, "1/32D", 0.125f * 1.5f);
+	setTempo(SixteenthTriplet, "1/16T", 0.5f / 3.0f);
 	setTempo(ThirtyTwo, "1/32", 0.125f);
-	setTempo(ThirtyTwoTriplet, "1/32T", 0.25f / 3.0f);
 	setTempo(SixtyForthDuet, "1/64D", 0.125f * 0.5f * 1.5f);
+	setTempo(ThirtyTwoTriplet, "1/32T", 0.25f / 3.0f);
 	setTempo(SixtyForth, "1/64", 0.125f * 0.5f);
 	setTempo(SixtyForthTriplet, "1/64T", 0.125f / 3.0f);
 }
