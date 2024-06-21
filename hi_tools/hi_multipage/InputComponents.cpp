@@ -172,6 +172,8 @@ LabelledComponent::LabelledComponent(Dialog& r, int width, const var& obj, Compo
         setIsInvisibleWrapper(true);
         updateStyleSheetInfo(true);
 	    Helpers::setFallbackStyleSheet(*c, "flex-grow: 1; height: 32px;width: 100%;");
+
+        changeClass(simple_css::Selector(".no-label"), true);
     }
     
     if(!obj.hasProperty(mpid::Enabled))
@@ -562,6 +564,8 @@ void Choice::postInit()
 		    case ValueMode::Text: writeState(cb.getText()); break;
 		    case ValueMode::Index: writeState(cb.getSelectedItemIndex()); break;
 		    case ValueMode::Id: writeState(cb.getSelectedId()); break;
+		    case ValueMode::numValueModes: 
+            default: break;
 		    }
 	    }
 
@@ -573,6 +577,8 @@ void Choice::postInit()
     case ValueMode::Text: cb.setText(t.toString(), dontSendNotification); break;
     case ValueMode::Index: cb.setSelectedItemIndex((int)t, dontSendNotification); break;
     case ValueMode::Id: cb.setSelectedId((int)t, dontSendNotification); break;
+    case ValueMode::numValueModes: 
+    default: break;
     }
     
     getComponent<SubmenuComboBox>().refreshTickState();
@@ -587,6 +593,8 @@ Result Choice::checkGlobalState(var globalState)
     case ValueMode::Text:  writeState(cb.getText()); break;
     case ValueMode::Index: writeState(cb.getSelectedItemIndex()); break;
     case ValueMode::Id:    writeState(cb.getSelectedId()); break;
+    case ValueMode::numValueModes:
+    default: break;
     }
     
 	return Result::ok();

@@ -430,7 +430,7 @@ TransformParser::TransformData::TransformData(TransformTypes t):
 TransformParser::TransformData TransformParser::TransformData::interpolate(const TransformData& other,
 	float alpha) const
 {
-	TransformData copy({ TransformTypes(jmax((int)type, (int)other.type))});
+	TransformData copy(TransformTypes(jmax((int)type, (int)other.type)));
 
 	copy.values[0] = values[0];
 
@@ -898,7 +898,10 @@ float ExpressionParser::Node::evaluate(const Context<>& context) const
 
 			return 0.0f;
 		}
-	
+	case ExpressionType::numExpressionTypes:
+	case ExpressionType::none:
+	default:
+		break;
 	}
 
 	return 0.0f;
@@ -1385,7 +1388,7 @@ Parser::RawClass Parser::parseSelectors()
 
 		if(matchIf(TokenType::Asterisk))
 		{
-			ns.name == "*";
+			ns.name = "*";
 			ns.type = SelectorType::All;
 		}
 		else if(matchIf(TokenType::At))
