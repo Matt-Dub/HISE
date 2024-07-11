@@ -349,7 +349,7 @@ void SimpleText::createEditor(Dialog::PageInfo& rootList)
 }
 #endif
 
-String MarkdownText::getString(const String& markdownText, Dialog& parent)
+String MarkdownText::getString(const String& markdownText, const State& state)
 {
 	if(markdownText.contains("$"))
 	{
@@ -374,10 +374,10 @@ String MarkdownText::getString(const String& markdownText, Dialog& parent)
 					{
 						if(variableId.isNotEmpty())
 						{
-							auto v = parent.getState().globalState[Identifier(variableId)].toString();
+							auto v = state.globalState[Identifier(variableId)].toString();
 
 							if(v.isNotEmpty())
-								other << getString(v, parent);
+								other << getString(v, state);
 
 							variableId = {};
 						}
@@ -394,9 +394,9 @@ String MarkdownText::getString(const String& markdownText, Dialog& parent)
 
 				if(variableId.isNotEmpty())
 				{
-					auto v = parent.getState().globalState[Identifier(variableId)].toString();
+					auto v = state.globalState[Identifier(variableId)].toString();
 
-                    v = getString(v, parent);
+                    v = getString(v, state);
                     
 					if(v.isNotEmpty())
 						other << v;
@@ -458,15 +458,15 @@ MarkdownText::MarkdownText(Dialog& d, int width_, const var& obj_):
 	width((float)width_),
 	obj(obj_)
 {
+	Helpers::writeClassSelectors(*this, { ".markdown" }, true);
+	
 	display.r.setImageProvider(new AssetImageProvider(&display.r, d.getState()));
 	display.setResizeToFit(true);
-	
-	Helpers::writeSelectorsToProperties(display, {".markdown"});
+
+	//Helpers::writeSelectorsToProperties(display, {".markdown"});
 
 	setDefaultStyleSheet("width: 100%; height: auto;");
 	Helpers::setFallbackStyleSheet(display, "width: 100%;");
-
-	
 
 	addFlexItem(display);
 
@@ -485,7 +485,7 @@ void MarkdownText::postInit()
 		display.r.setStyleData(root->css.getMarkdownStyleData(&display));
 	}
 
-	auto markdownText = getString(infoObject[mpid::Text].toString(), rootDialog);
+	auto markdownText = getString(infoObject[mpid::Text].toString(), rootDialog.getState());
 
 	if(markdownText.startsWith("${"))
 		markdownText = rootDialog.getState().loadText(markdownText, true);
@@ -824,13 +824,17 @@ void Table::rebuildColumns()
 	th.setStretchToFitActive(true);
 	th.resizeAllColumnsToFit(table.getWidth() - table.getViewport()->getScrollBarThickness());
 	table.setMultipleSelectionEnabled(infoObject[mpid::Multiline]);
-        
+
 	using namespace simple_css;
-        
+
+	rootDialog.stateWatcher.resetComponent(&th);
+
 	if(auto ss = rootDialog.css.getWithAllStates(this, Selector(ElementType::TableCell)))
 	{
 		table.setRowHeight(ss->getLocalBoundsFromText("M").getHeight());
 	}
+
+	th.repaint();
 }
 
 String Table::getCellContent(int columnId, int rowNumber) const
@@ -1056,7 +1060,40 @@ void Table::paint(Graphics& g)
 	if(auto ss = rootDialog.css.getForComponent(&table))
 	{
 		simple_css::Renderer r(&table, rootDialog.stateWatcher);
-		r.drawBackground(g, table.getBoundsInParent().toFloat(), ss);
+
+		auto currentState = r.getPseudoClassState();
+
+		rootDialog.stateWatcher.checkChanges(&table, ss, currentState);
+
+		r.drawBackground(g, getLocalBounds().toFloat(), ss);
+
+		if(getNumRows() == 0)
+		{
+			auto et = infoObject[mpid::EmptyText].toString();
+
+			if(et.isNotEmpty())
+				r.renderText(g, getLocalBounds().toFloat(), et, ss);
+		}
+	}
+}
+
+void Table::resized()
+{
+	FlexboxComponent::resized();
+
+	auto area = getLocalBounds().toFloat();
+
+	if(getParentComponent() != nullptr && !area.isEmpty())
+	{ 
+		using namespace simple_css;
+		
+		if(auto ss = rootDialog.css.getForComponent(&table))
+		{
+			area = ss->getArea(area, { "margin", 0});
+			area = ss->getArea(area, { "padding", 0});
+		}
+		
+		table.setBounds(area.toNearestInt());
 	}
 }
 
@@ -1114,7 +1151,7 @@ void Table::updateValue(EventType t, int row, int column)
 		return v;
 	};
 
-	if(t == EventType::DoubleClick || t == EventType::ReturnKey)
+	if(t == EventType::DoubleClick || t == EventType::ReturnKey || infoObject[mpid::SelectOnClick])
 	{
 		writeState(row);
 	}
@@ -1233,6 +1270,15 @@ StringArray Factory::getIdList() const
 	}
 		
 	return sa;
+}
+
+String Factory::getCategoryName(const String& id) const
+{
+	for(const auto& i: items)
+		if(i.id == Identifier(id))
+			return i.category.toString();
+
+	return id;
 }
 
 StringArray Factory::getPopupMenuList() const

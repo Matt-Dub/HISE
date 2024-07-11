@@ -48,7 +48,10 @@ struct Dialog::TabTraverser: public ComponentTraverser
 
     Dialog& parent;
     
-    Component* getDefaultComponent (Component* parentComponent) override { return &parent; }
+    Component* getDefaultComponent (Component* parentComponent) override
+    {
+		return &parent;
+    }
 
     Component* getNextComponent (Component* current) override
     {
@@ -206,8 +209,10 @@ struct Dialog::PageBase::ModalHelp: public simple_css::FlexboxComponent
     HiseShapeButton closeButton;
 };
 
+
+
 Dialog::PageBase::PageBase(Dialog& rootDialog_, int width, const var& obj):
-  FlexboxComponent(simple_css::Selector("#" + obj[mpid::ID].toString())),
+  FlexboxComponent(getSelectorFromId(obj)),
   rootDialog(rootDialog_),
   infoObject(obj)
 {
@@ -247,6 +252,16 @@ DefaultProperties Dialog::PageBase::getDefaultProperties() const
 void Dialog::PageBase::setStateObject(const var& newStateObject)
 {
 	stateObject = newStateObject;
+}
+
+simple_css::Selector Dialog::PageBase::getSelectorFromId(const var& obj)
+{
+	auto id = obj[mpid::ID].toString();
+
+	if(id.isNotEmpty())
+		return simple_css::Selector("#" + id);
+	else
+		return simple_css::Selector(simple_css::ElementType::Panel);
 }
 
 void Dialog::PageBase::updateStyleSheetInfo(bool forceUpdate)
@@ -313,6 +328,41 @@ void Dialog::PageBase::forwardInlineStyleToChildren()
 
 		simple_css::FlexboxComponent::Helpers::writeInlineStyle(*this, "");
 	}
+}
+
+simple_css::FlexboxComponent::VisibleState Dialog::PageBase::getVisibility() const
+{
+	auto visibility = infoObject[mpid::Visibility].toString();
+
+	auto idx = getVisibilityNames().indexOf(visibility);
+
+	VisibleState s;
+
+	if(idx == 0) // default
+	{
+		s.mustBeHidden = false;
+		s.mustBeVisible = false;
+		s.usePlaceHolder = false;
+	}
+	if(idx == 1) // Hidden
+	{
+		s.mustBeHidden = true;
+		s.mustBeVisible = false;
+		s.usePlaceHolder = false;
+	}
+	if(idx == 2) // placeholder
+	{
+		s.mustBeHidden = true;
+		s.mustBeVisible = false;
+		s.usePlaceHolder = true;
+	}
+
+	return s;
+}
+
+StringArray Dialog::PageBase::getVisibilityNames()
+{
+	return { "Default", "Hidden", "Placeholder" };
 }
 
 var Dialog::PageBase::getPropertyFromInfoObject(const Identifier& id) const
@@ -412,7 +462,7 @@ bool Dialog::PageBase::showDeletePopup(bool isRightClick)
 
 String Dialog::PageBase::evaluate(const Identifier& id) const
 {
-	return factory::MarkdownText::getString(infoObject[id].toString(), rootDialog);
+	return factory::MarkdownText::getString(infoObject[id].toString(), rootDialog.getState());
 }
 
 void Dialog::PageBase::callOnValueChange(const String& eventType, DynamicObject::Ptr thisObject)
@@ -423,6 +473,22 @@ void Dialog::PageBase::callOnValueChange(const String& eventType, DynamicObject:
 		    
 	if(auto ms = findParentComponentOfClass<ComponentWithSideTab>())
 		state = ms->getMainState();
+
+	auto codeToExecute = infoObject[mpid::Code].toString();
+
+	if(codeToExecute.startsWith("{BIND::"))
+	{
+		auto callbackName = codeToExecute.fromFirstOccurrenceOf("{BIND::", false, false).upToLastOccurrenceOf("}", false, false);
+
+		var a[2];
+		a[0] = var(id.toString());
+		a[1] = getValueFromGlobalState();
+
+		var::NativeFunctionArgs args(state->globalState, a, 2);
+
+		if(state->callNativeFunction(callbackName, args, nullptr))
+			return;
+	}
 
 	engine = state->createJavascriptEngine();
 
@@ -456,20 +522,8 @@ void Dialog::PageBase::callOnValueChange(const String& eventType, DynamicObject:
 
 Asset::Ptr Dialog::PageBase::getAsset(const Identifier& id) const
 {
-	auto assetId = infoObject[id].toString().trim();
-
-	if(assetId.startsWith("${"))
-	{
-		assetId = assetId.substring(2, assetId.length() - 1);
-
-		for(auto a: rootDialog.getState().assets)
-		{
-			if(a->id == assetId)
-				return a;
-		}
-	}
-
-	return nullptr;
+	return rootDialog.getState().getAsset(infoObject, id);
+	
 }
 
 void Dialog::PageBase::init()
@@ -612,6 +666,7 @@ var Dialog::PositionInfo::toJSON() const
     obj->setProperty(mpid::StyleSheet, styleSheet);
 	obj->setProperty(mpid::Style, additionalStyle);
     obj->setProperty(mpid::UseViewport, useViewport);
+	obj->setProperty(mpid::ConfirmClose, confirmClose);
     
 	obj->setProperty("DialogWidth", fixedSize.getX());
 	obj->setProperty("DialogHeight", fixedSize.getY());
@@ -625,7 +680,9 @@ void Dialog::PositionInfo::fromJSON(const var& obj)
 	additionalStyle = obj.getProperty(mpid::Style, additionalStyle).toString();
 
     useViewport = obj.getProperty(mpid::UseViewport, useViewport);
-    
+
+	confirmClose = obj.getProperty(mpid::ConfirmClose, confirmClose);
+
 	fixedSize.setX(obj.getProperty("DialogWidth", fixedSize.getX()));
 	fixedSize.setY(obj.getProperty("DialogHeight", fixedSize.getY()));
 }
@@ -732,6 +789,7 @@ Dialog::ModalPopup::ModalPopup(Dialog& parent_, PageInfo::Ptr info_, bool addBut
 	okButton("OK"),
 	cancelButton("Cancel")
 {
+	setWantsKeyboardFocus(true);
 	setDefaultStyleSheet("position: absolute; background: rgba(128,128,128, 0.8);");
 	content.setDefaultStyleSheet("background: #161616;display:flex;width: 100%;flex-direction: column;margin: 120px 90px;padding: 20px;");
 	contentViewport.setDefaultStyleSheet("display: flex;flex-direction: row;width: 100%;flex-grow: 1;");
@@ -765,6 +823,11 @@ void Dialog::ModalPopup::init()
 	{
 		contentComponent = info->create(parent, parent.getWidth());
 		contentViewport.addFlexItem(*contentComponent);
+
+		auto s = info->stateObject;
+
+		ScopedValueSetter<var> stateSwitcher(parent.getState().globalState, s);
+
 		contentComponent->postInit();
 	}
 }
@@ -902,9 +965,9 @@ Dialog::Dialog(const var& obj, State& rt, bool addEmptyPage):
     runThread(&rt),
 	totalProgress(progressValue)
 {
-	jassert(runThread->currentDialog == nullptr);
+	
 
-    runThread->currentDialog = this;
+    runThread->currentDialogs.add(this);
 
 	if(auto sd = obj[mpid::StyleData].getDynamicObject())
 	{
@@ -1007,19 +1070,33 @@ Dialog::Dialog(const var& obj, State& rt, bool addEmptyPage):
 
 	cancelButton.onClick = [this]()
 	{
-		auto l = createModalPopup<factory::List>();
-
-		auto& root = *l;
-        auto& md = root.addChild<factory::MarkdownText>();
-		md[mpid::Text] = "Do you want to close this popup?";
-
-		md.setCustomCheckFunction([this](PageBase*, var obj)
+		if(getPositionInfo({}).confirmClose)
 		{
+			auto l = createModalPopup<factory::List>();
+
+			auto& root = *l;
+	        auto& md = root.addChild<factory::MarkdownText>();
+			md[mpid::Text] = "Do you want to close this popup?";
+
+			md.setCustomCheckFunction([this](PageBase*, var obj)
+			{
+				var v[2] = { var(false), getState().globalState };
+				var::NativeFunctionArgs args(var(), v, 2);
+				getState().callNativeFunction("onFinish", args, nullptr);
+
+				MessageManager::callAsync(finishCallback);
+				return Result::ok();
+			});
+			
+			showModalPopup(true, l);
+		}
+		else
+		{
+			var v[2] = { var(false), getState().globalState };
+			var::NativeFunctionArgs args(var(), v, 2);
+			getState().callNativeFunction("onFinish", args, nullptr);
 			MessageManager::callAsync(finishCallback);
-			return Result::ok();
-		});
-		
-		showModalPopup(true, l);
+		}
 	};
 
 #if HISE_MULTIPAGE_INCLUDE_EDIT
@@ -1037,7 +1114,10 @@ Dialog::Dialog(const var& obj, State& rt, bool addEmptyPage):
 
 Dialog::~Dialog()
 {
-	runThread->currentDialog = nullptr;
+	finishCallback = {};
+
+	if(runThread != nullptr)
+		runThread->currentDialogs.removeAllInstancesOf(this);
 }
 
 
@@ -1064,9 +1144,14 @@ String Dialog::getStringFromModalInput(const String& message, const String& pref
 
 bool Dialog::refreshCurrentPage()
 {
+	
+	footer.setFlexChildVisibility(2, false, pages.size() <= 1);
+
 	popup = nullptr;
 
 	auto index = jlimit(0, pages.size()-1, getState().currentPageIndex);
+
+	prevButton.setEnabled(index != 0);
 
 	String pt;
 	pt << "Step " << String(index+1) << " / " << String(pages.size());
@@ -1080,6 +1165,10 @@ bool Dialog::refreshCurrentPage()
 	css.clearCache();
 
 	logMessage(MessageType::Navigation, "Goto page " + String(index+1));
+
+	var v[2] = { var(index), var(getState().globalState) };
+	var::NativeFunctionArgs args(var(), v, 2);
+	getState().callNativeFunction("onPageLoad", args, nullptr);
 
 	if((currentPage = pages[index]->create(*this, dynamic_cast<Component*>(content.get())->getWidth())))
 	{
@@ -1235,9 +1324,20 @@ bool Dialog::keyPressed(const KeyPress& k)
 		
 		return true;
 	}
+	if(k.getKeyCode() == KeyPress::escapeKey)
+	{
+		if(popup != nullptr)
+		{
+			popup->dismiss();
+			return true;
+		}
+	}
 	if(k.getKeyCode() == KeyPress::returnKey)
 	{
-		if(nextButton.isEnabled())
+		if(this->popup != nullptr)
+			return this->popup->keyPressed(k);
+
+		if(nextButton.isEnabled() && nextButton.isVisible())
 		{
 			nextButton.triggerClick();
 			return true;
@@ -1930,6 +2030,10 @@ bool Dialog::navigate(bool forward)
 
 		if (newIndex == pages.size())
 		{
+			var v[2] = { var(true), getState().globalState };
+			var::NativeFunctionArgs args(var(), v, 2);
+			getState().callNativeFunction("onFinish", args, nullptr);
+
 			if(!editMode && finishCallback)
 				Timer::callAfterDelay(600, finishCallback);
 				
@@ -1944,6 +2048,26 @@ bool Dialog::navigate(bool forward)
 	
 
 	return false;
+}
+
+void Dialog::onStateDestroy(NotificationType mode)
+{
+	if(mode == sendNotificationSync)
+	{
+		std::function<void()> copy;
+		std::swap(copy, finishCallback);
+
+		if(copy)
+			copy();
+	}
+	if(mode == sendNotificationAsync)
+	SafeAsyncCall::callAsyncIfNotOnMessageThread<Dialog>(*this, [](Dialog& t)
+	{
+		std::function<void()> copy;
+		std::swap(copy, t.finishCallback);
+		if(copy)
+			copy();
+	});
 }
 
 void Dialog::paint(Graphics& g)
@@ -1972,14 +2096,13 @@ void Dialog::paint(Graphics& g)
 
 	if(auto ss = css.getWithAllStates(nullptr, simple_css::ElementType::Body))
 	{
-		auto c = ss->getColourOrGradient(getLocalBounds().toFloat(), { "background-color", {}}, Colour(0xFF222222));
+		simple_css::Renderer r(this, stateWatcher);
 
-		if(c.second.getNumColours() != 0)
-			g.setGradientFill(c.second);
-		else
-			g.setColour(c.first);
-
-		g.fillAll();
+		r.drawBackground(g, getLocalBounds().toFloat(), ss);
+	}
+	else
+	{
+		g.fillAll(Colours::red);
 	}
 
 	

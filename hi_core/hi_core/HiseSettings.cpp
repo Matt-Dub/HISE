@@ -84,6 +84,7 @@ Array<juce::Identifier> HiseSettings::Project::getAllIds()
 	ids.add(ExtraDefinitionsOSX);
 	ids.add(ExtraDefinitionsIOS);
     ids.add(ExtraDefinitionsLinux);
+	ids.add(ExtraDefinitionsNetworkDll);
 	ids.add(AppGroupID);
 	ids.add(RedirectSampleFolder);
 	ids.add(AAXCategoryFX);
@@ -347,6 +348,16 @@ Array<juce::Identifier> HiseSettings::SnexWorkbench::getAllIds()
 		D("```\n");
 		P_();
 
+		P(HiseSettings::Project::ExtraDefinitionsIOS);
+		D("This field can be used to add preprocessor definitions to the compiled network DLL. Use it to tailor the compile options for HISE for the project.");
+		D("#### Examples");
+		D("```javascript");
+		D("ENABLE_ALL_PEAK_METERS=0");
+		D("NUM_POLYPHONIC_VOICES=100");
+		D("```\n");
+		D("> Be aware that these fields are only added to the compiled network DLL. If you want to add them to the exported project, add every property to the other extra definitions.");
+		P_();
+
 		P(HiseSettings::Project::EmbedUserPresets);
 		D("If disabled, the user presets will not be part of the binary and are not extracted automatically on first plugin launch");
 		D("> This is useful if you're running your own preset management or the user preset collection gets too big to be embedded in the plugin");
@@ -527,6 +538,12 @@ Array<juce::Identifier> HiseSettings::SnexWorkbench::getAllIds()
 		D("Set the path to your Faust installation here. ");
 		D("It will be used to look up the standard faust libraries on platforms which don't have a default path. ");
 		D("There should be at least the following directories inside: \"share\", \"lib\", \"include\"");
+		P_();
+
+		P(HiseSettings::Compiler::ExportSetup);
+		D("If this is ticked the system is ready for export.  ");
+		D("Starting with HISE 4.0.1 this will be deactivated by default until the export setup wizard has been executed once.");
+		D("> Nobody prevents you from ticking the box here in order to bypass the export wizard...");
 		P_();
 
         P(HiseSettings::Compiler::FaustExternalEditor);
@@ -910,6 +927,7 @@ juce::StringArray HiseSettings::Data::getOptionsFor(const Identifier& id)
 		id == Compiler::RebuildPoolFiles ||
 		id == Compiler::Support32BitMacOS ||
         id == Compiler::FaustExternalEditor ||
+		id == Compiler::ExportSetup ||
 		id == Project::SupportMonoFX ||
 		id == Project::EnableMidiInputFX ||
         id == Project::EnableMidiOut ||
@@ -1143,6 +1161,7 @@ var HiseSettings::Data::getDefaultSetting(const Identifier& id) const
 	else if (id == Project::VST3Support)			return "No";
 	else if (id == Project::UseRawFrontend)			return "No";
 	else if (id == Project::CompileWithPerfetto)	return "No";
+	else if (id == Compiler::ExportSetup)			return "No";
 	else if (id == Project::CompileWithDebugSymbols) return "No";
 	else if (id == Project::ExpansionType)			return "Disabled";
 	else if (id == Project::LinkExpansionsToProject)       return "No";

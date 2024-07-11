@@ -95,19 +95,8 @@ void StyleSheet::copyPropertiesFrom(Ptr other, bool overwriteExisting, const Str
 {
     if(other == nullptr)
         return;
-    
-	if(other->varProperties != nullptr)
-	{
-		if(varProperties == nullptr)
-		{
-			varProperties = other->varProperties->clone();
-		}
-		else
-		{
-			for(const auto& nv: other->varProperties->getProperties())
-			varProperties->setProperty(nv.name, nv.value);
-		}
-	}
+	
+	copyVarProperties(other);
 
 	other->forEachProperty(PseudoElementType::All, [&](PseudoElementType t, Property& p)
 	{
@@ -327,7 +316,21 @@ String StyleSheet::Collection::getDebugLogForComponent(Component* c) const
 	for(auto& cm: cachedMaps)
 	{
 		if(cm.first.getComponent() == c)
+		{
+			if(auto obj = cm.second->varProperties.get())
+			{
+				String s;
+				s << "Current variable values:\n";
+				s << JSON::toString(var(obj));
+				s << "\n==============================\n\n";
+
+				s << cm.debugLog;
+				return s;
+			}
+
 			return cm.debugLog;
+		}
+			
 	}
             
 	return {};
@@ -340,9 +343,9 @@ StyleSheet::Ptr StyleSheet::Collection::getForComponent(Component* c)
 		if(existing.first.getComponent() == c)
 			return existing.second;
 	}
-	
-	using Match = std::pair<ComplexSelector::Score, StyleSheet::Ptr>;
 
+	using Match = std::pair<ComplexSelector::Score, StyleSheet::Ptr>;
+	
     List debugList;
     
 	Array<Match> matches;
@@ -352,22 +355,28 @@ StyleSheet::Ptr StyleSheet::Collection::getForComponent(Component* c)
 
 	Array<Selector> pSelectors;
 
-	if(auto p = c->getParentComponent())
+	if(!useIsolatedCollections)
 	{
-		parentStyle = getForComponent(p);
-
-		auto tp = p;
-
-		while(tp != nullptr)
+		if(dynamic_cast<CSSRootComponent*>(c) == nullptr)
 		{
-			if(dynamic_cast<CSSRootComponent*>(tp))
-				break;
+			if(auto p = c->getParentComponent())
+			{
+				parentStyle = getForComponent(p);
 
-			pSelectors.addArray(ComplexSelector::getSelectorsForComponent(tp));
-			tp = tp->getParentComponent();
+				auto tp = p;
+
+				while(tp != nullptr)
+				{
+					if(dynamic_cast<CSSRootComponent*>(tp))
+						break;
+
+					pSelectors.addArray(ComplexSelector::getSelectorsForComponent(tp));
+					tp = tp->getParentComponent();
+				}
+			}
 		}
 	}
-
+	
 	auto selectors = ComplexSelector::getSelectorsForComponent(c);
 
 	auto addFromList = [&](List& listToUse)
@@ -392,14 +401,28 @@ StyleSheet::Ptr StyleSheet::Collection::getForComponent(Component* c)
 		}
 	};
 
-	addFromList(list);
-
-	for(auto& cc: childCollections)
+	if(useIsolatedCollections)
 	{
-		auto p = cc.first.getComponent();
-		if(p != nullptr && p->isParentOf(c))
+		for(auto& cc: childCollections)
 		{
-			addFromList(cc.second);
+			if(sameOrParent(cc.first.getComponent(), c))
+			{
+				addFromList(cc.second);
+				break;
+			}
+		}
+	}
+	else
+	{
+		addFromList(list);
+
+		for(auto& cc: childCollections)
+		{
+			auto p = cc.first.getComponent();
+			if(p != nullptr && p->isParentOf(c))
+			{
+				addFromList(cc.second);
+			}
 		}
 	}
 
@@ -411,8 +434,10 @@ StyleSheet::Ptr StyleSheet::Collection::getForComponent(Component* c)
 	if(matches.isEmpty() && !customCode)
 		return nullptr;
 	
-	if(matches.size() == 1 && !customCode)
+	if(matches.size() == 1 && !customCode && !useIsolatedCollections)
+	{
 		return matches.getFirst().second;
+	}
 
 	struct Sorter
 	{
@@ -570,7 +595,7 @@ StyleSheet::Ptr StyleSheet::Collection::getForComponent(Component* c)
 
 	if(auto root = CSSRootComponent::find(*c))
 		setAnimator(&root->animator);
-
+	
 	return ptr;
 
 #if 0
@@ -662,8 +687,6 @@ String StyleSheet::Collection::toString() const
 
 StyleSheet::Ptr StyleSheet::Collection::getWithAllStates(Component* c, const Selector& s)
 {
-	
-
 	for(const auto& existing: cachedMapForAllStates)
 	{
 		if(existing.first.exactMatch(s))
@@ -693,19 +716,33 @@ StyleSheet::Ptr StyleSheet::Collection::getWithAllStates(Component* c, const Sel
 		}
 	};
 
-	for(auto l: list)
-	{
-		addIfMatch(l);
-	}
-
-	if(c != nullptr)
+	if(useIsolatedCollections)
 	{
 		for(auto& s: childCollections)
 		{
-			if(s.first->isParentOf(c))
+			if(c == nullptr || sameOrParent(s.first.getComponent(), c))
 			{
 				for(auto l: s.second)
 					addIfMatch(l);
+			}
+		}
+	}
+	else
+	{
+		for(auto l: list)
+		{
+			addIfMatch(l);
+		}
+
+		if(c != nullptr)
+		{
+			for(auto& s: childCollections)
+			{
+				if(s.first->isParentOf(c))
+				{
+					for(auto l: s.second)
+						addIfMatch(l);
+				}
 			}
 		}
 	}
@@ -828,6 +865,41 @@ bool StyleSheet::Collection::clearCache(Component* c)
 	}
 }
 
+void StyleSheet::Collection::updateIsolatedCollection(const String& fileName, const Collection& other)
+{
+	// refresh the popup menu...
+	cachedMapForAllStates.clear();
+
+	for(int i = 0; i < isolatedStyleSheetFileNames.size(); i++)
+	{
+		if(isolatedStyleSheetFileNames[i].first.getComponent() == nullptr)
+			isolatedStyleSheetFileNames.remove(i--);
+	}
+
+	for(const auto& f: isolatedStyleSheetFileNames)
+	{
+		if(f.second == fileName)
+		{
+			for(auto& c: childCollections)
+			{
+				if(c.first == f.first)
+				{
+					auto prev = getForComponent(c.first);
+
+					c.second = other.list;
+
+					clearCache(c.first);
+
+					auto ss = getForComponent(c.first);
+
+					if(prev != nullptr && ss != nullptr)
+						ss->copyVarProperties(prev);
+				}
+			}
+		}
+	}
+}
+
 void StyleSheet::Collection::addCollectionForComponent(Component* c, const Collection& other)
 {
 	for(int i = 0; i < childCollections.size(); i++)
@@ -901,6 +973,22 @@ Result StyleSheet::Collection::performAtRules(DataProvider* d)
 	}
 
 	return Result::ok();
+}
+
+bool StyleSheet::Collection::sameOrParent(Component* possibleParent, Component* componentToLookFor)
+{
+	while(componentToLookFor != nullptr)
+	{
+		if(componentToLookFor == componentToLookFor)
+			return true;
+
+		if(dynamic_cast<CSSRootComponent*>(componentToLookFor) != nullptr)
+			break;
+
+		componentToLookFor = componentToLookFor->getParentComponent();
+	}
+
+	return false;
 }
 
 void StyleSheet::Collection::forEach(const std::function<void(Ptr)>& f)
@@ -1345,6 +1433,8 @@ Justification StyleSheet::getJustification(PseudoState currentState, int default
 			x = Justification::Flags::left;
 		else if(jv == "end" || jv == "right")
 			x = Justification::right;
+		else if (jv == "center")
+			x = Justification::horizontallyCentred;
 	}
 
 	if(auto v = getPropertyValue({"vertical-align", currentState }))
@@ -1356,6 +1446,9 @@ Justification StyleSheet::getJustification(PseudoState currentState, int default
 
 		if(vv == "bottom" || vv == "text-bottom")
 			y = Justification::Flags::bottom;
+
+		if(vv == "middle")
+			y = Justification::Flags::verticallyCentred;
 	}
 
 	return Justification(x | y);
@@ -1499,8 +1592,57 @@ std::vector<melatonin::ShadowParameters> StyleSheet::getShadow(Rectangle<float> 
 	}
 	else if(auto v = getPropertyValue(key))
 	{
-		ShadowParser s(v.getValue(varProperties), totalArea);
-		return s.getShadowParameters(wantsInset);
+		if(v.getRawValueString().startsWithChar('|'))
+		{
+			auto full = v.getRawValueString();
+			auto ptr = full.begin();
+			auto token = ptr;
+			auto end = full.end();
+
+			char buffer[128];
+			int pos = 0;
+
+			std::vector<String> list;
+
+			while(ptr != end)
+			{
+				if(*ptr == '|')
+				{
+					if(pos != 0)
+						list.push_back(String(buffer));
+
+					memset(buffer, 0, sizeof(buffer));
+					pos = 0;
+				}
+				else
+				{
+					buffer[pos++] = *ptr;
+				}
+
+				++ptr;
+			}
+
+			list.push_back(String(buffer));
+
+			for(auto& v: list)
+			{
+				if(v.startsWith("var(--"))
+				{
+					Identifier id(v.substring(6, v.length() - 1));
+					v = varProperties->getProperty(id).toString();
+				}
+			}
+
+			ShadowParser s(list);
+			auto parsed = s.toParsedString();
+			ShadowParser ps(parsed, totalArea);
+			return ps.getShadowParameters(wantsInset);
+		}
+		else
+		{
+			ShadowParser s(v.getValue(varProperties), totalArea);
+			return s.getShadowParameters(wantsInset);
+		}
 	}
 
 	return {};
@@ -1555,6 +1697,29 @@ std::pair<Colour, ColourGradient> StyleSheet::getColourOrGradient(Rectangle<floa
 
 	auto getValueFromString = [&](const String& v)
 	{
+		if(v.startsWith("color-mix"))
+		{
+			
+			auto args = v.fromFirstOccurrenceOf("(", false, false).upToLastOccurrenceOf(")", false, false);
+			auto tokens = StringArray::fromTokens(args, ",", "()");
+			tokens.trim();
+			
+			auto type = tokens[0];
+
+			auto c1 = tokens[1];
+			auto c2 = tokens[2];
+			auto c1Colour = c1.upToFirstOccurrenceOf(" ", false, false);
+			ExpressionParser::Context<> context;
+			auto c1Mix = ExpressionParser::evaluate(c1.fromFirstOccurrenceOf(" ", false, false), context);
+
+			auto c2Colour = c2.upToFirstOccurrenceOf(" ", false, false);
+			
+
+			auto colour1 = ColourParser(c1Colour).getColour();
+			auto colour2 = ColourParser(c2Colour).getColour();
+
+			return std::pair(colour1.interpolatedWith(colour2, 1.0 - c1Mix), ColourGradient());
+		}
 		if(v.startsWith("linear-gradient"))
 		{
 			ColourGradient grad;

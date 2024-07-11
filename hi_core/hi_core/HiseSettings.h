@@ -76,6 +76,7 @@ DECLARE_ID(ExtraDefinitionsWindows);
 DECLARE_ID(ExtraDefinitionsOSX);
 DECLARE_ID(ExtraDefinitionsIOS);
 DECLARE_ID(ExtraDefinitionsLinux);
+DECLARE_ID(ExtraDefinitionsNetworkDll);
 DECLARE_ID(AppGroupID);
 DECLARE_ID(RedirectSampleFolder);
 DECLARE_ID(AAXCategoryFX);
@@ -118,6 +119,7 @@ DECLARE_ID(CustomNodePath);
 DECLARE_ID(FaustPath);
 DECLARE_ID(FaustExternalEditor);
 DECLARE_ID(EnableLoris);
+DECLARE_ID(ExportSetup);
 
 Array<Identifier> getAllIds();
 
