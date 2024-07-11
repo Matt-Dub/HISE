@@ -141,8 +141,20 @@ void Action::perform()
 		return;
 	}
 
-	auto shouldPerform = triggerType == TriggerType::OnCall || getValueFromGlobalState(var(true));
-
+    auto shouldPerform = triggerType == TriggerType::OnCall;
+    
+    if(!shouldPerform)
+    {
+        if(!skipIfStateIsFalse())
+        {
+            shouldPerform = true;
+        }
+        else
+        {
+            shouldPerform = getValueFromGlobalState(var(true));
+        }
+    }
+    
     setActive(shouldPerform);
     
 	if(!shouldPerform)
@@ -407,6 +419,7 @@ StringArray RelativeFileLoader::getSpecialLocations()
 		"windowsSystemDirectory",
 #endif
 		"globalApplicationsDirectory",
+        "parentDirectory"
 	};
 }
 
@@ -414,13 +427,29 @@ Result RelativeFileLoader::onAction()
 {
 	auto locString = infoObject[mpid::SpecialLocation].toString();
 
+    
+    
 	auto idx = getSpecialLocations().indexOf(locString);
 
 	if(idx != -1)
 	{
-		auto f = File::getSpecialLocation((File::SpecialLocationType)idx);
-
-		auto rp = infoObject[mpid::RelativePath].toString();
+        File f;
+        
+        if(locString == "parentDirectory")
+        {
+    #if HISE_MULTIPAGE_INCLUDE_EDIT
+            f = rootDialog.getState().currentRootDirectory;
+    #else
+            f = File::getSpecialLocation(File::SpecialLocationType::currentApplicationFile);
+            f = f.getParentDirectory();
+    #endif
+        }
+        else
+        {
+            f = File::getSpecialLocation((File::SpecialLocationType)idx);
+        }
+        
+        auto rp = evaluate(mpid::RelativePath);
 
 		if(rp.isNotEmpty())
 			f = f.getChildFile(rp);
@@ -652,6 +681,9 @@ void BackgroundTask::paint(Graphics& g)
 
 void BackgroundTask::resized()
 {
+	setHiseShapeButtonColours(stopButton);
+	setHiseShapeButtonColours(retryButton);
+
 	Action::resized();
 }
 
@@ -677,6 +709,8 @@ void BackgroundTask::postInit()
 		return Result::ok();
 	};
 
+	setHiseShapeButtonColours(stopButton);
+	
 	Action::postInit();
 }
 
@@ -1432,9 +1466,26 @@ Result CopyAsset::performTask(State::Job& t)
 		{
 			throw Result::fail("Can't create directory " + targetDir.getFullPathName());
 		}
+
+		auto before = Time::getCurrentTime().getMilliseconds();
             
 		if(a->writeToFile(targetFile, &t))
 		{
+			auto now = Time::getCurrentTime().getMilliseconds();
+
+			if((now - before) < 500)
+			{
+				t.getProgress() = (double)0.0;
+
+				for(int i = 0; i < 100; i+= 1)
+				{
+					t.getThread().wait(10);
+					t.getProgress() = (double)i / 100.0;
+				}
+
+				t.getProgress() = 1.0;
+			}
+
 			rootDialog.getState().addFileToLog({targetFile, true});
 
 			rootDialog.logMessage(MessageType::FileOperation, "... Done");
@@ -1573,6 +1624,9 @@ Result HlacDecoder::performTask(State::Job& t)
 	data.debugLogMode = false;
 	data.partProgress = &unused1;
 
+    if(!data.targetDirectory.isDirectory())
+        data.targetDirectory.createDirectory();
+    
 	if(useTotalProgress)
 	{
 		data.progress = &unused2;

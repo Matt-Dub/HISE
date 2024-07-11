@@ -292,7 +292,9 @@ PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex, const String&)
 	{
 		m.addItem(CommandId::FileNew, "New file");
 
+
 		m.addItem(CommandId::FileLoad, "Load file");
+        m.addItem(CommandId::FileLoadMonolith, "Load monolith");
 
 		PopupMenu r;
 		fileList.createPopupMenuItems(r, CommandId::FileRecentOffset, false, false);
@@ -300,6 +302,7 @@ PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex, const String&)
 		m.addItemWithShortcut(CommandId::FileSave, "Save file",  KeyPress('s', ModifierKeys::commandModifier, 's'), currentFile.existsAsFile());
 		m.addItem(CommandId::FileSaveAs, "Save file as");
 		m.addItem(CommandId::FileExportAsProjucerProject, "Export as Projucer project");
+        m.addItem(CommandId::FileExportAsMonolith, "Export as monolith payload");
 		m.addSeparator();
         m.addItem(CommandId::FileCreateCSS, "Create CSS stylesheet");
         m.addSeparator();
@@ -347,6 +350,12 @@ PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex, const String&)
 
 bool MainComponent::keyPressed(const KeyPress& key)
 {
+    if(key == KeyPress::escapeKey)
+    {
+        auto& s = c->mouseSelector.selection;
+        s.deselectAll();
+        return true;
+    }
 	if(key.getKeyCode() == KeyPress::F4Key && c != nullptr)
 	{
 		menuItemSelected(CommandId::EditToggleMode, 0);
@@ -397,6 +406,19 @@ void MainComponent::menuItemSelected(int menuItemID, int)
 
 			break;
 		}
+	case FileLoadMonolith:
+		{
+			{
+				FileChooser fc("Open Monolith file", File(), "*.dat");
+
+				if(fc.browseForFileToOpen())
+				{
+					createDialog(fc.getResult());
+				}
+
+				break;
+			}
+		}
 	case FileSave:
 		{
             c->getState().callEventListeners("save", {});
@@ -418,6 +440,8 @@ void MainComponent::menuItemSelected(int menuItemID, int)
                 
                 c->getState().callEventListeners("save", {});
                 
+                rt.globalState.getDynamicObject()->clear();
+                
 				currentFile.replaceWithText(JSON::toString(c->exportAsJSON()));
 				rt.currentRootDirectory = currentFile.getParentDirectory();
 				setSavePoint();
@@ -431,8 +455,24 @@ void MainComponent::menuItemSelected(int menuItemID, int)
 		
 		break;
 	}
+	case FileExportAsMonolith:
+	{
+		FileChooser fc("Export installer payload as monolith", File(), "*.dat");
+
+		if(fc.browseForFileToSave(true))
+		{
+            MonolithData::exportMonolith(rt, fc.getResult());
+		}
+            
+		break;
+	}
 	case FileQuit: JUCEApplication::getInstance()->systemRequestedQuit(); break;
-	case EditClearState: rt.globalState.getDynamicObject()->clear(); break;
+	case EditClearState: 
+         rt.globalState.getDynamicObject()->clear();
+         c->refreshCurrentPage();
+         tree->setRoot(*c);
+         resized();
+         break;
 	case EditUndo: c->getUndoManager().undo(); c->refreshCurrentPage(); break;
 	case EditRedo: c->getUndoManager().redo(); c->refreshCurrentPage(); break;
 	case EditToggleMode: 
@@ -525,34 +565,55 @@ void MainComponent::menuItemSelected(int menuItemID, int)
 	}
 }
 
+
+
 void MainComponent::createDialog(const File& f)
 {
 	var obj;
 
 	if(f.existsAsFile())
 	{
-		auto ok = JSON::parse(f.loadFileAsString(), obj);
+        if(f.getFileExtension() == ".json")
+        {
+	        auto ok = JSON::parse(f.loadFileAsString(), obj);
 
-		if(ok.failed())
-		{
-			c->logMessage(multipage::MessageType::Navigation, "Error at parsing JSON: " + ok.getErrorMessage());
-			return;
-		}
-		
-		fileList.addFile(f);
-		rt.currentRootDirectory = f.getParentDirectory();
+			if(ok.failed())
+			{
+				c->logMessage(multipage::MessageType::Navigation, "Error at parsing JSON: " + ok.getErrorMessage());
+				return;
+			}
+			
+			fileList.addFile(f);
+			rt.currentRootDirectory = f.getParentDirectory();
 
-		autosaver = new Autosaver(f, rt);
+			autosaver = new Autosaver(f, rt);
+
+            currentFile = f;
+
+            c = nullptr;
+		    hardcodedDialog = nullptr;
+
+			rt.reset(obj);
+
+			addAndMakeVisible(c = new multipage::Dialog(obj, rt));
+        }
+        else
+        {
+            hardcodedDialog = nullptr;
+
+	        addAndMakeVisible(c = MonolithData(f).create(rt));
+        }
 	}
+    else
+    {
+        currentFile = File();
 
-	currentFile = f;
+        c = nullptr;
+	    hardcodedDialog = nullptr;
 
-    c = nullptr;
-    hardcodedDialog = nullptr;
-
-	rt.reset(obj);
-
-	addAndMakeVisible(c = new multipage::Dialog(obj, rt));
+		rt.reset(obj);
+		addAndMakeVisible(c = new multipage::Dialog(obj, rt));
+    }
 
 	c->showFirstPage();
 	
