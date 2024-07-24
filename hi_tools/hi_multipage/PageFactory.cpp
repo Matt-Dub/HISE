@@ -1315,6 +1315,7 @@ StringArray Factory::getPopupMenuList() const
 	return sa;
 }
 
+
 Colour Factory::getColourForCategory(const String& id) const
 {
     std::map<Identifier, Colour> map;

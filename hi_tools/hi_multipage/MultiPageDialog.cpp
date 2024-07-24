@@ -313,7 +313,11 @@ void Dialog::PageBase::updateStyleSheetInfo(bool forceUpdate)
 
 		// rebuild to allow resizing...
 		if(!rootDialog.getSkipRebuildFlag())
+		{
+			rootDialog.css.setAnimator(&rootDialog.animator);
 			rootDialog.body.setCSS(rootDialog.css);
+		}
+			
 	}
 }
 
@@ -328,6 +332,50 @@ void Dialog::PageBase::forwardInlineStyleToChildren()
 
 		simple_css::FlexboxComponent::Helpers::writeInlineStyle(*this, "");
 	}
+}
+
+bool Dialog::PageBase::updateInfoProperty(const Identifier& pid)
+{
+	auto updateType = multipage::mpid::Helpers::getUpdateType(Identifier(pid));
+
+	if(updateType == multipage::mpid::Helpers::RequiredUpdate::FullRebuild)
+	{
+		findParentComponentOfClass<multipage::Dialog>()->refreshCurrentPage();
+		return true;
+	}
+
+	if(updateType == multipage::mpid::Helpers::RequiredUpdate::UpdateCSS)
+	{
+		updateStyleSheetInfo(true);
+		findParentComponentOfClass<multipage::Dialog>()->css.clearCache(this);
+		return true;
+	}
+	if(updateType == multipage::mpid::Helpers::RequiredUpdate::UpdateVisibility)
+	{
+		if(auto c = findParentComponentOfClass<multipage::factory::Container>())
+		{
+			c->updateChildVisibility();
+		}
+		return true;
+	}
+	if(updateType == multipage::mpid::Helpers::RequiredUpdate::ResizeParent)
+	{
+		if(auto p = findParentComponentOfClass<multipage::Dialog::PageBase>())
+		{
+			p->postInit();
+		}
+				
+		return true;
+	}
+	if(updateType == multipage::mpid::Helpers::RequiredUpdate::PostInit)
+	{
+		postInit();
+		resized();
+		repaint();
+		return true;
+	}
+
+	return false;
 }
 
 simple_css::FlexboxComponent::VisibleState Dialog::PageBase::getVisibility() const

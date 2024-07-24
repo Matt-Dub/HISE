@@ -841,6 +841,10 @@ void ScriptComponent::setStyleSheetClass(const String& classIds)
 void ScriptComponent::setStyleSheetProperty(const String& variableId, const var& value, const String& type)
 {
 	auto v = ApiHelpers::convertStyleSheetProperty(value, type);
+
+	if(!styleSheetProperties.isValid())
+        styleSheetProperties = ValueTree("ComponentStyleSheetProperties");
+
 	styleSheetProperties.setProperty(variableId, v, nullptr);
 }
 
@@ -1724,10 +1728,23 @@ juce::LookAndFeel* ScriptingApi::Content::ScriptComponent::createLocalLookAndFee
 			if(!styleSheetProperties.isValid())
 			{
 				styleSheetProperties = ValueTree("ComponentStyleSheetProperties");
-				
-				simple_css::Selector classType(simple_css::SelectorType::Class, propertyTree["type"].toString().toLowerCase());
-				styleSheetProperties.setProperty("class", classType.toString(), nullptr);
 			}
+            
+            auto initProperty = [&](const Identifier& id)
+            {
+                if(!propertyTree.hasProperty(id))
+                    propertyTree.setProperty(id, defaultValues[id], nullptr);
+            };
+            
+            initProperty("bgColour");
+            initProperty("itemColour");
+            initProperty("itemColour2");
+            initProperty("textColour");
+            
+            removePropertyIfDefault = false;
+            
+            simple_css::Selector classType(simple_css::SelectorType::Class, propertyTree["type"].toString().toLowerCase());
+            styleSheetProperties.setProperty("class", classType.toString(), nullptr);
 			
 			return new ScriptingObjects::ScriptedLookAndFeel::CSSLaf(l, contentComponent, componentToRegister, this->propertyTree, this->styleSheetProperties);
 		}
@@ -1746,6 +1763,9 @@ void ScriptingApi::Content::ScriptComponent::setLocalLookAndFeel(var lafObject)
 {
 	if (auto l = dynamic_cast<ScriptingObjects::ScriptedLookAndFeel*>(lafObject.getObject()))
 	{
+		if(l->currentStyleSheet.isNotEmpty())
+			setStyleSheetClass({});
+
 		localLookAndFeel = lafObject;
 
 		ChildIterator<ScriptComponent> iter(this);
@@ -6018,50 +6038,16 @@ void ScriptingApi::Content::ScriptMultipageDialog::setElementProperty(int elemen
 
 		obj->setProperty(propertyId, newValue);
 
-		auto updateType = multipage::mpid::Helpers::getUpdateType(Identifier(propertyId));
+		auto pid = Identifier(propertyId);
 
 		for(auto c: getMultipageState()->currentDialogs)
 		{
-			SafeAsyncCall::call<multipage::Dialog>(*c, [infoObject, updateType](multipage::Dialog& d)
+			SafeAsyncCall::call<multipage::Dialog>(*c, [infoObject, pid](multipage::Dialog& d)
 			{
-				if(updateType == multipage::mpid::Helpers::RequiredUpdate::FullRebuild)
-				{
-					d.refreshCurrentPage();
-					return;
-				}
-
 				if(auto pb = d.findPageBaseForInfoObject(infoObject))
 				{
-					if(updateType == multipage::mpid::Helpers::RequiredUpdate::UpdateCSS)
-					{
-						pb->updateStyleSheetInfo(true);
-						d.css.clearCache(pb);
+					if(pb->updateInfoProperty(pid))
 						return;
-					}
-					if(updateType == multipage::mpid::Helpers::RequiredUpdate::UpdateVisibility)
-					{
-						if(auto c = pb->findParentComponentOfClass<multipage::factory::Container>())
-						{
-							c->updateChildVisibility();
-						}
-						return;
-					}
-					if(updateType == multipage::mpid::Helpers::RequiredUpdate::ResizeParent)
-					{
-						if(auto p = pb->findParentComponentOfClass<multipage::Dialog::PageBase>())
-						{
-							p->postInit();
-						}
-						
-						return;
-					}
-					if(updateType == multipage::mpid::Helpers::RequiredUpdate::PostInit)
-					{
-						pb->postInit();
-						pb->resized();
-						pb->repaint();
-						return;
-					}
 				}
 			});
 		}
