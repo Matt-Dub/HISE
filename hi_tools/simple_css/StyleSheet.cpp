@@ -705,7 +705,9 @@ StyleSheet::Ptr StyleSheet::Collection::getForComponent(Component* c)
 	        styleSheetLog = styleSheetLog.replace(elementSelectors[i], hierarchy[i]);
 	    }
 	}
-	
+
+	ptr->setCustomFonts(customFonts);
+
 	cachedMaps.add({ c, ptr, styleSheetLog });
 
 	jassert(animator != nullptr);
@@ -804,7 +806,7 @@ StyleSheet::Ptr StyleSheet::Collection::getWithAllStates(Component* c, const Sel
 {
 	for(const auto& existing: cachedMapForAllStates)
 	{
-		if(existing.first.exactMatch(s))
+		if(existing.first.second.exactMatch(s) && existing.first.first == c)
 			return existing.second;
 	}
 
@@ -874,7 +876,7 @@ StyleSheet::Ptr StyleSheet::Collection::getWithAllStates(Component* c, const Sel
 	for(auto m: matches)
 		ptr->copyPropertiesFrom(m, true);
 
-	cachedMapForAllStates.add({s, ptr});
+	cachedMapForAllStates.add({{c, s}, ptr});
 
 	jassert(animator != nullptr);
 
@@ -1039,8 +1041,6 @@ void StyleSheet::Collection::addCollectionForComponent(Component* c, const Colle
 
 Result StyleSheet::Collection::performAtRules(DataProvider* d)
 {
-	Array<std::pair<String, Font>> customFonts;
-
 	for(int i = 0; i < list.size(); i++)
 	{
 		auto l = list[i];
@@ -1053,7 +1053,7 @@ Result StyleSheet::Collection::performAtRules(DataProvider* d)
 			auto fontName = l->getPropertyValueString({"font-family", {}});
 			auto fToUse = d->loadFont(fontName, url);
 
-			customFonts.add({ fontName, fToUse });
+			customFonts.addIfNotAlreadyThere({ fontName, fToUse });
 		}
 		if(ar == "import")
 		{
@@ -1894,6 +1894,11 @@ std::pair<Colour, ColourGradient> StyleSheet::getColourOrGradient(Rectangle<floa
 			ColourGradient grad;
 			ColourGradientParser p(area, v.fromFirstOccurrenceOf("(", false, false).upToLastOccurrenceOf(")", false, false));
 			return std::pair(defaultColour, p.getGradient());
+		}
+		else if (v.startsWith("rgb"))
+		{
+			auto c = ColourParser(v).getColour();
+			return std::pair(c, ColourGradient());
 		}
 		else
 		{

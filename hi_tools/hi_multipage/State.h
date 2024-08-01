@@ -248,6 +248,13 @@ public:
     void onFinish();
     void run() override;
 
+    void clearCompletedJobs()
+    {
+        stopThread(1000);
+	    jobs.clear();
+        completedJobs.clear();
+    }
+
     struct StateProvider;
 
     void logStatusMessage(const String& message) override
@@ -341,6 +348,8 @@ public:
 
     using HardcodedLambda = std::function<var(Job&, const var&)>;
 
+    bool isFinished(Job::Ptr j) const { return completedJobs.contains(j); }
+
     Job::Ptr currentJob = nullptr;
     Job::Ptr getJob(const var& obj);
     var getGlobalSubState(const Identifier& id);
@@ -391,6 +400,11 @@ public:
     void bindCallback(const String& functionName, const var::NativeFunction& f);
 
     bool callNativeFunction(const String& functionName, const var::NativeFunctionArgs& args, var* returnValue);
+
+    bool hasNativeFunction(const String& functionName) const
+    {
+	    return jsLambdas.find(functionName) != jsLambdas.end();
+    }
 
     String currentEventGroup;
     
@@ -508,6 +522,7 @@ struct MonolithData
         MonolithBeginAssets,
         MonolithAssetJSONStart,
         MonolithAssetJSONEnd,
+        MonolithAssetNoCompressFlag,
         MonolithAssetStart,
         MonolithAssetEnd,
         MonolithEndAssets
@@ -519,7 +534,7 @@ struct MonolithData
     
     multipage::Dialog* create(State& state);
     
-    static Result exportMonolith(State& state, OutputStream* output);
+    static Result exportMonolith(State& state, OutputStream* output, bool compressAssets=true, State::Job* j=nullptr);
     var getJSON() const;
 
 private:

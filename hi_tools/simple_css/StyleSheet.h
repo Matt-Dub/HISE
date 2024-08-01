@@ -157,10 +157,12 @@ struct StyleSheet: public ReferenceCountedObject
             String debugLog;
         };
         
-		Array<std::pair<Selector, StyleSheet::Ptr>> cachedMapForAllStates;
+		Array<std::pair<std::pair<Component::SafePointer<Component>, Selector>, StyleSheet::Ptr>> cachedMapForAllStates;
 		Array<CachedStyleSheet> cachedMaps;
 
 		Animator* animator = nullptr;
+
+		Array<std::pair<String, Font>> customFonts;
 
 		List list;
 	};
