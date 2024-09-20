@@ -111,6 +111,8 @@ struct WelcomeScreen: public multipage::EncodedDialogBase
 	var createProject(const var::NativeFunctionArgs& args);
 	var loadPresetFile(const var::NativeFunctionArgs& args);
 	var startupSetter(const var::NativeFunctionArgs& args);
+
+	Array<File> fileList;
 };
 
 struct AboutWindow: public multipage::EncodedDialogBase
@@ -131,6 +133,8 @@ struct AboutWindow: public multipage::EncodedDialogBase
     var showCommit(const var::NativeFunctionArgs& args);
     
     URL commitLink;
+
+	JUCE_DECLARE_WEAK_REFERENCEABLE(AboutWindow);
 };
 
 struct NewProjectCreator: public ImporterBase,
