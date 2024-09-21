@@ -90,6 +90,10 @@
  //#define USE_WORKBENCH_EDITOR 0
 #endif
 
+#ifndef    HISE_PAINT_GLOBAL_MOD_CONNECTIONS
+ //#define HISE_PAINT_GLOBAL_MOD_CONNECTIONS 0
+#endif
+
 //==============================================================================
 // hi_core flags:
 
@@ -308,7 +312,7 @@
 // hi_faust flags:
 
 #ifndef    HISE_INCLUDE_FAUST
- //#define HISE_INCLUDE_FAUST 0
+ #define   HISE_INCLUDE_FAUST 1
 #endif
 
 #ifndef    HISE_FAUST_USE_LLVM_JIT
@@ -316,7 +320,7 @@
 #endif
 
 #ifndef    HISE_INCLUDE_FAUST_JIT
- //#define HISE_INCLUDE_FAUST_JIT 0
+ #define   HISE_INCLUDE_FAUST_JIT 1
 #endif
 
 //==============================================================================
