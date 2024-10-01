@@ -239,7 +239,7 @@ var ExportSetupWizard::checkIDE(const var::NativeFunctionArgs& args)
         }
         {
             juce::ChildProcess xcp;
-            xcp.start("gem list");
+            xcp.start("gem list xcpretty");
             auto output = xcp.readAllProcessOutput();
             auto xcPrettyExists = output.contains("xcpretty");
             writeState("xcPrettyExists", xcPrettyExists);
@@ -698,7 +698,6 @@ var NewProjectCreator::onTemplateSelector(const var::NativeFunctionArgs& args)
 
 var NewProjectCreator::initFolder(const var::NativeFunctionArgs& args)
 {
-	auto chain = bpe->getBackendProcessor()->getMainSynthChain();
 	auto& sd = dynamic_cast<GlobalSettingManager*>(bpe->getBackendProcessor())->getSettingsObject();
 	auto s = sd.getSetting(HiseSettings::Compiler::DefaultProjectFolder).toString();
 	jassert(s.isNotEmpty());

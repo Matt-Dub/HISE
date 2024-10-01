@@ -38,34 +38,6 @@ using namespace hise;
 juce::String NodeComponent::Header::getPowerButtonId(bool getOff) const
 {
     return "on";
-    
-	auto path = parent.node->getValueTree()[PropertyIds::FactoryPath].toString();
-
-	if (path.startsWith("container."))
-	{
-		path = path.fromFirstOccurrenceOf("container.", false, false);
-
-		if (getOff)
-		{
-			if (path.contains("frame") ||
-				path.contains("oversample") ||
-				path.contains("midi") ||
-				path.startsWith("fix")) 
-				return "chain";
-			else
-				return "on";
-		}
-		else
-		{
-			if (path == "soft_bypass" ||
-				path == "offline")
-				return "on";
-
-			return path;
-		}
-	}
-		
-	return "on";
 }
 
 
@@ -124,9 +96,16 @@ NodeComponent::Header::Header(NodeComponent& parent_) :
 
 	freezeButton.setToggleModeWithColourChange(true);
 
+	auto isContainer = dynamic_cast<NodeContainer*>(parent.node.get()) != nullptr;
+
 	parameterButton.setToggleModeWithColourChange(true);
 	parameterButton.setToggleStateAndUpdateIcon(parent.dataReference[PropertyIds::ShowParameters]);
-	parameterButton.setVisible(dynamic_cast<NodeContainer*>(parent.node.get()) != nullptr);
+	parameterButton.setVisible(isContainer);
+
+	if(isContainer)
+	{
+		parameterUpdater.setCallback(parent.node->getValueTree(), {PropertyIds::ShowParameters}, valuetree::AsyncMode::Asynchronously, BIND_MEMBER_FUNCTION_2(Header::updateConnectionButton));
+	}
 
 	freezeButton.setEnabled(parent.node->getRootNetwork()->canBeFrozen());
 
@@ -170,6 +149,11 @@ void NodeComponent::Header::updatePowerButtonState(Identifier id, var newValue)
 	repaint();
 }
 
+void NodeComponent::Header::updateConnectionButton(Identifier id, var newValue)
+{
+	parameterButton.setToggleStateAndUpdateIcon((bool)newValue);
+}
+
 void NodeComponent::Header::mouseDoubleClick(const MouseEvent& e)
 {
 	if (powerButton.getBoundsInParent().expanded(2).contains(e.getPosition()))
@@ -179,7 +163,7 @@ void NodeComponent::Header::mouseDoubleClick(const MouseEvent& e)
 		return;
 	}
 
-	parent.dataReference.setProperty(PropertyIds::Folded, !parent.isFolded(), nullptr);
+	parent.dataReference.setProperty(PropertyIds::Folded, !parent.isFolded(), parent.node->getUndoManager());
 	parent.getParentComponent()->repaint();
 }
 

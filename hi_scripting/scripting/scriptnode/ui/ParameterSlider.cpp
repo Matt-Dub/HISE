@@ -962,6 +962,45 @@ void ParameterSlider::checkEnabledState()
 	modulationActive = parameterToControl != nullptr && parameterToControl->isModulated();
 	setEnabled(!modulationActive);
 
+	String tt;
+
+	tt << node->getId() + "." + getName();
+
+	if(modulationActive)
+	{
+		auto ct = getConnectionSourceTree();
+		auto nt = valuetree::Helpers::findParentWithType(ct, PropertyIds::Node);
+
+		StringArray path;
+
+		valuetree::Helpers::forEachParent(ct, [&](const ValueTree& p)
+		{
+			if(pTree.isAChildOf(p))
+				return true;
+
+			if(p.getType() == PropertyIds::Parameter || p.getType() == PropertyIds::Node)
+			{
+				auto id = p[PropertyIds::ID].toString();
+				auto nid = p[PropertyIds::Name].toString();
+				path.add(nid.isNotEmpty() ? nid : id);
+			}
+
+			return false;
+		});
+
+		tt << " - connected to: ";
+
+		for(int i = path.size()-1; i >= 0; i--)
+		{
+			tt << path[i];
+
+			if(i != 0)
+				tt << ".";
+		}
+	}
+
+	setTooltip(tt);
+
 	if (modulationActive)
 		start();
 	else
@@ -1338,12 +1377,61 @@ void ParameterSlider::mouseDoubleClick(const MouseEvent&)
 			}
 		}
 
-		parameterToControl->addConnectionFrom({});
+		auto ct = getConnectionSourceTree();
 
-		
-		auto v = parameterToControl->getValue();
-		
-		setValue(v, dontSendNotification);
+		if(ct.isValid())
+		{
+			
+
+			bool sourceIsVisible = true;
+
+			valuetree::Helpers::forEachParent(ct, [&](const ValueTree& p)
+			{
+				if(p.getType() == PropertyIds::Node)
+				{
+					sourceIsVisible &= !(bool)p[PropertyIds::Folded];
+				}
+
+				return false;
+			});
+
+			auto sourceNodeTree = valuetree::Helpers::findParentWithType(ct, PropertyIds::Node);
+
+			auto isConnectedToParentChain = pTree.isAChildOf(sourceNodeTree);
+
+			if(isConnectedToParentChain)
+			{
+				sourceIsVisible = (bool)sourceNodeTree[PropertyIds::ShowParameters];
+			}
+
+			if(sourceIsVisible)
+			{
+				parameterToControl->addConnectionFrom({});
+				auto v = parameterToControl->getValue();
+				setValue(v, dontSendNotification);
+			}
+			else
+			{
+				auto um = node->getRootNetwork()->getUndoManager();
+
+				if(isConnectedToParentChain)
+				{
+					sourceNodeTree.setProperty(PropertyIds::ShowParameters, true, um);
+				}
+				else
+				{
+					valuetree::Helpers::forEachParent(ct, [&](ValueTree& p)
+					{
+						if(p.getType() == PropertyIds::Node)
+						{
+							p.setProperty(PropertyIds::Folded, false, um);
+						}
+
+						return false;
+					});
+				}
+			}
+		}
 	}
 }
 
@@ -1682,6 +1770,11 @@ void MacroParameterSlider::mouseDrag(const MouseEvent& e)
 
 			container->startDragging(details, &slider, ScaledImage(ModulationSourceBaseComponent::createDragImageStatic(false)));
 
+			ZoomableViewport::checkDragScroll(e, false);
+
+			
+			
+
 			slider.repaintParentGraph();
 		}
 	}
@@ -1690,6 +1783,8 @@ void MacroParameterSlider::mouseDrag(const MouseEvent& e)
 void MacroParameterSlider::mouseUp(const MouseEvent& e)
 {
 	CHECK_MIDDLE_MOUSE_UP(e);
+
+	ZoomableViewport::checkDragScroll(e, true);
 
 	slider.repaintParentGraph();
 }

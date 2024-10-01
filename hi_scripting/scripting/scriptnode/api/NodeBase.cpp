@@ -330,9 +330,18 @@ juce::UndoManager* NodeBase::getUndoManager(bool returnIfPending) const
 
 juce::Rectangle<int> NodeBase::getBoundsToDisplay(Rectangle<int> originalHeight) const
 {
+	auto titleWidth = GLOBAL_BOLD_FONT().getStringWidthFloat(getName());
+	auto minWidth = jmax<int>(UIValues::NodeWidth, titleWidth + UIValues::HeaderHeight * 4);
+
 	if (v_data[PropertyIds::Folded])
-		originalHeight = originalHeight.withHeight(UIValues::HeaderHeight).withWidth(UIValues::NodeWidth);
-	
+	{
+		
+		originalHeight = originalHeight.withHeight(UIValues::HeaderHeight).withWidth(minWidth);
+	}
+
+	if(originalHeight.getWidth() < minWidth)
+		originalHeight.setWidth(minWidth);
+
 	auto helpBounds = helpManager.getHelpSize().toNearestInt();
 
 	if (!helpBounds.isEmpty())
@@ -1400,7 +1409,7 @@ void HelpManager::render(Graphics& g, Rectangle<float> area)
 void HelpManager::addHelpListener(Listener* l)
 {
 	listeners.addIfNotAlreadyThere(l);
-	l->helpChanged(lastWidth + 30.0f, lastHeight + 20.0f);
+	//l->helpChanged(lastWidth + 30.0f, lastHeight + 20.0f);
 }
 
 void HelpManager::removeHelpListener(Listener* l)
