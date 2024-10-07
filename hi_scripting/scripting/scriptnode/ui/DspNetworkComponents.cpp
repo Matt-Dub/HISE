@@ -237,6 +237,7 @@ juce::Path DspNetworkPathFactory::createPath(const String& url) const
     LOAD_PATH_IF_URL("eject", ScriptnodeIcons::ejectIcon);
 	LOAD_EPATH_IF_URL("redo", EditorIcons::redoIcon);
 	LOAD_PATH_IF_URL("rebuild", ColumnIcons::moveIcon);
+	LOAD_PATH_IF_URL("comment", ColumnIcons::commentIcon);
 	LOAD_PATH_IF_URL("goto", ScriptnodeIcons::gotoIcon);
 	LOAD_PATH_IF_URL("properties", ScriptnodeIcons::propertyIcon);
 	LOAD_EPATH_IF_URL("bypass", HiBinaryData::ProcessorEditorHeaderIcons::bypassShape);
@@ -940,6 +941,9 @@ void DspNetworkGraph::paintOverChildren(Graphics& g)
 		if(connectedSliders.contains(s))
 			continue;
 
+		if(s->pTree.getParent().getParent()[PropertyIds::Folded])
+			continue;
+
 		auto area = getCircle(s);
 
 		auto hover = s->isMouseOver(true);
@@ -1058,6 +1062,87 @@ void DspNetworkGraph::paintOverChildren(Graphics& g)
 		}
 	}
 
+
+
+	if(isMouseButtonDown(true) || externalDragComponent)
+	{
+		auto currentComponent = externalDragComponent != nullptr ? externalDragComponent : Desktop::getInstance().getMainMouseSource().getComponentUnderMouse();
+		
+		auto dragSourceIsValid = [](Component* c)
+		{
+			if(dynamic_cast<ModulationSourceBaseComponent*>(c))
+				return true;
+
+			if(auto ps = dynamic_cast<MacroParameterSlider::Dragger*>(c))
+			{
+				return ps->parent.dragging;
+			}
+
+			if(dynamic_cast<MultiOutputDragSource*>(c))
+				return true;
+
+			return false;
+		};
+
+		if(!dragSourceIsValid(currentComponent))
+			return;
+
+		auto currentPosition = getMouseXYRelative().toFloat();
+
+		auto start = getCircle(currentComponent, false);
+
+		if(auto d = dynamic_cast<MacroParameterSlider::Dragger*>(currentComponent))
+		{
+			start = getCircle(d->getCircleComponent(), true);
+		}
+
+		auto alpha = 0.3f;
+
+		auto end = Rectangle<float>(currentPosition, currentPosition).withSizeKeepingCentre(start.getWidth(), start.getHeight());
+
+		auto c1 = Colours::white;
+		Colour c2 = c1;
+
+		bool hanging = false;
+
+		if(auto ps = dynamic_cast<ParameterSlider*>(getComponentAt(currentPosition)))
+		{
+			DragAndDropTarget::SourceDetails d(var(), currentComponent, {});
+			auto ok = ps->isInterestedInDragSource(d);
+
+			c2 = ok ? Colour(SIGNAL_COLOUR) : Colour(HISE_ERROR_COLOUR);
+
+			if(ok)
+			{
+				end = getCircle(ps, true);
+				currentPosition = end.getCentre();
+				hanging = true;
+			}
+
+			alpha = 1.0f;
+		}
+
+		float dragSmoothAlpha = JUCE_LIVE_CONSTANT_OFF(0.4f);
+		float maxValue = JUCE_LIVE_CONSTANT_OFF(20.0f);
+
+		Point<float> delta = currentPosition - lastMousePos;
+
+		Range<float> cd(-maxValue, maxValue);
+
+		delta.setX(cd.clipValue(currentPosition.getX() - lastMousePos.getX()));
+		delta.setY(cd.clipValue(currentPosition.getY() - lastMousePos.getY()));
+
+		auto fadeAlpha = jlimit(0.0f, 1.0f, 1.0f - delta.getDistanceFromOrigin() / 30.0f);
+
+		auto c = c1.interpolatedWith(c2, jlimit(0.0f, 1.0f, fadeAlpha));
+
+		
+
+		GlobalHiseLookAndFeel::paintCable(g, start, end, c, alpha, c, false, hanging, delta);
+
+		lastMousePos.setX(lastMousePos.getX() * dragSmoothAlpha + currentPosition.getX() * (1.0f - dragSmoothAlpha));
+		lastMousePos.setY(lastMousePos.getY() * dragSmoothAlpha + currentPosition.getY() * (1.0f - dragSmoothAlpha));
+	}
 	
 }
 
@@ -1673,6 +1758,14 @@ bool DspNetworkGraph::Actions::toggleCableDisplay(DspNetworkGraph& g)
 	return true;
 }
 
+bool DspNetworkGraph::Actions::toggleComments(DspNetworkGraph& g)
+{
+	auto showComments = (bool)g.dataReference[PropertyIds::ShowComments];
+	g.dataReference.setProperty(PropertyIds::ShowComments, !showComments, nullptr);
+	g.rebuildNodes();
+	return true;
+}
+
 bool DspNetworkGraph::Actions::toggleCpuProfiling(DspNetworkGraph& g)
 {
 	auto& b = g.network->getCpuProfileFlag();
@@ -2018,15 +2111,19 @@ bool DspNetworkGraph::Actions::showKeyboardPopup(DspNetworkGraph& g, KeyboardPop
 				auto bpe = g.findParentComponentOfClass<BackendRootWindow>();
 
 				struct PopupWrapper: public Component,
-									 public ModalBaseWindow
+									 public ModalBaseWindow,
+									 public QuasiModalComponent
 				{
 					PopupWrapper(KeyboardPopup* p):
 					  content(p)
 					{
+						setWantsBackdrop(true, true);
+						
 						p->parentIsViewport = false;
 						addAndMakeVisible(p);
 						setSize(p->getWidth(), p->getHeight());
 						setName("Add node");
+						content->grabKeyboardFocusAsync();
 					}
 
 					void paint(Graphics& g) override
@@ -2864,6 +2961,7 @@ void DspNetworkGraph::WrapperWithMenuBar::rebuildAfterContentChange()
 	addButton("probe");
     addButton("signal");
 	addButton("parameters");
+	addButton("comment");
 	addSpacer(10);
 	addButton("wrap");
 	addButton("colour");
@@ -2878,6 +2976,23 @@ void DspNetworkGraph::WrapperWithMenuBar::rebuildAfterContentChange()
     addSpacer(10);
 	
     addButton("properties");
+}
+
+void DspNetworkGraph::WrapperWithMenuBar::bookmarkUpdated(const StringArray& idsToShow)
+{
+	n->deselectAll();
+
+	NodeBase::List newSelection;
+
+	for (const auto& s : idsToShow)
+	{
+		auto nv = n->get(s);
+
+		if (auto no = dynamic_cast<NodeBase*>(nv.getObject()))
+			n->addToSelection(no, ModifierKeys::shiftModifier);
+	}
+
+	Actions::foldUnselectedNodes(*canvas.getContent<DspNetworkGraph>());
 }
 
 void DspNetworkGraph::WrapperWithMenuBar::addButton(const String& name)
@@ -2932,6 +3047,12 @@ void DspNetworkGraph::WrapperWithMenuBar::addButton(const String& name)
 		b->actionFunction = Actions::toggleCableDisplay;
 		b->stateFunction = [](DspNetworkGraph& g) { return g.showCables; };
 		b->setTooltip("Show / Hide cables [C]");
+	}
+	if(name == "comment")
+	{
+		b->actionFunction = Actions::toggleComments;
+		b->stateFunction = [](DspNetworkGraph& g) { return (bool)g.dataReference[PropertyIds::ShowComments]; };
+		b->setTooltip("Show / Hide comments");
 	}
 	if (name == "export")
 	{
@@ -3025,6 +3146,7 @@ void DspNetworkGraph::WrapperWithMenuBar::addButton(const String& name)
 			m.addItem((int)NodeComponent::MenuActions::WrapIntoOversample4, "Wrap into 4x oversample container");
 
 			m.addItem((int)NodeComponent::MenuActions::UnfreezeNode, "Explode DSP Network", s != nullptr && s->getEmbeddedNetwork() != nullptr);
+			m.addItem((int)NodeComponent::MenuActions::ExplodeLocalCables, "Replace local cable connections");
 
 			int result = m.show();
 

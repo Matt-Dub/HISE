@@ -238,6 +238,15 @@ void ModulatorSynthChain::compileAllScripts()
 			sp->getContent()->resetContentProperties();
 			sp->compileScript();
 		}
+
+		Processor::Iterator<RuntimeTargetHolder> rti(this, false);
+            
+        while(auto m = rti.getNextProcessor())
+        {
+			m->disconnectRuntimeTargets(getMainController());
+	        m->connectRuntimeTargets(getMainController());
+        }
+            
 	}
 }
 
