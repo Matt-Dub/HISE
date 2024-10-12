@@ -1442,10 +1442,10 @@ void ScriptCreatedComponentWrappers::LabelWrapper::updateFont(ScriptingApi::Cont
 			l->setFont(font);
 		}
 	}
-
+	
 	l->setUsePasswordCharacter(fontStyle == "Password");
 
-	l->setJustificationType(sl->getJustification());
+	l->setJustificationForLabelAndTextEditor(sl->getJustification());
 }
 
 void ScriptCreatedComponentWrappers::LabelWrapper::updateColours(MultilineLabel * l)
