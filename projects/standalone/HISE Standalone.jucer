@@ -99,7 +99,7 @@
       </MODULEPATHS>
     </XCODE_MAC>
     <VS2022 targetFolder="Builds/VisualStudio2022" smallIcon="ho3qQy" bigIcon="ho3qQy"
-            useIPP="Sequential" IPPLibrary="" extraDefs="HISE_SCRIPT_SERVER_TIMEOUT=20000&#10;HISE_USE_VS2022=1&#10;PERFETTO=0&#10;NOMINMAX=1 &#10;WIN32_LEAN_AND_MEAN=1&#10;USE_IPP=1&#10;HISE_USE_SVF_FOR_CURVE_EQ=1&#10;HISE_USE_EXTENDED_TEMPO_VALUES=1&#10;NUM_MAX_CHANNELS = 20"
+            useIPP="Sequential" IPPLibrary="" extraDefs="HISE_SCRIPT_SERVER_TIMEOUT=20000&#10;HISE_USE_VS2022=1&#10;PERFETTO=0&#10;NOMINMAX=1 &#10;WIN32_LEAN_AND_MEAN=1&#10;USE_IPP=1&#10;HISE_USE_SVF_FOR_CURVE_EQ=1&#10;HISE_USE_EXTENDED_TEMPO_VALUES=1&#10;NUM_MAX_CHANNELS = 24&#10;HISE_NUM_PLUGIN_CHANNELS=24"
             extraCompilerFlags="/bigobj  /cgthreads8 /wd&quot;4100&quot; /wd&quot;4661&quot; /wd&quot;4456&quot; /wd&quot;4244&quot; /wd&quot;4457&quot; /wd&quot;4458&quot; /wd&quot;4127&quot; /Zc:__cplusplus /permissive- /vmg&#10;&#10; "
             IPP1ALibrary="true">
       <CONFIGURATIONS>
@@ -128,7 +128,7 @@
                        debugInformationFormat="ProgramDatabase" enablePluginBinaryCopyStep="0"
                        linkTimeOptimisation="1" libraryPath="C:\Program Files\Faust\lib"
                        postbuildCommand="copy /Y &quot;C:\Program Files\Faust\lib\faust.dll&quot;  &quot;$(TargetDir)faust.dll&quot;"
-                       defines="HISE_INCLUDE_FAUST=1&#10;HISE_FAUST_USE_LLVM_JIT=1&#10;HISE_INCLUDE_FAUST_JIT=1&#10;PERFETTO=1&#10;HISE_USE_EXTENDED_TEMPO_VALUES=1&#10;HISE_USE_SVF_FOR_CURVE_EQ=1&#10;NUM_MAX_CHANNELS = 20"/>
+                       defines="HISE_INCLUDE_FAUST=1&#10;HISE_FAUST_USE_LLVM_JIT=1&#10;HISE_INCLUDE_FAUST_JIT=1&#10;PERFETTO=1&#10;HISE_USE_EXTENDED_TEMPO_VALUES=1&#10;HISE_USE_SVF_FOR_CURVE_EQ=1&#10;NUM_MAX_CHANNELS = 24&#10;HISE_NUM_PLUGIN_CHANNELS=24"/>
         <CONFIGURATION name="Minimal Build" generateManifest="1" winArchitecture="x64"
                        isDebug="1" optimisation="1" targetName="HISE Debug" headerPath="../../../../tools/SDK/ASIOSDK2.3/common&#10;C:\Program Files\Faust\include"
                        useRuntimeLibDLL="0" debugInformationFormat="ProgramDatabase"

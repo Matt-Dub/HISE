@@ -1,0 +1,23 @@
+{
+  "Type": "ServerController",
+  "StyleData": {
+  },
+  "Font": "",
+  "FontSize": 14.0,
+  "LayoutData": {
+    "ID": "anonymous",
+    "Size": -0.5,
+    "Folded": 0,
+    "Visible": true,
+    "ForceFoldButton": 0,
+    "ForceShowTitle": 0,
+    "MinSize": -1,
+    "FocusKeyPress": "",
+    "FoldKeyPress": ""
+  },
+  "ColourData": {
+  },
+  "ProcessorId": "",
+  "Index": -1,
+  "FollowWorkspace": false
+}
