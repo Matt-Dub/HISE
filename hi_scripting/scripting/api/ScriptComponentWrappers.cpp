@@ -2881,6 +2881,7 @@ ScriptCreatedComponentWrappers::FloatingTileWrapper::FloatingTileWrapper(ScriptC
 	ft->setIsFloatingTileOnInterface();
 	component = ft;
 
+	ft->setComponentID(floatingTile->getName().toString());
 	ft->setName(floatingTile->name.toString());
 	ft->setOpaque(false);
 	ft->setContent(floatingTile->getContentData());
@@ -3018,6 +3019,7 @@ void ScriptedControlAudioParameter::setControlledScriptComponent(ScriptingApi::C
 	{
 		const float min = c->getScriptObjectProperty(ScriptingApi::Content::ScriptComponent::Properties::min);
 		const float max = c->getScriptObjectProperty(ScriptingApi::Content::ScriptComponent::Properties::max);
+		vtc = newComponent->getValueToTextConverter();
 
 		range = NormalisableRange<float>(min, max);
 
@@ -3146,6 +3148,17 @@ String ScriptedControlAudioParameter::getLabel() const
 
 String ScriptedControlAudioParameter::getText(float value, int) const
 {
+	if(vtc.active)
+	{
+		value = range.convertFrom0to1(value);
+
+		if(type == ScriptedControlAudioParameter::Type::ComboBox)
+			value -= 1.0;
+
+		return vtc.getTextForValue((double)value);
+	}
+		
+
 	switch (type)
 	{
 	case ScriptedControlAudioParameter::Type::Slider:
@@ -3178,6 +3191,9 @@ String ScriptedControlAudioParameter::getText(float value, int) const
 
 float ScriptedControlAudioParameter::getValueForText(const String &text) const
 {
+	if(vtc.active)
+		return static_cast<float>(vtc.getValueForText(text));
+
 	switch (type)
 	{
 	case ScriptedControlAudioParameter::Type::Slider:

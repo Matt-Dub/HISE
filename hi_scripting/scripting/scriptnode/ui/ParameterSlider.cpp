@@ -1052,14 +1052,15 @@ void ParameterSlider::updateRange(Identifier, var)
 
 bool ParameterSlider::isInterestedInDragSource(const SourceDetails& details)
 {
+#if USE_BACKEND
 	if (details.sourceComponent == this)
 		return false;
 
 	if(pTree[PropertyIds::Automated])
 		return false;
 
-	auto sourceNode = details.sourceComponent->findParentComponentOfClass<NodeComponent>()->node.get();
-
+	WeakReference<NodeBase> sourceNode = DspNetworkListeners::getSourceNodeFromComponentDrag(details.sourceComponent);
+	
     if(dynamic_cast<NodeContainer*>(node.get()) != nullptr)
     {
         if(valuetree::Helpers::isParent(sourceNode->getValueTree(), node->getValueTree()))
@@ -1088,7 +1089,7 @@ bool ParameterSlider::isInterestedInDragSource(const SourceDetails& details)
 		return false;
 	}
 	
-    if(auto modSource = dynamic_cast<ModulationSourceNode*>(sourceNode))
+    if(auto modSource = dynamic_cast<ModulationSourceNode*>(sourceNode.get()))
     {
         auto h = modSource->getParameterHolder();
 
@@ -1118,6 +1119,9 @@ bool ParameterSlider::isInterestedInDragSource(const SourceDetails& details)
 		return false;
 
 	return !isReadOnlyModulated;
+#else
+	return false;
+#endif
 }
 
 void ParameterSlider::paint(Graphics& g)
@@ -1265,7 +1269,7 @@ juce::ValueTree ParameterSlider::getConnectionSourceTree()
 	return parameterToControl->getConnectionSourceTree(true);
 }
 
-bool ParameterSlider::matchesConnection(ValueTree& c) const
+bool ParameterSlider::matchesConnection(const ValueTree& c) const
 {
 	if (parameterToControl == nullptr)
 		return false;

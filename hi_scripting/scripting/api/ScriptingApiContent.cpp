@@ -2773,9 +2773,29 @@ String ScriptingApi::Content::ScriptComboBox::getItemText() const
 {
 	StringArray items = getItemList();
 
-    if(isPositiveAndBelow((int)value, (items.size()+1)))
+	auto customPopup = getScriptObjectProperty(Properties::useCustomPopup);
+
+	if(customPopup)
+	{
+		for(int i = 0; i < items.size(); i++)
+		{
+			auto s = items[i];
+			auto isHeadline = s.startsWith("**");
+			auto isSeparator = s.startsWith("___");
+
+			if(isHeadline || isSeparator)
+				items.remove(i--);
+		}
+	}
+
+	if(isPositiveAndBelow((int)value, (items.size()+1)))
     {
-        return items[(int)value - 1];
+        auto itemText = items[(int)value - 1];
+
+		if(customPopup)
+			return itemText.fromLastOccurrenceOf("::", false, false);
+		else
+			return itemText;
     }
     
     return "No options";
@@ -6774,13 +6794,6 @@ void ScriptingApi::Content::beginInitialization()
 
 void ScriptingApi::Content::setHeight(int newHeight) noexcept
 {
-	
-	if (newHeight > 800)
-	{
-		reportScriptError("Go easy on the height! (" + String(800) + "px is enough)");
-		return;
-	}
-
 	if(height != newHeight)
 	{
 		height = newHeight;
@@ -6792,12 +6805,6 @@ void ScriptingApi::Content::setHeight(int newHeight) noexcept
 
 void ScriptingApi::Content::setWidth(int newWidth) noexcept
 {
-	if (newWidth > 1280)
-	{
-		reportScriptError("Go easy on the width! (1280px is enough)");
-		return;
-	}
-
 	if(width != newWidth)
 	{
 		width = newWidth;
