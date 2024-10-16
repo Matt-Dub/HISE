@@ -694,6 +694,7 @@ struct ParameterSlider::RangeComponent : public ComponentWithMiddleMouseDrag,
 			m.addSeparator();
 			m.addItem(5, "Invert range", true, RangeHelpers::isInverted(getParent().pTree));
 			m.addItem(7, "Copy range to source", connectionSource.isValid());
+			m.addItem(8, "Set as default value");
 
 			auto r = m.show();
 
@@ -749,6 +750,11 @@ struct ParameterSlider::RangeComponent : public ComponentWithMiddleMouseDrag,
 				{
 					RangeHelpers::storeDoubleRange(ptree, cr, getParent().node->getUndoManager());
 				}
+			}
+			if(r == 8)
+			{
+				auto p = getParent().pTree;
+				p.setProperty(PropertyIds::DefaultValue, p[PropertyIds::Value], getParent().node->getUndoManager());
 			}
 			if (r > 9000)
 			{
@@ -918,6 +924,23 @@ ParameterSlider::ParameterSlider(NodeBase* node_, int index_) :
 		repaint();
 	});
 
+	if(!pTree.hasProperty(PropertyIds::DefaultValue))
+		pTree.setProperty(PropertyIds::DefaultValue, pTree[PropertyIds::Value], node->getUndoManager());
+
+	defaultValueListener.setCallback(pTree, { PropertyIds::DefaultValue }, valuetree::AsyncMode::Asynchronously, [this](const Identifier&, const var& newValue)
+	{
+		auto nv = (double)newValue;
+
+		if(getRange().contains(nv) || getRange().getEnd() == nv)
+		{
+			setDoubleClickReturnValue(true, nv);
+		}
+		else
+		{
+			setDoubleClickReturnValue(false, 0.0);
+		}
+	});
+
 	automationListener.setCallback(pTree, {PropertyIds::Automated}, valuetree::AsyncMode::Asynchronously,
 	[this](const Identifier& id, var newValue)
 	{
@@ -1016,8 +1039,14 @@ void ParameterSlider::updateRange(Identifier, var)
 	setRange(range.rng.getRange(), range.rng.interval);
 	setSkewFactor(range.rng.skew);
 
-	
+	if(pTree.hasProperty(PropertyIds::DefaultValue))
+	{
+		auto dv = pTree[PropertyIds::DefaultValue];
 
+		if(!(getRange().contains((double)dv) || getRange().getEnd() == (double)dv))
+			setDoubleClickReturnValue(false, getRange().getStart());
+	}
+	
 	repaint();
 }
 
@@ -1364,7 +1393,7 @@ void ParameterSlider::mouseExit(const MouseEvent& e)
 	Slider::mouseExit(e);
 }
 
-void ParameterSlider::mouseDoubleClick(const MouseEvent&)
+void ParameterSlider::mouseDoubleClick(const MouseEvent& e)
 {
 	if (!isEnabled())
 	{
@@ -1435,6 +1464,10 @@ void ParameterSlider::mouseDoubleClick(const MouseEvent&)
 				}
 			}
 		}
+	}
+	else
+	{
+		Slider::mouseDoubleClick(e);
 	}
 }
 
