@@ -141,7 +141,7 @@
 #endif
 
 #ifndef    USE_IPP
- //#define USE_IPP 1
+ #define   USE_IPP 0
 #endif
 
 #ifndef    USE_VDSP_FFT

@@ -102,9 +102,7 @@ struct HiseJavascriptEngine::RootObject::ConstReference : public Expression
 
 	bool isConstant() const override
 	{
-        if (ns == nullptr)
-            return false;
-        
+		jassert(ns != nullptr);
 		auto v = ns->constObjects.getValueAt(index);
 
 		// objects and arrays are not constant...
