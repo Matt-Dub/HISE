@@ -141,7 +141,7 @@
 #endif
 
 #ifndef    USE_IPP
- #define   USE_IPP 0
+ //#define USE_IPP 1
 #endif
 
 #ifndef    USE_VDSP_FFT
@@ -315,7 +315,7 @@
 // hi_faust flags:
 
 #ifndef    HISE_INCLUDE_FAUST
- //#define HISE_INCLUDE_FAUST 0
+ #define   HISE_INCLUDE_FAUST 1
 #endif
 
 #ifndef    HISE_FAUST_USE_LLVM_JIT
@@ -323,7 +323,7 @@
 #endif
 
 #ifndef    HISE_INCLUDE_FAUST_JIT
- //#define HISE_INCLUDE_FAUST_JIT 0
+ #define   HISE_INCLUDE_FAUST_JIT 1
 #endif
 
 //==============================================================================

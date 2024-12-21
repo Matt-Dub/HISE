@@ -192,7 +192,7 @@ public:
 
 	bool isSuspendedOnSilence() const final override
 	{
-		return true;
+		return false;
 	}
 
 	void enableSpectrumAnalyser(bool shouldBeEnabled)
