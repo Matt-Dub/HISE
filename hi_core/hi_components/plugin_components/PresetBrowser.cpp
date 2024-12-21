@@ -870,7 +870,7 @@ void PresetBrowser::resized()
 			if (r.wasOk())
 				favoriteButton->setBounds(bounds);
 			else
-				favoriteButton->setBounds(ar.removeFromLeft(30));
+				favoriteButton->setBounds(ar.removeFromRight(30));
 		}
 
 		ar.removeFromLeft(10);
