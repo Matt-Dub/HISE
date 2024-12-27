@@ -44,9 +44,9 @@ using LabelListener = Label::Listener;
 namespace hise { using namespace juce;
 
 
-/** Change this value if you need more than 8 stereo channels in HISE routing. */
+/** Change this value if you need more than 8 stereo channels in HISE routing. Default: 16*/
 #ifndef NUM_MAX_CHANNELS
-#define NUM_MAX_CHANNELS 16
+#define NUM_MAX_CHANNELS 48
 #endif
 
 #if NUM_MAX_CHANNELS % 2 != 0
@@ -69,9 +69,10 @@ namespace hise { using namespace juce;
  
     It tries to use a sensible default here, but you can override this (as a positive value, it will calculate the gain factor by taking the
     number as negative dB value and convert it to a gain factor).
+    Default: 60
 */
 #ifndef HISE_SILENCE_THRESHOLD_DB
-#define HISE_SILENCE_THRESHOLD_DB 60
+#define HISE_SILENCE_THRESHOLD_DB 80 
 #endif
 
 /** This can be used to allow a frame processing context in scriptnode to use more than two channels.
