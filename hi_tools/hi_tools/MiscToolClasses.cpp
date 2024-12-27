@@ -2445,7 +2445,7 @@ float FFTHelpers::getPixelValueForLogXAxis(float freq, float width)
 	return (width - 5) * (log(freq / lowFreq) / log(highFreq / lowFreq)) + 2.5f;
 }
 
-juce::PixelRGB Spectrum2D::LookupTable::getColouredPixel(float normalisedInput)
+juce::PixelARGB Spectrum2D::LookupTable::getColouredPixel(float normalisedInput, bool useAlphaValue)
 {
 	auto lutValue = data[jlimit(0, LookupTableSize - 1, roundToInt(normalisedInput * (float)LookupTableSize))];
 	float a = JUCE_LIVE_CONSTANT_OFF(0.3f);
@@ -2453,10 +2453,8 @@ juce::PixelRGB Spectrum2D::LookupTable::getColouredPixel(float normalisedInput)
 	auto r = (float)lutValue.getRed() * v;
 	auto g = (float)lutValue.getGreen() * v;
 	auto b = (float)lutValue.getBlue() * v;
-
-	PixelRGB returnValue;
-	returnValue.setARGB(255, (uint8)r, (uint8)g, (uint8)b);
-	return returnValue;
+	
+	return PixelARGB(useAlphaValue ? jmax(r, g, b) : 255, (uint8)r, (uint8)g, (uint8)b);
 }
 
 void Spectrum2D::LookupTable::setColourScheme(ColourScheme cs)
@@ -2512,15 +2510,13 @@ void Spectrum2D::LookupTable::setColourScheme(ColourScheme cs)
 Spectrum2D::LookupTable::LookupTable()
 {
 	setColourScheme(ColourScheme::violetToOrange);
-
-	
 }
 
 Image Spectrum2D::createSpectrumImage(AudioSampleBuffer& lastBuffer)
 {
 	TRACE_EVENT("scripting", "create spectrum image");
 
-    auto newImage = Image(useAlphaChannel ? Image::ARGB : Image::RGB, lastBuffer.getNumSamples(), lastBuffer.getNumChannels(), true);
+    auto newImage = Image(Image::ARGB, lastBuffer.getNumSamples(), lastBuffer.getNumChannels(), true);
 
 	Image::BitmapData bd(newImage, Image::BitmapData::writeOnly);
 	
@@ -2530,58 +2526,24 @@ Image Spectrum2D::createSpectrumImage(AudioSampleBuffer& lastBuffer)
 		
 		for(int x = 0; x < lastBuffer.getNumSamples(); x++)
 		{
-			auto lutValue = parameters->lut->getColouredPixel(src[x]);
-
-			if(useAlphaChannel)
-			{
-				auto r = lutValue.getRed();
-				auto g = lutValue.getGreen();
-				auto b = lutValue.getBlue();
-				auto a = jmax(r, g, b);
-
-				auto pp = (PixelARGB*)(bd.getPixelPointer(x, y));
-				pp->set(PixelARGB(a, r, g, b));
-			}
-			else
-			{
-				auto pp = (PixelRGB*)(bd.getPixelPointer(x, y));
-				pp->set(lutValue);
-			}
-				
+			auto lutValue = parameters->lut->getColouredPixel(src[x], useAlphaChannel);
+			auto pp = (PixelARGB*)(bd.getPixelPointer(x, y));
+			pp->set(lutValue);
 		}
 	}
 
-#if 0
-    for (int x = 0; x < s2dHalf; x++)
-    {
-        auto skewedProportionY = holder->getYPosition((float)x / (float)s2dHalf);
-        auto fftDataIndex = jlimit(0, s2dHalf-1, (int)(skewedProportionY * (int)s2dHalf));
+	testImage(newImage, false, "after creation");
 
-        for (int i = 0; i < lastBuffer.getNumSamples(); i++)
-        {
-            auto s = lastBuffer.getSample(fftDataIndex, i);
-            s *= (1.0f / gf);
-
-            auto alpha = jlimit(0.0f, 1.0f, s);
-
-            alpha = holder->getXPosition(alpha);
-            alpha = std::pow(alpha, parameters->gamma);
-
-			auto lutValue = parameters->lut->getColouredPixel(alpha);
-            newImage.setPixelAt(x, i, lutValue);
-        }
-    }
-#endif
 
     return newImage;
 }
 
 
 
-AudioSampleBuffer Spectrum2D::createSpectrumBuffer()
+AudioSampleBuffer Spectrum2D::createSpectrumBuffer(bool useFallback)
 {
 	TRACE_EVENT("scripting", "create spectrum buffer");
-    auto fft = juce::dsp::FFT(parameters->order);
+    auto fft = juce::dsp::FFT(parameters->order, useFallback);
 
     auto numSamplesToFill = jmax(0, originalSource.getNumSamples() / parameters->Spectrum2DSize * parameters->oversamplingFactor - 1);
 
@@ -2944,7 +2906,7 @@ void Spectrum2D::Parameters::Editor::paint(Graphics& g)
 	for (int i = 0; i < specArea.getWidth(); i+= 2)
 	{
 		auto ninput = (float)i / (float)specArea.getWidth();
-		auto p = param->lut->getColouredPixel(ninput);
+		auto p = param->lut->getColouredPixel(ninput, true);
 
 		Colour c(p.getNativeARGB());
 		g.setColour(c);

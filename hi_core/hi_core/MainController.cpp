@@ -726,6 +726,22 @@ bool MainController::shouldUseSoftBypassRamps() const noexcept
 #endif
 }
 
+ONNXLoader::Ptr MainController::getONNXLoader()
+{
+#if USE_BACKEND
+	File libraryPath(GET_HISE_SETTING(getMainSynthChain(), HiseSettings::Compiler::HisePath).toString());
+	libraryPath = libraryPath.getChildFile("tools/onnx_lib");
+#else
+	auto libraryPath = FrontendHandler::getAppDataDirectory(this);
+#endif
+	return new ONNXLoader(libraryPath.getFullPathName());
+}
+
+MarkdownContentProcessor* MainController::getCurrentMarkdownPreview()
+{
+	return currentPreview;
+}
+
 void callOnAllChildren(Component* c, const std::function<void(Component*)>& f)
 {
 	f(c);
