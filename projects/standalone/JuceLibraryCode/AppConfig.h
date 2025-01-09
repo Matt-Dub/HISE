@@ -242,7 +242,7 @@
 #endif
 
 #ifndef    HISE_USE_OPENGL_FOR_PLUGIN
- //#define HISE_USE_OPENGL_FOR_PLUGIN 0
+ #define   HISE_USE_OPENGL_FOR_PLUGIN 0
 #endif
 
 #ifndef    HISE_DEFAULT_OPENGL_VALUE
