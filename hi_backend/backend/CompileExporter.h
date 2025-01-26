@@ -235,6 +235,8 @@ public:
 		return compressor.compress(v, target);
 	}
 
+	ChildProcessManager* manager = nullptr;
+
 	int getBuildOptionPart(const String& argument);
 
 	static void setExportingFromCommandLine()
@@ -251,15 +253,31 @@ public:
 
 	static bool isExportingFromCommandLine() { return globalCommandLineExport; }
 
-    bool shouldBeSilent() const { return isExportingFromCommandLine() || silentMode; }
+    bool shouldBeSilent() const { return isExportingFromCommandLine() || silentMode || manager != nullptr; }
     
 	struct BatchFileCreator
 	{
-		static void createBatchFile(CompileExporter* exporter, BuildOption buildOption, TargetTypes types, bool hasChildProcessManager=false);
-		static File getBatchFile(CompileExporter* exporter);
+		static void createBatchFile(CompileExporter* exporter, BuildOption buildOption, TargetTypes types, ChildProcessManager* m=nullptr);
+		static File getBatchFile(CompileExporter* exporter, ChildProcessManager* m=nullptr);
 	};
 
+	void setSilent(bool shouldBeSilent) { silentMode = shouldBeSilent; }
+
 protected:
+
+	void setProgress(double d)
+	{
+		if(manager != nullptr)
+			manager->setProgress(d);
+	}
+
+	void logMessage(const String& m)
+	{
+		if(isExportingFromCommandLine())
+			std::cout << m << "\n";
+		else if (manager != nullptr)
+			manager->logMessage(m);
+	}
 
     bool noLto = false;
     

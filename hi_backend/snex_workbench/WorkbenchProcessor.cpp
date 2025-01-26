@@ -100,30 +100,34 @@ struct IncludeSorter
 	};
 };
 
-DspNetworkCompileExporter::DspNetworkCompileExporter(Component* e, BackendProcessor* bp) :
+DspNetworkCompileExporter::DspNetworkCompileExporter(Component* e, BackendProcessor* bp, bool skipCompilation_) :
 	DialogWindowWithBackgroundThread("Compile DSP networks"),
 	ControlledObject(bp),
 	CompileExporter(bp->getMainSynthChain()),
-	editor(e)
+	editor(e),
+	skipCompilation(skipCompilation_) 
 {
 	addComboBox("build", { "Debug", "CI", "Release" }, "Build Configuration");
 
 #if !JUCE_DEBUG
     getComboBoxComponent("build")->setText("Release", dontSendNotification);
 #endif
-    
-	if (getNetwork() == nullptr)
-	{
-		raw::Builder builder(bp);
-		MainController::ScopedBadBabysitter sb(bp);
 
-		auto jmp = builder.create<JavascriptMasterEffect>(bp->getMainSynthChain(), raw::IDs::Chains::FX);
-		jmp->getOrCreate("internal_dsp");
+	if(!skipCompilation)
+	{
+		if (getNetwork() == nullptr)
+		{
+			raw::Builder builder(bp);
+			MainController::ScopedBadBabysitter sb(bp);
+
+			auto jmp = builder.create<JavascriptMasterEffect>(bp->getMainSynthChain(), raw::IDs::Chains::FX);
+			jmp->getOrCreate("internal_dsp");
+		}
 	}
 
 	if (auto n = getNetwork())
 		n->createAllNodesOnce();
-
+	
 	auto customProperties = bp->dllManager->getSubFolder(getMainController(), BackendDllManager::FolderSubType::ThirdParty).getChildFile("node_properties.json");
 
 	if (customProperties.existsAsFile())
@@ -221,7 +225,7 @@ void DspNetworkCompileExporter::writeDebugFileAndShowSolution()
     
 	auto hasThirdPartyFiles = includedThirdPartyFiles.isEmpty();
 
-    if (hasThirdPartyFiles && PresetHandler::showYesNoWindow("Quit HISE", "Do you want to quit HISE and show VS solution for debugging the DLL?  \n> Double click on the solution file, then run the VS debugger and it will open HISE with the ability to set VS breakpoints in your C++ nodes"))
+    if (hasThirdPartyFiles && managerToUse == nullptr && PresetHandler::showYesNoWindow("Quit HISE", "Do you want to quit HISE and show VS solution for debugging the DLL?  \n> Double click on the solution file, then run the VS debugger and it will open HISE with the ability to set VS breakpoints in your C++ nodes"))
     {
         solutionFile.revealToUser();
         JUCEApplication::quit();
@@ -234,7 +238,7 @@ void DspNetworkCompileExporter::writeDebugFileAndShowSolution()
     solutionFolder = solutionFolder.getChildFile("MacOSX");
     auto solutionFile = solutionFolder.getChildFile(projectName).withFileExtension("xcodeproj");
     
-    if (PresetHandler::showYesNoWindow("Show XCode Project", "Do you want to show the Xcode Project file?  \n> Double click on the file to open XCode, then choose `Debug->Attach to Process->HISE Debug` in order to run your C++ node in the Xcode Debugger"))
+    if (managerToUse == nullptr && PresetHandler::showYesNoWindow("Show XCode Project", "Do you want to show the Xcode Project file?  \n> Double click on the file to open XCode, then choose `Debug->Attach to Process->HISE Debug` in order to run your C++ node in the Xcode Debugger"))
     {
         solutionFile.revealToUser();
     }
@@ -283,10 +287,10 @@ void DspNetworkCompileExporter::run()
 {
 	auto n = getNetwork();
 
-	if(managerToUse != nullptr)
+	if(managerToUse != nullptr && !skipCompilation)
 		managerToUse->setProgress(0.25);
 
-	if (n == nullptr)
+	if (n == nullptr && !skipCompilation)
 	{
 		ok = (ErrorCodes)(int)DspNetworkErrorCodes::NoNetwork;
 		errorMessage << "You need at least one active network for the export process.  \n";
@@ -311,7 +315,7 @@ void DspNetworkCompileExporter::run()
 	//showStatusMessage("Unload DLL");
 	//getDllManager()->unloadDll();
 
-	showStatusMessage("Create files");
+	logMessage("Create files");
 
 	auto buildFolder = getFolder(BackendDllManager::FolderSubType::Binaries);
 
@@ -325,7 +329,7 @@ void DspNetworkCompileExporter::run()
 	for (auto s : unsortedList)
 		unsortedListU.removeAllInstancesOf(s);
 
-	showStatusMessage("Sorting include dependencies");
+	logMessage("Sorting include dependencies");
 
 	Array<File> list, ulist;
 
@@ -410,7 +414,7 @@ void DspNetworkCompileExporter::run()
 				return;
 			}
 				
-            showStatusMessage("Creating C++ file for Network " + id);
+            logMessage("Creating C++ file for Network " + id);
 
 			scriptnode::routing::LocalCableHelpers::replaceAllLocalCables(v);
 
@@ -531,7 +535,7 @@ void DspNetworkCompileExporter::run()
 
 	if (!thirdPartyFiles.isEmpty())
 	{
-		showStatusMessage("Copying third party files");
+		logMessage("Copying third party files");
 
 		for (auto tpf : thirdPartyFiles)
 		{
@@ -541,7 +545,7 @@ void DspNetworkCompileExporter::run()
 
 	if (!externalSamples.isEmpty())
 	{
-        showStatusMessage("Writing embedded audio data file");
+        logMessage("Writing embedded audio data file");
         
 		auto eadFile = getSourceDirectory(true).getChildFile("embedded_audiodata.h");
 		eadFile.deleteFile();
@@ -680,21 +684,24 @@ void DspNetworkCompileExporter::run()
 	BuildOption o = CompileExporter::VSTLinux;
 #endif
 
-	showStatusMessage("Compiling dll plugin");
+	logMessage("Compiling dll plugin");
 
 	configurationName = getComboBoxComponent("build")->getText();
 
-	if(managerToUse != nullptr)
-		managerToUse->setProgress(0.5);
+	if(!skipCompilation)
+	{
+		if(managerToUse != nullptr)
+			managerToUse->setProgress(0.5);
 
 #if JUCE_LINUX
-	ok = ErrorCodes::OK;
+		ok = ErrorCodes::OK;
 #else
-	ok = compileSolution(o, CompileExporter::TargetTypes::numTargetTypes, managerToUse);
+		ok = compileSolution(o, CompileExporter::TargetTypes::numTargetTypes, managerToUse);
 #endif
 
-	if(managerToUse != nullptr)
-		managerToUse->setProgress(1.0);
+		if(managerToUse != nullptr)
+			managerToUse->setProgress(1.0);
+	}
 }
 
 void DspNetworkCompileExporter::threadFinished()

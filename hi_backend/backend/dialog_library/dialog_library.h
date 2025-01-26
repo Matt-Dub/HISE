@@ -4,16 +4,100 @@
 
 namespace hise {
 
-class ChildProcessManager
+class ChildProcessManager: public AsyncUpdater
 {
 public:
 
-	virtual ~ChildProcessManager() {};
+	struct ScopedLogger: public juce::Logger
+	{
+		ScopedLogger(ChildProcessManager& cm_):
+		 cm(cm_),
+		 prevLogger(Logger::getCurrentLogger()) 
+		{
+			Logger::setCurrentLogger(this);
+		}
 
-	virtual void logMessage(const String& message) = 0;
+		~ScopedLogger()
+		{
+			Logger::setCurrentLogger(prevLogger);
+		}
+
+		Logger* prevLogger;
+
+		void logMessage(const String& message) override
+		{
+			cm.logMessage(message);
+		}
+
+		ChildProcessManager& cm;
+	};
+
+	ChildProcessManager()
+	{
+		log.setDisableUndo(true);
+	}
+
+	virtual ~ChildProcessManager() {};
 
 	virtual void setProgress(double progress) = 0;
 
+	void handleAsyncUpdate() override
+	{
+		CodeDocument::Position pos(log, log.getNumCharacters());
+
+		log.insertText(pos, currentMessage);
+		
+		SimpleReadWriteLock::ScopedReadLock sl(logLock);
+		currentMessage = {};
+	}
+
+	void logMessage(String message)
+	{
+		{
+			SimpleReadWriteLock::ScopedWriteLock sl(logLock);
+
+#if JUCE_MAC
+            if(message.contains("[!]"))
+            {
+                message = message.fromFirstOccurrenceOf("[!]", false, false);
+                
+                auto isWarning = message.contains("[-W") ||
+                                 message.contains("was built for newer macOS version"); // AAX linker warning
+                
+                if(isWarning)
+                    currentMessage << "\t";
+                else
+                    currentMessage << "!";
+            }
+#elif JUCE_WINDOWS
+            if(message.contains("warning"))
+                currentMessage << "\t";
+            if(message.contains("error"))
+                currentMessage << "!";
+#endif
+            auto isLinkerMessage = message.contains("Generating code") ||
+								   message.contains("Linking ");
+
+			if(isLinkerMessage)
+			{
+				currentMessage << "> ";
+				setProgress(0.8);
+			}
+               
+			currentMessage << message;
+			if(!message.containsChar('\n'))
+				currentMessage << '\n';
+		}
+        
+        triggerAsyncUpdate();
+	}
+
+	SimpleReadWriteLock logLock;
+    String currentMessage;
+
+	CodeDocument log;
+
+	//std::function<void(const String&)> logFunction;
 	std::function<void()> killFunction;
 };
 
@@ -283,8 +367,61 @@ public:
 	DialogWindowWithBackgroundThread::LogData logData;
 };
 
+struct CompileLogger: public Component,
+					  public CodeDocument::Listener
+{
+	Console::ConsoleTokeniser tokeniser; 
+
+	CompileLogger(ChildProcessManager* manager):
+	  parent(manager),
+	  console(manager->log, &tokeniser)
+	{
+		tokeniser.errorIsWholeLine = true;
+
+		parent->log.addListener(this);
+
+		console.setReadOnly(true);
+		console.setLineNumbersShown(false);
+		console.setColour(CodeEditorComponent::ColourIds::defaultTextColourId, Colour(0xFF999999));
+		console.setColour(CodeEditorComponent::ColourIds::backgroundColourId, Colour(0xFF222222));
+		console.setColour(CodeEditorComponent::ColourIds::highlightColourId, Colour(SIGNAL_COLOUR).withAlpha(0.5f));
+		addAndMakeVisible(console);
+	}
+
+	~CompileLogger()
+	{
+		parent->log.removeListener(this);
+	}
+
+	void codeDocumentTextDeleted(int startIndex, int endIndex) override {};
+
+	void codeDocumentTextInserted(const String& newText, int insertIndex) override
+	{
+		auto numLines = parent->log.getNumLines();
+		console.scrollToKeepLinesOnScreen({numLines - 1, numLines});
+	}
+
+	void resized() override
+	{
+		console.setBounds(getLocalBounds());
+	}
+
+	void paint(Graphics& g) override
+	{
+		
+	}
+
+	
+
+	ChildProcessManager* parent;
+	
+	CodeEditorComponent console;
+
+	
+};
+
 struct NetworkCompiler: public EncodedDialogBase,
-						public ChildProcessManager 
+						public ChildProcessManager
 {
 	NetworkCompiler(BackendRootWindow* bpe_);
 
@@ -304,24 +441,97 @@ struct NetworkCompiler: public EncodedDialogBase,
 		}
 	}
 
-	void logMessage(const String& message) override
-	{
-		auto m = readState("CompileOutput").toString();
-		m << "\n" << message;
-		writeState("CompileOutput", m);
-
-		if(auto md = dialog->findPageBaseForID("CompileOutput"))
-		{
-			MessageManagerLock mm;
-			md->postInit();
-		}
-	}
-
 	var onInit(const var::NativeFunctionArgs& args);
 	var compileTask(const var::NativeFunctionArgs& args);
 
+	
 	BackendRootWindow* bpe;
 	ScopedPointer<ControlledObject> compileExporter;
+};
+
+struct CompileProjectDialog: public EncodedDialogBase,
+						public ChildProcessManager
+{
+	CompileProjectDialog(BackendRootWindow* bpe_);
+
+	~CompileProjectDialog();
+
+	void bindCallbacks() override
+	{
+		MULTIPAGE_BIND_CPP(CompileProjectDialog, compileTask);
+		MULTIPAGE_BIND_CPP(CompileProjectDialog, onInit);
+		MULTIPAGE_BIND_CPP(CompileProjectDialog, onExportType);
+		MULTIPAGE_BIND_CPP(CompileProjectDialog, onPluginType);
+
+		MULTIPAGE_BIND_CPP(CompileProjectDialog, onComplete);
+		MULTIPAGE_BIND_CPP(CompileProjectDialog, onShowPluginFolder);
+		MULTIPAGE_BIND_CPP(CompileProjectDialog, onShowCompiledFile);
+
+		MULTIPAGE_BIND_CPP(CompileProjectDialog, onCopyToClipboard);
+	}
+
+	void setProgress(double progress) override
+	{
+		if(auto j = state->currentJob.get())
+		{
+			j->getProgress() = progress;
+		}
+	}
+
+    void refreshOutputFile()
+    {
+        auto targetFile = getTargetFile();
+        auto content = targetFile.getFullPathName();
+        
+        auto w = GLOBAL_BOLD_FONT().getStringWidth(content);
+        
+        if(w > 480)
+        {
+            auto root = getMainController()->getActiveFileHandler()->getRootFolder();
+            content = targetFile.getRelativePathFrom(root);
+        }
+            
+        setElementProperty("OutputFile", mpid::Text, content);
+    }
+
+	ScopedPointer<DialogWindowWithBackgroundThread> dllCompiler;
+
+	var onInit(const var::NativeFunctionArgs& args);
+	var compileTask(const var::NativeFunctionArgs& args);
+	var onExportType(const var::NativeFunctionArgs& args);
+	var onPluginType(const var::NativeFunctionArgs& args);
+
+	var onComplete(const var::NativeFunctionArgs& args);
+	var onShowPluginFolder(const var::NativeFunctionArgs& args);
+	var onShowCompiledFile(const var::NativeFunctionArgs& args);
+	var onCopyToClipboard(const var::NativeFunctionArgs& args);
+
+	File getTargetFile() const;
+
+	int getBuildFlag() const;
+
+	BackendRootWindow* bpe;
+	ScopedPointer<ControlledObject> compileExporter;
+};
+
+struct ScriptModuleReplacer: public EncodedDialogBase
+{
+	ScriptModuleReplacer(BackendRootWindow* bpe_);
+
+	void bindCallbacks() override
+	{
+		MULTIPAGE_BIND_CPP(ScriptModuleReplacer, onInit);
+		MULTIPAGE_BIND_CPP(ScriptModuleReplacer, onReplace);
+		MULTIPAGE_BIND_CPP(ScriptModuleReplacer, selectAll);
+	}
+
+	Array<var> allValues;
+
+	var onInit(const var::NativeFunctionArgs& args);
+	var onReplace(const var::NativeFunctionArgs& args);
+	var selectAll(const var::NativeFunctionArgs& args);
+
+	BackendRootWindow* bpe;
 };
 
 struct SnippetBrowser: public EncodedDialogBase
