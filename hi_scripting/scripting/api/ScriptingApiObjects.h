@@ -79,6 +79,8 @@ public:
 
 	static bool isSynchronous(const var& syncValue);
 
+	static var createRectangle(const var::NativeFunctionArgs& a);
+
 	static var getVarFromPoint(Point<float> pos);
 
 	static Point<float> getPointFromVar(const var& data, Result* r = nullptr);
@@ -509,6 +511,7 @@ namespace ScriptingObjects
 
 		~ScriptBackgroundTask()
 		{
+			recordingSession = nullptr;
 			stopThread(timeOut);
 		}
 
@@ -601,6 +604,8 @@ namespace ScriptingObjects
 
 	private:
 
+		ScopedPointer<ProfiledRecordingSession> recordingSession;
+
 		bool forwardToLoadingThread = false;
 
 		void callFinishCallback(bool isFinished, bool wasCancelled)
@@ -649,6 +654,7 @@ namespace ScriptingObjects
         bool realtimeSafe = true;
         
 		JUCE_DECLARE_WEAK_REFERENCEABLE(ScriptBackgroundTask);
+		JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ScriptBackgroundTask);
 	};
 
 	class ScriptThreadSafeStorage: public ConstScriptingObject
@@ -710,6 +716,7 @@ namespace ScriptingObjects
 			API_VOID_METHOD_WRAPPER_1(ScriptFFT, setEnableInverseFFT);
 			API_VOID_METHOD_WRAPPER_1(ScriptFFT, setSpectrum2DParameters);
 			API_METHOD_WRAPPER_0(ScriptFFT, getSpectrum2DParameters);
+			API_VOID_METHOD_WRAPPER_1(ScriptFFT, setUseSpectrumList);
 			API_METHOD_WRAPPER_4(ScriptFFT, dumpSpectrum);
 			API_VOID_METHOD_WRAPPER_1(ScriptFFT, setUseFallbackEngine);
 		};
@@ -759,7 +766,9 @@ namespace ScriptingObjects
 		/** Returns the JSON data for the spectrum parameters. */
 		var getSpectrum2DParameters() const;
 
-		/** Dumps the spectrum image to the given file (as PNG image). */
+		/** Flushes the given spectrum list to a file. */
+		void setUseSpectrumList(int numRows);
+
 		bool dumpSpectrum(var file, bool output, int numFreqPixels, int numTimePixels);
 
 		/** This forces the FFT object to use the fallback engine. */
@@ -775,6 +784,19 @@ namespace ScriptingObjects
 		Image getRescaledAndRotatedSpectrum(bool getOutput, int numFreqPixels, int numTimePixels);
 
 	private:
+
+		struct SpectrumList
+		{
+			SpectrumList(int numItems);
+
+			bool dump(const File& outputFile);
+
+			bool setImage(int imageIndex, const Image& img);
+			
+			std::vector<Image> images;
+		};
+
+		ScopedPointer<SpectrumList> spectrumList;
 
 		bool useFallback = false;
 

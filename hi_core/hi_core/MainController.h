@@ -1067,6 +1067,8 @@ public:
 
     private:
 
+		DebugSession::ProfileDataSource::Ptr userPresetSource;
+
 		friend class UserPresetHelpers;
 		friend class FrontendProcessor;
 
@@ -1475,7 +1477,8 @@ public:
 
 	void notifyShutdownToRegisteredObjects();
 
-	SampleManager &getSampleManager() noexcept {return *sampleManager; };
+	SampleManager &getSampleManager() noexcept {return *sampleManager; }
+	
 	const SampleManager &getSampleManager() const noexcept { return *sampleManager; };
 
 	MacroManager &getMacroManager() noexcept {return macroManager;};
@@ -1719,6 +1722,10 @@ public:
 
 	void timerCallback() override;
 
+	bool forceSaveAsPluginState = false;
+
+	void savePluginState(MemoryBlock& destData, int currentlyLoadedProgram);
+
 #if USE_BACKEND
 
 	void setScriptWatchTable(ScriptWatchTable *table);
@@ -1769,6 +1776,22 @@ public:
 
 #endif
 
+	DebugSession::ProfileDataSource::Ptr getProfileDataSourceForLock(LockHelpers::Type t, bool useRealLock, bool getWaitSource) const
+	{
+#if HISE_INCLUDE_PROFILING_TOOLKIT
+
+		useRealLock &= getDebugSession().isRecordingMultithread();
+
+		if(!useRealLock)
+			return nullptr;
+
+		auto idx = (int)t;
+		idx += ((int)getWaitSource * (int)LockHelpers::Type::numLockTypes);
+		return lockProfile.getSource(idx);
+#else
+		return nullptr;
+#endif
+	}
 
 	void setPlotter(Plotter *p);
 
@@ -1967,6 +1990,11 @@ public:
 		allowSoftBypassRamps = shouldBeAllowed;
 	}
 
+	
+
+	DebugSession& getDebugSession() { return debugSessionHandler; }
+	const DebugSession& getDebugSession() const { return debugSessionHandler; }
+
 	bool shouldUseSoftBypassRamps() const noexcept;
 
 	void setCurrentMarkdownPreview(MarkdownContentProcessor* p)
@@ -2124,6 +2152,7 @@ private:
 	bool embedAllResources = false;
 
 	PooledUIUpdater globalUIUpdater;
+    DebugSession debugSessionHandler;
 	dispatch::RootObject rootDispatcher;
 	dispatch::library::ProcessorHandler processorHandler;
 	dispatch::library::CustomAutomationSourceManager customAutomationSourceManager;
@@ -2154,6 +2183,11 @@ private:
 	CriticalSection iteratorLock;
 
 	ScopedPointer<UndoManager> controlUndoManager;
+
+
+
+	ProfileCollection lockProfile;
+	ProfileCollection loadProfile;
 
 	ScopedPointer<JavascriptThreadPool> javascriptThreadPool;
 

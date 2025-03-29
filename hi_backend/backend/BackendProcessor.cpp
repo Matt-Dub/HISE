@@ -136,6 +136,13 @@ scriptUnlocker(this)
     
 	synthChain->addProcessorsWhenEmpty();
 
+#if HISE_INCLUDE_PROFILING_TOOLKIT
+	getDebugSession().syncRecordingBroadcaster.addListener(*synthChain, [](ModulatorSynthChain& c, bool isEnabled)
+	{
+		c.setEnableProfiling(isEnabled, &c.getMainController()->getDebugSession(), 0);
+	}, false);
+#endif
+
 	getSampleManager().getModulatorSamplerSoundPool()->setDebugProcessor(synthChain);
 	getMacroManager().setMacroChain(synthChain);
 
@@ -489,20 +496,24 @@ void BackendProcessor::prepareToPlay(double newSampleRate, int samplesPerBlock)
 
 void BackendProcessor::getStateInformation(MemoryBlock &destData)
 {
-	MemoryOutputStream output(destData, false);
-
-	ValueTree v = synthChain->exportAsValueTree();
-
-	v.setProperty("ProjectRootFolder", GET_PROJECT_HANDLER(synthChain).getWorkDirectory().getFullPathName(), nullptr);
-
-	if (auto root = dynamic_cast<BackendRootWindow*>(getActiveEditor()))
+	if(forceSaveAsPluginState)
 	{
-		root->saveInterfaceData();
+		MainController::savePluginState(destData, 0);
 	}
+	else
+	{
+		MemoryOutputStream output(destData, false);
 
-	v.setProperty("InterfaceData", JSON::toString(editorInformation, true, DOUBLE_TO_STRING_DIGITS), nullptr);
+		ValueTree v = synthChain->exportAsValueTree();
 
-	v.writeToStream(output);
+		v.setProperty("ProjectRootFolder", GET_PROJECT_HANDLER(synthChain).getWorkDirectory().getFullPathName(), nullptr);
+
+		if (auto root = dynamic_cast<BackendRootWindow*>(getActiveEditor()))
+			root->saveInterfaceData();
+
+		v.setProperty("InterfaceData", JSON::toString(editorInformation, true, DOUBLE_TO_STRING_DIGITS), nullptr);
+		v.writeToStream(output);
+	}
 }
 
 void BackendProcessor::setStateInformation(const void *data, int sizeInBytes)
