@@ -138,7 +138,7 @@
 #endif
 
 #ifndef    USE_IPP
- #define   USE_IPP 1
+ #define   USE_IPP 0
 #endif
 
 #ifndef    USE_VDSP_FFT
@@ -242,7 +242,7 @@
 #endif
 
 #ifndef    HISE_USE_OPENGL_FOR_PLUGIN
- #define   HISE_USE_OPENGL_FOR_PLUGIN 0
+ //#define HISE_USE_OPENGL_FOR_PLUGIN 0
 #endif
 
 #ifndef    HISE_DEFAULT_OPENGL_VALUE
@@ -300,6 +300,10 @@
  #define   HI_EXPORT_DSP_LIBRARY 0
 #endif
 
+#ifndef    HISE_UPDATE_CONVOLUTION_DAMPING_ASYNC
+ //#define HISE_UPDATE_CONVOLUTION_DAMPING_ASYNC 1
+#endif
+
 #ifndef    IS_STATIC_DSP_LIBRARY
  //#define IS_STATIC_DSP_LIBRARY 1
 #endif
@@ -312,7 +316,7 @@
 // hi_faust flags:
 
 #ifndef    HISE_INCLUDE_FAUST
- #define   HISE_INCLUDE_FAUST 1
+ //#define HISE_INCLUDE_FAUST 0
 #endif
 
 #ifndef    HISE_FAUST_USE_LLVM_JIT
@@ -320,7 +324,7 @@
 #endif
 
 #ifndef    HISE_INCLUDE_FAUST_JIT
- #define   HISE_INCLUDE_FAUST_JIT 1
+ //#define HISE_INCLUDE_FAUST_JIT 0
 #endif
 
 //==============================================================================
@@ -376,6 +380,18 @@
 
 #ifndef    INCLUDE_BIG_SCRIPTNODE_OBJECT_COMPILATION
  //#define INCLUDE_BIG_SCRIPTNODE_OBJECT_COMPILATION 1
+#endif
+
+#ifndef    HISE_INCLUDE_BX_LICENSER
+ //#define HISE_INCLUDE_BX_LICENSER 0
+#endif
+
+#ifndef    HISE_INCLUDE_NKS_SDK
+ //#define HISE_INCLUDE_NKS_SDK 0
+#endif
+
+#ifndef    HISE_USE_SCRIPT_RECTANGLE_OBJECT
+ //#define HISE_USE_SCRIPT_RECTANGLE_OBJECT 0
 #endif
 
 //==============================================================================
@@ -436,7 +452,7 @@
 #endif
 
 #ifndef    HISE_USE_EXTENDED_TEMPO_VALUES
- //#define HISE_USE_EXTENDED_TEMPO_VALUES 0
+ #define   HISE_USE_EXTENDED_TEMPO_VALUES 1
 #endif
 
 //==============================================================================
