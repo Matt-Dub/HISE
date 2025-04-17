@@ -380,10 +380,22 @@ updater(*this)
 
     updater.suspendState = true;
     updater.updateDelayed();
+
+	AudioProcessor::addListener(&getUserPresetHandler());
 }
 
 FrontendProcessor::~FrontendProcessor()
 {
+	AudioProcessor::removeListener(&getUserPresetHandler());
+
+    for(auto p: getParameters())
+    {
+        if(auto typed = dynamic_cast<HisePluginParameterBase*>(p))
+        {
+            typed->cleanup();
+        }
+    }
+    
 	getRootDispatcher().setState(dispatch::HashedPath(dispatch::CharPtr::Type::Wildcard), dispatch::State::Shutdown);
 
 	numInstances--;

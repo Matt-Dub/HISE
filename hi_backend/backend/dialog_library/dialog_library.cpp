@@ -483,6 +483,9 @@ var ExportSetupWizard::onPost(const var::NativeFunctionArgs& args)
 
 var AboutWindow::initValues(const var::NativeFunctionArgs& args)
 {
+	
+
+#define set_dynamic(X) state->globalState.getDynamicObject()->setProperty(Identifier(#X), getMainController()->getExtraDefinitionsValue(#X, X));
 #define set(X) state->globalState.getDynamicObject()->setProperty(Identifier(#X), X);
 #define setXY(X, Y) state->globalState.getDynamicObject()->setProperty(Identifier(#X), Y);
     
@@ -532,7 +535,6 @@ var AboutWindow::initValues(const var::NativeFunctionArgs& args)
 #else
     setXY(HISE_INCLUDE_FAUST, 0);
 #endif
-    
 
     set(Version);
     set(USE_IPP);
@@ -540,8 +542,12 @@ var AboutWindow::initValues(const var::NativeFunctionArgs& args)
     set(HISE_INCLUDE_RT_NEURAL);
     set(NUM_POLYPHONIC_VOICES);
     set(NUM_MAX_CHANNELS);
-    set(NUM_HARDCODED_FX_MODS);
-    set(NUM_HARDCODED_POLY_FX_MODS);
+    set_dynamic(NUM_HARDCODED_FX_MODS);
+    set_dynamic(NUM_HARDCODED_POLY_FX_MODS);
+	set_dynamic(HISE_NUM_MACROS);
+	set_dynamic(HISE_MACROS_ARE_PLUGIN_PARAMETERS);
+	set_dynamic(HISE_SUSPENSION_TAIL_MS);
+
     set(HISE_MAX_DELAY_TIME_SAMPLES);
     set(HISE_USE_SVF_FOR_CURVE_EQ);
     set(USE_MOD2_WAVETABLESIZE);
@@ -1631,6 +1637,73 @@ var ScriptModuleReplacer::selectAll(const var::NativeFunctionArgs& args)
 
 	return var();
 }
-}	
-}	
+
+DebugSessionOptions::DebugSessionOptions(BackendRootWindow* bpe_):
+	EncodedDialogBase(bpe_, false)
+{
+	setName("Profiler Options");
+
+	loadFrom("1637.sNB..D...............35H...oi...4X.........J09R+fg2D8EC.ZHD5KrBzPpHCrCBfH+MJ4RAgTKekvWPA7Nbxbs3FwnrlxyvBHRp+QrscPtZbChmH7B.r..K.upVW9LuSRwyDFlB3LiyM3A63xdifhfbz99b5D5zI1kSoSEWID9IECU4kE92OS1kW66iEAzo7RI87z8cJl6r3YC5iSJN2IE6h9vvwCIOlDgDsWtkpk1KEQOhLIRjSao5.kyjQjLAhDHlHQjIOfL44nujHlHAxDM8xQjHBjHjXBs4SP7HRDHQbHwCHnziKyYmRUlHHIbfROpF1KM1mn.OtjypTIf9mT7fROe6L3AQDCPFnzS9YEk67WdPL.YTTTDTnx4bqj.L7sVONg9iemavLuC5UdOsB84LkK2R0NkM5NAHdmiwQUtpxeHDxCLVsZzgaGBy+F8V4xFYlNm8oFNs47CLYxDGPoVmoYJyzTMSp0jT6+mkIRBD+a4FU4+TJiRc0xYiMtqpAGkazWYrOA8.kTMruFe6TNvAKBhCTx5a6lF8dwZljc56NkCMlMzXNf1diRcRF6ssGSiIiFy6otJ2g0fy2eGJvCVFlaAmMO7tvPMk47BDX.PuVpNqKt.57AfM8sXqVaPoGd3gGvFuK+G94S68xou1zLs7DpuL+yvZKnkJVpnwzRmBDM.p71X3LqyJ3nsHmVUstKdfdeqYPQl2MXnZ8XU6LtwsPmSgsue5xZXS4rTXhuWeXr5fHOhbzXf3coeEZl6eWXTTjiLNmvu8FrdpiRcRRUffkIxPaNEWEKRVeUqTfU81b9jJAcZ8+sJVmKpf5Z7ZQI5spV0AA.XCAvBsCgHb4A3KQ0I.pEe5q27c5Dps0hJwN6U1cz7xKPcJc8lV7xoV5tInzXzl2ZlbJVfEfHfN04kyobJFZwkJVv.pRG.puNb14Kf1ael6cNgHnoO7sc5D8GVfkwvxGR6kWr23VOr0I1zLHyIqWZVlHCN0oZbNEtXAiFC5aKSAeUdw6k7yKCPkwt1K5TR4z243COPY5BonP88FSTu1GeNZ2t+XfPDnoO15lBDXbnFdGxTzPCDD.CZPPP.DFLJDRuIJjDkDobHkiHMAB.RzD..PXIjPBAAACCZcX6UPuf8Lc+1bsZy8Z5cQ+gMMIVzSSn0r2K43yhoI2npRhFdhNGVWW6KDnNnX9WJwhENn3vqw5WFxeaZwW+L1XyR8c.TaAtHYw7.oSwx6bjhj.VMPXNCpSdD.L6Ly1KohgfKGL3MDlVbtqq9fAtknqo8sArkDaw45nMrwy+Pl2ZPf9qcoIYMh+isYUKPtqeCib.AZs4rP7Wu81y1rav+oxFkWbjznZofZC2lNBYGrkK7+vqEAx2afChT3FhdXANi2RWMSq1TsHZ4FQBli9PtEIqyQlkVCevalYWIOKyrrwMLR2fSukdNlhheSgDsA2CmoHtPpwkajgBkngmjNnCdTGvHdqQcb5KYKUnZjovo7LKFuiuDXPx.iIGbt.jbPv2vcRxQMu4pJoPvXJk+1xrVCjFmb9XVzKIKU7nNxG.ftH6TQ8cWroPzyHcolOX9.IZL6dAWfv7f6fY+cQIcMKnJsnFxb03USI.LxsihIkwXgg6BFP8cmJISY5wVmruiEKxQLeXBzdDZT.z2FZRemv.z8eu6WrALnxs.xGD7TMjeUwn8lCxzMwtWH2KrkHCqSreEFqN6hxzmk50p7K5n0t6IjqYph3GoVsR3HYBojzvNQo61MIb1KBRZkvBI63wnpWrtJf0TJ7GQvyhTaPv3sa9F3XHDIQ8nEDTaOokJ2QvamoQdz96JJsLXA92beaC0l+WNcRQIEjZLIM7CaBX3l4q2fqpjkYVbGq2ymHwMqab5jPqntz2LX8x4glvtHTjAW4K7QHf4X7MTN95zRyClOUsDRiqeL18gxFPIxgM5ixBmoM9BSZTm9HVhhGMZ.+UXd3O+1XeZjffBCMOwth9KqPZC1tfOAHxYgLf7LWbvJx.EEmKkdyCIXv7mUE2+1mUIJ.trluoU5gNHU8OeyGEHvR9+DXvJfEZT9.LHiuc0ODRnjKu9aYt.QiRtN2C87ioDj2NBt6.f9yA4.0HkWz8u.QRjMAIN5XzEWGCODWl16L5bI.5XJB4oEAXd9IF5IB2VFdc7+pMOPoi...lNB..v5H...");
+
+	dialog->setFinishCallback([this]()
+	{
+		findParentComponentOfClass<ModalBaseWindow>()->clearModalComponent();
+	});
+
+#if HISE_INCLUDE_PROFILING_TOOLKIT
+	auto options = bpe_->getBackendProcessor()->getDebugSession().getOptions();
+	options.writeToObject(dialog->getState().globalState.getDynamicObject());
+#endif
+
+	if(auto b = dialog->findPageBaseForID("threadFilter"))
+		b->postInit();
+
+	if(auto b = dialog->findPageBaseForID("eventFilter"))
+		b->postInit();
+
+	if(auto b = dialog->findPageBaseForID("recordingLength"))
+		b->postInit();
+
+	if(auto b = dialog->findPageBaseForID("recordingTrigger"))
+		b->postInit();
+}
+
+var DebugSessionOptions::refresh(const var::NativeFunctionArgs& args)
+{
+	PROFILE_ONLY(getMainController()->getDebugSession().setOptions(dialog->getState().globalState));
+	return var();
+}
+
+var DebugSessionOptions::onExport(const var::NativeFunctionArgs& args)
+{
+#if HISE_INCLUDE_PROFILING_TOOLKIT
+
+	auto options = getMainController()->getDebugSession().getOptions();
+
+	DynamicObject::Ptr obj = new DynamicObject();
+
+	options.writeToObject(obj);
+
+	auto jsonText = JSON::toString(var(obj.get()), false);
+
+	SystemClipboard::copyTextToClipboard(jsonText);
+	PresetHandler::showMessageWindow("Export successfull", "The current options have been copied to the clipboard", PresetHandler::IconType::Info);
+
+#endif
+
+	return var();
+}
+
+} // namespace library
+} // namespace multipage
+
+#if USE_BACKEND && HISE_INCLUDE_PROFILING_TOOLKIT
+void hise::DebugSession::ProfileDataSource::ViewComponents::Manager::showOptions()
+{
+		auto bpe = GET_BACKEND_ROOT_WINDOW(this);
+		auto b = new multipage::library::DebugSessionOptions(bpe);
+
+		findParentComponentOfClass<FloatingTile>()->getRootFloatingTile()->showComponentAsDetachedPopup(b, &moreButton, {8, 16});
+};
+#endif
 }

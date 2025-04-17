@@ -261,6 +261,8 @@ public:
 			saveInPreset,
 			isPluginParameter,
 			pluginParameterName,
+			pluginParameterGroup,
+			deferControlCallback,
             isMetaParameter,
 			linkedTo,
 			automationId,
@@ -334,7 +336,19 @@ public:
 
 		PROFILE_ONLY(int getProfilePropertyTrackId(const Identifier& id) const { return (int)propertyTrackIds[id]; })
 
-		virtual ValueTree exportAsValueTree() const override;;
+		virtual ValueTree exportAsValueTree() const override;
+		bool isScriptPluginParameter()
+		{
+			bool ok = isAutomatable();
+			ok &= (bool)getScriptObjectProperty(ScriptingApi::Content::ScriptComponent::Properties::isPluginParameter);
+
+#if HISE_MACROS_ARE_PLUGIN_PARAMETERS
+			ok |= isAdditionalPluginParameter;
+#endif
+
+			return ok;
+		}
+
 		virtual void restoreFromValueTree(const ValueTree &v) override;;
 
 		String getDebugValue() const override { return getValue().toString(); };
@@ -700,6 +714,8 @@ public:
 			modulationData = newMod;
 		}
 
+		bool shouldDeferControlCallback() const { return defersControlCallback; }
+
 		MacroControlledObject::ModulationPopupData::Ptr getModulationData() const { return modulationData; }
 
 		int getStyleSheetPseudoState() const { return pseudoState; }
@@ -712,9 +728,9 @@ public:
 		void openTrack(ProfileCollection::ID id);
 		void closeTrack(ProfileCollection::ID id);
 
-	protected:
+		bool isAdditionalPluginParameter = false;
 
-		
+	protected:
 
 		String getCSSFromLocalLookAndFeel();
 
@@ -858,6 +874,8 @@ public:
 		ZLevelListener::ZLevel currentZLevel = ZLevelListener::ZLevel::Default;
 
 		mutable hise::SimpleReadWriteLock valueLock;
+
+		bool defersControlCallback = false;
 
 		bool countJsonSetProperties = true;
 		Identifier searchedProperty;
