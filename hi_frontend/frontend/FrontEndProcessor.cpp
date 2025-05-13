@@ -542,7 +542,9 @@ void FrontendProcessor::setStateInformation(const void *data, int sizeInBytes)
 	zstd::ZDefaultCompressor compressor;
 	compressor.expand(mb, v);
 
+#if HISE_INCLUDE_TEMPO_IN_PLUGIN_STATE
 	globalBPM = v.getProperty("HostTempo", -1.0);
+#endif
 
 	rawDataHolder->restoreFromValueTree(v);
 #else
@@ -570,7 +572,9 @@ void FrontendProcessor::setStateInformation(const void *data, int sizeInBytes)
 	channelData = v.getProperty("MidiChannelFilterData", -1);
 	if (channelData != -1) synthChain->getActiveChannelData()->restoreFromData(channelData);
 
+#if HISE_INCLUDE_TEMPO_IN_PLUGIN_STATE
 	globalBPM = v.getProperty("HostTempo", -1.0);
+#endif
 
     getUserPresetHandler().restoreStateManager(v, UserPresetIds::Modules);
     
@@ -578,7 +582,14 @@ void FrontendProcessor::setStateInformation(const void *data, int sizeInBytes)
 
 	if (userPresetName.isNotEmpty())
 	{
-		getUserPresetHandler().currentlyLoadedFile = (File(userPresetName));
+		if(ProjectHandler::isAbsolutePathCrossPlatform(userPresetName))
+		{
+			getUserPresetHandler().currentlyLoadedFile = (File(userPresetName));
+		}
+		else
+		{
+			getUserPresetHandler().currentlyLoadedFile = getActiveFileHandler()->getSubDirectory(FileHandlerBase::UserPresets).getChildFile(userPresetName);
+		}
 	}
 
 	if (getUserPresetHandler().isUsingCustomDataModel())
