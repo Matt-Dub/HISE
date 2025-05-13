@@ -1,0 +1,54 @@
+// Common Xcode release build settings for AAX SDK example plug-in projects
+//
+// These example settings may be used as a basis for your own
+// custom project configuration settings.
+//
+// Coyright 2020-2021, 2023 Avid Technology, Inc.
+// All rights reserved.
+// 
+// This file is part of the Avid AAX SDK.
+// 
+// The AAX SDK is subject to commercial or open-source licensing.
+// 
+// By using the AAX SDK, you agree to the terms of both the Avid AAX SDK License
+// Agreement and Avid Privacy Policy.
+// 
+// AAX SDK License: https://developer.avid.com/aax
+// Privacy Policy: https://www.avid.com/legal/privacy-policy-statement
+// 
+// Or: You may also use this code under the terms of the GPL v3 (see
+// www.gnu.org/licenses).
+// 
+// THE AAX SDK IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
+// EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
+// DISCLAIMED.
+
+#include "CommonSettings.xcconfig"
+
+GCC_PREPROCESSOR_DEFINITIONS = _NDEBUG=1 "JUCE_ObjCExtraSuffix=$(PRODUCT_NAME)"
+
+AAX_SDK_ROOT = $(SRCROOT)/../../../..
+
+GCC_OPTIMIZATION_LEVEL = 3
+
+OTHER_LDFLAGS = -Xlinker "-headerpad" -Xlinker 1500
+DEAD_CODE_STRIPPING = YES
+COPY_PHASE_STRIP = YES
+
+GCC_GENERATE_DEBUGGING_SYMBOLS = NO
+GCC_ENABLE_SYMBOL_SEPARATION = YES
+GCC_INLINES_ARE_PRIVATE_EXTERN = NO
+
+SEPARATE_SYMBOL_EDIT = NO
+DEAD_CODE_STRIPPING = YES
+ONLY_LINK_ESSENTIAL_SYMBOLS = YES
+LINKER_DISPLAYS_MANGLED_NAMES = NO
+LINKER_DISPLAYS_FILES_FOR_UNDEFINED_SYMBOLS = YES
+GENERATE_MASTER_OBJECT_FILE = NO
+STRIP_INSTALLED_PRODUCT = YES
+STRIP_STYLE = non-global
+COPY_PHASE_STRIP = YES
+PRESERVE_DEAD_CODE_INITS_AND_TERMS = YES 
+DEPLOYMENT_POSTPROCESSING = YES
+SEPARATE_STRIP = YES 
+STRIPFLAGS = -x -S

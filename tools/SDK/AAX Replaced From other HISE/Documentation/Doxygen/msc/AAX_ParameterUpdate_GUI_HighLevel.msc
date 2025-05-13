@@ -1,0 +1,93 @@
+/*===================================================================================================
+
+Copyright 2016, 2023-2024 Avid Technology, Inc. 
+All rights reserved.
+
+This file is part of the Avid AAX SDK.
+
+The AAX SDK is subject to commercial or open-source licensing.
+
+By using the AAX SDK, you agree to the terms of both the Avid AAX SDK License
+Agreement and Avid Privacy Policy.
+
+AAX SDK License: https://developer.avid.com/aax
+Privacy Policy: https://www.avid.com/legal/privacy-policy-statement
+
+Or: You may also use this code under the terms of the GPL v3 (see
+www.gnu.org/licenses).
+
+THE AAX SDK IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
+EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
+DISCLAIMED.
+
+===================================================================================================*/
+
+msc {
+	// Display properties
+	hscale = "1";
+	
+	// Declare entities
+	 host              [label = "Host", textbgcolor = "#edebff", arctextbgcolor = "#edebff"]
+	,plugin            [label = "Plug-In", textbgcolor = "#eafbef", arctextbgcolor = "#eafbef"]
+	;
+		
+	// -------------------
+	|||;
+	|||;
+	host note plugin [label = "Edit event handling", textbgcolor = "#f0f0f0"];
+	// -------------------
+	
+	plugin rbox plugin [label = "OS Edit Event"];
+	plugin -> host [label = "AAX_IAutomationDelegate::PostTouchRequest()", URL = "\ref AAX_IAutomationDelegate::PostTouchRequest()"];
+	plugin -> host [label = "AAX_IAutomationDelegate::PostSetValueRequest()", URL = "\ref AAX_IAutomationDelegate::PostSetValueRequest()"];
+	plugin -> host [label = "AAX_IAutomationDelegate::PostReleaseRequest()", URL = "\ref AAX_IAutomationDelegate::PostReleaseRequest()"];
+	
+	// -------------------
+	|||;
+	|||;
+	host note plugin [label = "Set value handling", textbgcolor = "#f0f0f0"];
+	// -------------------
+	
+	host rbox host [label = "PostTouchRequest() processed"];
+	host => plugin [label = "AAX_IEffectParameters::UpdateParameterTouch()\niTouchState: true", URL = "\ref AAX_IEffectParameters::UpdateParameterTouch()"];
+	plugin >> host;
+	
+	host rbox host [label = "PostSetValueRequest() processed"];
+	host => plugin [label = "AAX_IEffectParameters::UpdateParameterNormalizedValue()\niSource: AAX_eUpdateSource_Unspecified", URL = "\ref AAX_IEffectParameters::UpdateParameterNormalizedValue()"];
+	plugin => plugin [label = "Update parameter state"];
+	plugin -> host [label = "AAX_IAutomationDelegate::PostCurrentValue()", URL = "\ref AAX_IAutomationDelegate::PostCurrentValue()"];
+	plugin => plugin [label = "Increment number of changes", URL = "\ref AAX_IACFEffectParameters::GetNumberOfChanges()"];
+	plugin >> host;
+	
+	host rbox host [label = "PostReleaseRequest() processed"];
+	host => plugin [label = "AAX_IEffectParameters::UpdateParameterTouch()\niTouchState: false", URL = "\ref AAX_IEffectParameters::UpdateParameterTouch()"];
+	plugin >> host;
+	
+	// -------------------
+	|||;
+	|||;
+	host note plugin [label = "Current value handling", textbgcolor = "#f0f0f0"];
+	// -------------------
+	
+	host rbox host [label = "Following UpdateParameterNormalizedValue()"];
+	host => plugin [label = "AAX_IEffectParameters::GenerateCoefficients()", URL = "\ref AAX_IEffectParameters::GenerateCoefficients()", ID = "timestamp"];
+	plugin -> host [label = "AAX_IController::PostPacket()", URL = "AAX_IController::PostPacket()"];
+	plugin >> host;
+	
+	host rbox host [label = "PostCurrentValue() processed"];
+	host -> host [label = "Update other clients\n(async)"];
+	host => plugin [label = "AAX_IEffectGUI::ParameterUpdated()", URL = "AAX_IACFEffectGUI::ParameterUpdated()"];
+	plugin => plugin [label = "Update GUI state"];
+	plugin >> host;
+	
+	|||;
+	... [label = "Timestamp synchronization with real-time thread"];
+	|||;
+	
+	host rbox host [label = "PostPacket() processed"];
+	host -> plugin [label = "Update algorithm context"];
+	
+	
+	// [label = "", URL = "\ref "];
+		
+}

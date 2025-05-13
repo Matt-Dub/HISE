@@ -1,0 +1,67 @@
+/*===================================================================================================
+AAX_AuxInterface_TaskAgent.doxygen
+
+Copyright 2023-2024 Avid Technology, Inc. 
+All rights reserved.
+
+This file is part of the Avid AAX SDK.
+
+The AAX SDK is subject to commercial or open-source licensing.
+
+By using the AAX SDK, you agree to the terms of both the Avid AAX SDK License
+Agreement and Avid Privacy Policy.
+
+AAX SDK License: https://developer.avid.com/aax
+Privacy Policy: https://www.avid.com/legal/privacy-policy-statement
+
+Or: You may also use this code under the terms of the GPL v3 (see
+www.gnu.org/licenses).
+
+THE AAX SDK IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
+EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
+DISCLAIMED.
+
+===================================================================================================*/
+
+/** @defgroup AuxInterface_TaskAgent Task agent interface
+	@ingroup AdditionalFeatures
+
+	@brief A mechanism for hosts to request that plug-ins perform tasks
+
+		<EM>This interface represents an optional component that you can add to your plug-in in
+		order to support extended features of the %AAX SDK.</EM>
+
+		\compatibility This interface is not yet used in any %AAX hosts
+
+		The plug-in implements an \ref AAX_ITaskAgent, which is used by the host to add or
+		cancel tasks.
+
+		The host implements \ref AAX_IACFTask for task objects representing each task that it
+		wants the plug-in to perform.
+
+		To request a task, the host adds a task object to the plug-in's task agent interface.
+
+		The type of each task is identified with a four-char ID. If additional arbitrary data is
+		necessary to describe the task it is provided via \ref AAX_IDataBuffer "data buffers".
+		
+		The plug-in checks this data to understand what work needs to be done, then performs the
+		task. The task may be, and usually is, executed asynchronously. The plug-in optionally
+		updates the task progress as it proceedds, then calls \ref AAX_ITask::SetDone() when the work
+		is completed. If the task involves returning data back to the host, the plug-in first
+		calls \ref AAX_ITask::AddResult() one or more times to provide the data via data buffers.
+
+		To be available as a task agent, the plug-in's task agent implementation must be
+		registered with the host in the plug-in's  Description callback like other process
+		pointers. To add this interface to your plug-in at describe time, call
+		\ref AAX_IEffectDescriptor::AddProcPtr() using the \ref kAAX_ProcPtrID_Create_TaskAgent
+		selector.
+		
+	\section auxinterface_task_modulecommunication Communicating with other modules
+		
+		Like other modules, the task agent interface is provided with a reference to the
+		plug-in's \ref AAX_IEffectDirectData object at initialization. In order to transfer data
+		between a plug-in's \ref AAX_IEffectDirectData object and its other objects, dedicated
+		custom data methods in those objects' interfaces should be used.  For example, to
+		communicate with the plug-in's data model, use \ref AAX_IEffectParameters::GetCustomData()
+		and \ref AAX_IEffectParameters::SetCustomData() .
+*/

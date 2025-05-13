@@ -31,6 +31,9 @@ JUCE/extras/Projucer/Builds
 tools/SDK/vstsdk2.4/
 tools/SDK/AAX/
 tools/SDK/AAX Old/
+tools/SDK/AAX 2.7/
+tools/SDK/AAX Before/
+tools/SDK/AAX Replaced From other HISE/
 projects/native_jit_test/Builds/MacOSX/NativeJIT Test.xcodeproj/project.xcworkspace/xcuserdata/christophhart.xcuserdatad/UserInterfaceState.xcuserstate
 projects/native_jit_test/Builds/
 projects/native_jit_test/JuceLibraryCode/
