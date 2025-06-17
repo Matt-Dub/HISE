@@ -148,6 +148,8 @@ public:
 	void valueTreeChildOrderChanged(ValueTree&, int, int) override;
 	void valueTreeParentChanged(ValueTree&) override;
 
+	virtual void clearQueue();
+
 private:
 
 	struct PropertyChange
@@ -446,6 +448,27 @@ class CustomKeyboardState : public MidiKeyboardState,
 	public SafeChangeBroadcaster
 {
 public:
+
+	class LookAndFeelBase
+	{
+	public:
+
+		LookAndFeelBase();
+
+		virtual ~LookAndFeelBase() {}
+		
+		virtual void drawKeyboardBackground(Graphics &g, Component* c, int width, int height);
+
+		virtual void drawWhiteNote(CustomKeyboardState* state, Component* c, int midiNoteNumber, Graphics &g, int x, int y, int w, int h, bool isDown, bool isOver, const Colour &lineColour, const Colour &textColour);
+		virtual void drawBlackNote(CustomKeyboardState* state, Component* c, int midiNoteNumber, Graphics &g, int x, int y, int w, int h, bool isDown, bool isOver, const Colour &noteFillColour);
+
+		bool useFlatStyle = false;
+
+		Colour bgColour;
+		Colour topLineColour;
+		Colour overlayColour;
+		Colour activityColour;
+	};
 
 	/** Creates a new keyboard state. */
 	CustomKeyboardState();

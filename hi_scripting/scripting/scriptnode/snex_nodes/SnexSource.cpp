@@ -165,19 +165,10 @@ void SnexSource::rebuildCallbacksAfterChannelChange(int numChannelsToProcess)
 
 	if (wb != nullptr)
 	{
-		
 		wb->setNumChannels(currentChannelCount);
 
 		if (wasZero)
 			wb->triggerRecompile();
-
-#if 0
-		if (auto objPtr = wb->getLastResult().mainClassPtr)
-		{
-			if (lastResult.wasOk())
-				lastResult = getCallbackHandler().recompiledOk(objPtr);
-		}
-#endif
 	}
 }
 
@@ -1288,12 +1279,12 @@ juce::Path SnexMenuBar::Factory::createPath(const String& url) const
 
 	Path p;
 
-	LOAD_PATH_IF_URL("new", ColumnIcons::threeDots);
-	LOAD_PATH_IF_URL("edit", ColumnIcons::openWorkspaceIcon);
+	LOAD_EPATH_IF_URL("new", ColumnIcons::threeDots);
+	LOAD_EPATH_IF_URL("edit", ColumnIcons::openWorkspaceIcon);
 	LOAD_EPATH_IF_URL("popup", HiBinaryData::ProcessorEditorHeaderIcons::popupShape);
 	LOAD_EPATH_IF_URL("compile", EditorIcons::compileIcon);
 	LOAD_EPATH_IF_URL("reset", EditorIcons::swapIcon);
-	LOAD_PATH_IF_URL("add", ColumnIcons::threeDots);
+	LOAD_EPATH_IF_URL("add", ColumnIcons::threeDots);
 	LOAD_EPATH_IF_URL("delete", SampleMapIcons::deleteSamples);
 	LOAD_PATH_IF_URL("asm", SnexIcons::asmIcon);
 	LOAD_PATH_IF_URL("debug", SnexIcons::bugIcon);

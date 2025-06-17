@@ -281,6 +281,196 @@ private:
 	std::atomic<bool> isLoadingPreset;
 };
 
+class PluginParameterSimulator: public FloatingTileContent,
+								public Component,
+							    public GlobalScriptCompileListener,
+							    public AudioProcessorListener
+{
+public:
+
+	
+
+	static constexpr int Margin = 10;
+	static constexpr int ParameterHeight = 52 + 6 + 24 + 20;
+	static constexpr int ParameterWidth = 128 + 20 + 6;
+	static constexpr int GroupHeaderHeight = 24;
+
+	SET_PANEL_NAME("PluginParameterSimulator");
+
+	struct PluginParameterComponent: public Component,
+									 public Slider::Listener
+	{
+		
+
+		PluginParameterComponent(HisePluginParameterBase* p);
+		~PluginParameterComponent();
+
+		void refreshParameterInfo();
+		void parameterValueChanged (float newValue);
+		void parameterGestureChanged (bool gestureIsStarting);
+
+		void resized() override;
+
+		void sliderValueChanged(Slider* slider) override;
+		void sliderDragStarted(Slider*) override;
+		void sliderDragEnded(Slider*) override;
+
+		
+
+		juce::AudioProcessorParameter* asJuceParameter();
+
+		struct LAF: public GlobalHiseLookAndFeel
+		{
+			void drawRotarySlider(Graphics& g, int x, int y, int width, int height, float sliderPosProportional, float rotaryStartAngle, float rotaryEndAngle, Slider& s) override;
+		} laf;
+
+		bool gestureRecursion = false;
+		bool gestureActive = false;
+		WeakReference<HisePluginParameterBase> parameter;
+
+
+		struct MySlider: public Slider
+		{
+			MySlider()
+			{
+				GlobalHiseLookAndFeel::setDefaultColours(*this);
+				setSliderStyle(Slider::RotaryHorizontalVerticalDrag);
+				setTextBoxStyle(Slider::TextBoxBelow, false, ParameterWidth, 24);
+				setColour(Label::textColourId, Colours::white.withAlpha(0.8f));
+
+				getTextBox()->setColour(Label::ColourIds::textColourId, Colours::white);
+				getTextBox()->setJustificationType(Justification::centred);
+			}
+		} slider;
+
+		JUCE_DECLARE_WEAK_REFERENCEABLE(PluginParameterComponent);
+	};
+
+	PluginParameterSimulatorInfo createSimulatorInfo() const;
+
+	PluginParameterSimulator(FloatingTile* parent);
+
+	~PluginParameterSimulator();
+
+	PluginParameterComponent* getComponentFromParameterIndex(AudioProcessor* ap, int parameterIndex)
+	{
+		jassert(getMainController() == dynamic_cast<MainController*>(ap));
+
+		for(auto p: parameters)
+		{
+			if(p->parameter != nullptr && p->parameter->getHiseParameterIndex() == parameterIndex)
+				return p;
+		}
+
+		jassertfalse;
+		return nullptr;
+	}
+
+	static void onPluginBroadcaster(PluginParameterSimulator& s, bool)
+	{
+		s.rebuildParameters();
+	}
+
+	void audioProcessorParameterChanged (AudioProcessor* processor,
+                                                 int parameterIndex,
+                                                 float newValue) override
+	{
+		if(auto pc = getComponentFromParameterIndex(processor, parameterIndex))
+			pc->parameterValueChanged(newValue);
+	}
+
+    
+    void audioProcessorChanged (AudioProcessor* processor, const AudioProcessorListener::ChangeDetails& details) override
+    {
+		if(details.parameterInfoChanged)
+		{
+			for(auto p: parameters)
+				p->refreshParameterInfo();
+		}
+    }
+
+    void audioProcessorParameterChangeGestureBegin (AudioProcessor* processor,
+                                                            int parameterIndex) override
+    {
+	    if(auto pc = getComponentFromParameterIndex(processor, parameterIndex))
+			pc->parameterGestureChanged(true);
+    }
+
+    
+    void audioProcessorParameterChangeGestureEnd (AudioProcessor* processor, int parameterIndex) override
+    {
+	    if(auto pc = getComponentFromParameterIndex(processor, parameterIndex))
+			pc->parameterGestureChanged(false);
+    }
+
+	void scriptWasCompiled(JavascriptProcessor* p) override
+	{
+		if(auto jmp = dynamic_cast<JavascriptMidiProcessor*>(p))
+		{
+			if(jmp->isFront())
+			{
+				rebuildParameters();
+			}
+		}
+	}
+
+	void resized() override;
+
+	void processParameterList(juce::AudioProcessorParameterGroup& parameterList)
+	{
+		// add the NKS processor here later...
+	}
+
+	void rebuildParameters();
+
+private:
+
+	struct GroupHeaderComponent: public Component
+	{
+		GroupHeaderComponent(const String& n):
+		  Component(n)
+		{};
+
+		void paint(Graphics& g) override
+		{
+			g.setColour(Colours::white.withAlpha(0.1f));
+			g.fillRoundedRectangle(getLocalBounds().toFloat(), 3.0f);
+
+			g.setFont(GLOBAL_BOLD_FONT());
+			g.setColour(Colours::white.withAlpha(0.7f));
+			g.drawText("Group: " + getName(), getLocalBounds().toFloat().reduced(10.0f, 0.0f), Justification::left);
+		}
+	};
+
+	struct Factory: public PathFactory
+	{
+		Path createPath(const String& url) const override
+		{
+			Path p;
+
+			LOAD_EPATH_IF_URL("audio", ColumnIcons::filterIcon);
+			LOAD_EPATH_IF_URL("ramp", EditorIcons::connectIcon);
+
+			LOAD_EPATH_IF_URL("macro", HiBinaryData::SpecialSymbols::macros);
+			LOAD_EPATH_IF_URL("script", HiBinaryData::SpecialSymbols::scriptProcessor);
+			
+
+
+			return p;
+		}
+	} f;
+
+	ComboBox simulationMode, sourceThread, rampResolution;
+
+	Component content;
+	Viewport viewport;
+	OwnedArray<PluginParameterComponent> parameters;
+	OwnedArray<GroupHeaderComponent> groupHeaders;
+	ScrollbarFader sf;
+
+	JUCE_DECLARE_WEAK_REFERENCEABLE(PluginParameterSimulator);
+	JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginParameterSimulator);
+};
 
 
 class MainTopBar : public FloatingTileContent,
@@ -306,6 +496,88 @@ public:
 		PeakMeter,
 		numPopupTypes
 	};
+
+	struct MinimizeBar: public Component
+	{
+		MinimizeBar()
+		{
+			setMouseCursor(MouseCursor::PointingHandCursor);
+		}
+
+		bool initialised = false;
+
+		void initialise()
+		{
+			if(!initialised)
+			{
+				if(auto mbw = findParentComponentOfClass<ModalBaseWindow>())
+				{
+					initialised = true;
+					mbw->minimizeBroadcaster.addListener(*this, onMinimize);
+				}
+			}
+		}
+
+		static void onMinimize(MinimizeBar& b, bool shouldBeVisible, multipage::State* state)
+		{
+			b.setVisible(shouldBeVisible);
+			b.state = state;
+
+			if(shouldBeVisible)
+			{
+				b.text = state->getFirstDialog()->getGlobalProperty(multipage::mpid::Header).toString();
+				if(auto j = state->currentJob)
+				{
+					b.addAndMakeVisible(b.bar = new ProgressBar(j->getProgress()));
+					b.resized();
+				}
+			}
+			
+
+			if(auto mb = b.findParentComponentOfClass<MainTopBar>())
+				mb->resized();
+		}
+
+		void mouseDown(const MouseEvent& e) override
+		{
+			findParentComponentOfClass<ModalBaseWindow>()->minimizeModalComponent(false, state);
+		}
+
+		void resized() override
+		{
+			if(bar != nullptr)
+			{
+				auto f = GLOBAL_BOLD_FONT();
+				auto w = f.getStringWidth(text) + 20;
+				auto b = getLocalBounds();
+				b.removeFromLeft(w);
+				bar->setBounds(b.reduced(4));
+			}
+		}
+
+		void paint(Graphics& g) override
+		{
+			if(isMouseOver(true))
+			{
+				g.setColour(Colours::white.withAlpha(0.1f));
+				g.fillRoundedRectangle(getLocalBounds().toFloat(), 3.0f);
+			}
+				
+
+			g.setColour(Colours::white.withAlpha(0.8f));
+			
+			g.setFont(GLOBAL_BOLD_FONT());
+			g.drawText(text, getLocalBounds().toFloat().reduced(5.0f), Justification::left);
+		}
+
+		String text;
+
+		ScopedPointer<juce::ProgressBar> bar;
+
+		WeakReference<multipage::State> state;
+
+		JUCE_DECLARE_WEAK_REFERENCEABLE(MinimizeBar);
+	} minimizeBar;
 
 	MainTopBar(FloatingTile* parent);
 

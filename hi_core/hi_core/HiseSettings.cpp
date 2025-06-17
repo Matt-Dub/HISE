@@ -110,6 +110,7 @@ Array<juce::Identifier> HiseSettings::Project::getAllIds()
 	ids.add(CompileWithPerfetto);
 	ids.add(CompileWithDebugSymbols);
 	ids.add(IncludeLorisInFrontend);
+	ids.add(ProjectType);
 
 	return ids;
 }
@@ -293,6 +294,11 @@ Array<juce::Identifier> HiseSettings::SnexWorkbench::getAllIds()
 		D("> **macOS:** `~/Library/Application Support/Company/Product/`");
 		D("Normally you would try to embed them into the binary, however if you have a lot of images (> 50MB)");
 		D("the compiler will crash with an **out of heap space** error, so in this case you're better off not embedding them.");
+		P_();
+
+		P(HiseSettings::Project::ProjectType);
+		D("The plugin type that this project should be compiled as. Can be either an instrument, an effect plugin or a MIDI FX plugin.");
+		D("> This setting is used (and can be changed) in the new compile dialog but has been added as project setting to keep the flag persistent for projects.");
 		P_();
 
 		P(HiseSettings::Project::SupportFullDynamicsHLAC);
@@ -976,7 +982,10 @@ juce::StringArray HiseSettings::Data::getOptionsFor(const Identifier& id)
 	{
 		return { "75%", "85%", "100%", "125%", "150%" };
 	}
-
+	if (id == Project::ProjectType)
+	{
+		return { "Instrument", "FX plugin", "MIDI plugin" };
+	}
 	if (id == Project::ExpansionType)
 	{
 		return { "Disabled", "FilesOnly", "Encrypted", "Full", "Custom" };
@@ -1184,6 +1193,7 @@ var HiseSettings::Data::getDefaultSetting(const Identifier& id) const
 	else if (id == Project::CompileWithPerfetto)	return "No";
 	else if (id == Compiler::ExportSetup)			return "No";
 	else if (id == Project::CompileWithDebugSymbols) return "No";
+	else if (id == Project::ProjectType) return "Instrument";
 	else if (id == Project::ExpansionType)			return "Disabled";
 	else if (id == Project::LinkExpansionsToProject)       return "No";
 	else if (id == Project::EnableGlobalPreprocessor)      return "No";
@@ -1211,7 +1221,12 @@ var HiseSettings::Data::getDefaultSetting(const Identifier& id) const
 #else
 	else if (id == Compiler::VisualStudioVersion)	return "Visual Studio 2017";
 #endif
+
+#if JUCE_MAC
+	else if (id == Compiler::UseIPP)				return "No";
+#else
 	else if (id == Compiler::UseIPP)				return "Yes";
+#endif
 	else if (id == Compiler::LegacyCPUSupport) 		return "No";
 	else if (id == Compiler::RebuildPoolFiles)		return "Yes";
 	else if (id == Compiler::DefaultProjectFolder)  return File::getSpecialLocation(File::SpecialLocationType::userDocumentsDirectory).getChildFile("HISE Projects").getFullPathName();
@@ -1375,6 +1390,15 @@ void HiseSettings::Data::settingWasChanged(const Identifier& id, const var& newV
 		dynamic_cast<AudioProcessorDriver*>(mc)->setCurrentSampleRate(newValue.toString().getDoubleValue());
 	else if (id == Audio::BufferSize)
 		dynamic_cast<AudioProcessorDriver*>(mc)->setCurrentBlockSize(newValue.toString().getIntValue());
+#if USE_BACKEND
+	else if (id == Project::ExtraDefinitionsOSX || id == Project::ExtraDefinitionsWindows || id == Project::ExtraDefinitionsLinux)
+	{
+		mc->clearExtraDefinitionCache();
+		mc->rebuildPluginParameters();
+		auto chain = mc->getMainSynthChain();
+		chain->prepareToPlay(chain->getSampleRate(), chain->getLargestBlockSize());
+	}
+#endif
 	else if (id == Audio::Driver)
 	{
 		if (newValue.toString().isNotEmpty())

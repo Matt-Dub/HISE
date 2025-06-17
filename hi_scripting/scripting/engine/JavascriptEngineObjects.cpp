@@ -87,6 +87,10 @@ private:
 		{
 			return ilf->parameterNames.size();
 		}
+		if(f.isMethod())
+		{
+			return 1;
+		}
 
 		return 0;
 	}
@@ -101,6 +105,7 @@ public:
 		setMethod("push", push);
 		setMethod("pushIfNotAlreadyThere", pushIfNotAlreadyThere);
 		setMethod("pop", pop);
+		setMethod("shift", shift);
         setMethod("sortNatural", sortNatural);
 		setMethod("insert", insert);
 		setMethod("concat", concat);
@@ -196,6 +201,16 @@ public:
 			auto v = array->getLast();
 			array->removeLast();
 			return v;
+		}
+
+		return var();
+	}
+	
+	static var shift(Args a)
+	{
+		if (Array<var>* array = a.thisObject.getArray())
+		{
+			return array->removeAndReturn(0);
 		}
 
 		return var();
@@ -541,6 +556,8 @@ private:
 						elementReturnValue = fo->invokeWithoutAllocation(thisScope, args, scopeObject.get());
 					else if (ilf)
 						elementReturnValue = ilf->performDynamically(thisScope, args.arguments, args.numArguments);
+					else
+						elementReturnValue = f.getNativeFunction()(args);
 
 					if(rf(i, elementReturnValue, element, &totalReturnValue))
 						break;
@@ -636,6 +653,9 @@ public:
 
 	/** Removes and returns the last element. */
 	var pop() { return var(); }
+	
+	/** Removes and returns the first element. */
+	var shift() { return var(); }
 };
 
 

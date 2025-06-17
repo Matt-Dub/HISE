@@ -160,7 +160,7 @@ if (ss != nullptr)
             c.first = c.first.withMultipliedAlpha(op);
     }
 
-	if(c.second.getNumColours() > 0)
+	if(c.isGradient())
 		g.setGradientFill(c.second);
 	else
 		g.setColour(c.first);
@@ -172,7 +172,7 @@ int Renderer::getPseudoClassState() const
 	if(forceOverwriteState)
 		return pseudoClassState;
 
-	return currentComponent != nullptr ? getPseudoClassFromComponent(currentComponent) : pseudoClassState;
+	return currentComponent.first != nullptr ? getPseudoClassFromComponent(currentComponent.first) : pseudoClassState;
 }
 
 CodeGenerator::CodeGenerator(StyleSheet::Ptr ss_):
@@ -198,9 +198,9 @@ CodeGenerator::CodeGenerator(StyleSheet::Ptr ss_):
 	code << "};" << nl;
 }
 
-Renderer::Renderer(Component* c, StateWatcher& state_):
-	ScopedComponentSetter(c)  ,
-	currentComponent(c),
+Renderer::Renderer(Component* c, StateWatcher& state_, int subComponentIndex):
+	ScopedComponentSetter({c, subComponentIndex, {}})  ,
+	currentComponent({c, subComponentIndex, {}}),
 	state(state_)
 {}
 
@@ -294,7 +294,7 @@ void Renderer::drawBackground(Graphics& g, Rectangle<float> area, StyleSheet::Pt
 
 	if(imageURL.isNotEmpty())
 	{
-		auto hc = CSSRootComponent::find(*currentComponent);
+		auto hc = CSSRootComponent::find(*currentComponent.first);
 		ScopedPointer<StyleSheet::Collection::DataProvider> dp = hc->createDataProvider();
 
 		if(dp != nullptr)
@@ -306,7 +306,7 @@ void Renderer::drawBackground(Graphics& g, Rectangle<float> area, StyleSheet::Pt
 	else
 	{
 		state.renderShadow(g, pathToFill, currentComponent, ss->getShadow(ma, { "box-shadow", defaultState}, false), false);
-		setCurrentBrush(g, ss, ma, {"background", defaultState});
+		setCurrentBrush(g, ss, ma, {"background-color", defaultState});
 		g.fillPath(pathToFill);
 		state.renderShadow(g, bp.isEmpty() ? p : bp, currentComponent, ss->getShadow(ma, { "box-shadow", defaultState}, true), true);
 
@@ -318,7 +318,7 @@ void Renderer::drawBackground(Graphics& g, Rectangle<float> area, StyleSheet::Pt
 		{
 			if(borderSize > 0.0f)
 			{
-				setCurrentBrush(g, ss, ma, {"border", defaultState});
+				setCurrentBrush(g, ss, ma, {"border-color", defaultState});
 				g.strokePath(pathToStroke, PathStrokeType(borderSize));
 			} 
 		}

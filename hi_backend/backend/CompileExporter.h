@@ -235,6 +235,8 @@ public:
 		return compressor.compress(v, target);
 	}
 
+	ChildProcessManager* manager = nullptr;
+
 	int getBuildOptionPart(const String& argument);
 
 	static void setExportingFromCommandLine()
@@ -242,24 +244,39 @@ public:
 		globalCommandLineExport = true;
 	};
 
-	static void setExportUsingCI(bool shouldUseCIMode)
-	{
-		useCIMode = shouldUseCIMode;
-	}
+	static void setExportUsingCI(bool shouldUseCIMode);
 
 	static bool isUsingCIMode() { return useCIMode; }
 
 	static bool isExportingFromCommandLine() { return globalCommandLineExport; }
 
-    bool shouldBeSilent() const { return isExportingFromCommandLine() || silentMode; }
+    bool shouldBeSilent() const { return isExportingFromCommandLine() || silentMode || manager != nullptr; }
     
 	struct BatchFileCreator
 	{
-		static void createBatchFile(CompileExporter* exporter, BuildOption buildOption, TargetTypes types);
-		static File getBatchFile(CompileExporter* exporter);
+		static void createBatchFile(CompileExporter* exporter, BuildOption buildOption, TargetTypes types, ChildProcessManager* m=nullptr);
+		static File getBatchFile(CompileExporter* exporter, ChildProcessManager* m=nullptr);
 	};
 
+	void setSilent(bool shouldBeSilent) { silentMode = shouldBeSilent; }
+
+    std::function<void(String)> errorFunction;
+    
 protected:
+
+	void setProgress(double d)
+	{
+		if(manager != nullptr)
+			manager->setProgress(d);
+	}
+
+	void logMessage(const String& m)
+	{
+		if(isExportingFromCommandLine())
+			std::cout << m << "\n";
+		else if (manager != nullptr)
+			manager->logMessage(m);
+	}
 
     bool noLto = false;
     
@@ -284,11 +301,15 @@ protected:
 
 	ErrorCodes exportInternal(TargetTypes type, BuildOption option);
 
+	ErrorCodes setupHisePath();
+
 	bool checkSanity(TargetTypes type, BuildOption option);
 
 	BuildOption showCompilePopup(TargetTypes type);
 
-	ErrorCodes compileSolution(BuildOption buildOption, TargetTypes types);
+	
+
+	ErrorCodes compileSolution(BuildOption buildOption, TargetTypes types, ChildProcessManager* childProcessManager=nullptr);
 
 	ErrorCodes createPluginDataHeaderFile(const String &solutionDirectory, const String &publicKey, bool iOSAUv3);
 

@@ -51,7 +51,7 @@ struct HelpManager : ControlledObject,
 	Path createPath(const String& id) const override
 	{
 		Path path;
-		path.loadPathFromData (ColumnIcons::commentIcon, sizeof(ColumnIcons::commentIcon));
+		path.loadPathFromData (ColumnIcons::commentIcon, SIZE_OF_PATH(ColumnIcons::commentIcon));
 		return path;
 	}
 
@@ -279,6 +279,8 @@ public:
 		String prevId;
 	};
 
+	DebugSession::ProfileDataSource::Ptr profileData;
+
 	NodeBase(DspNetwork* rootNetwork, ValueTree data, int numConstants);;
 	virtual ~NodeBase();
 
@@ -471,11 +473,6 @@ public:
 
 	bool isClone() const;
 
-	void setEmbeddedNetwork(NodeBase::Holder* n);
-
-	DspNetwork* getEmbeddedNetwork();
-	const DspNetwork* getEmbeddedNetwork() const;
-
 	bool& getPreserveAutomationFlag();
 
 	int getCurrentChannelAmount() const;;
@@ -508,16 +505,12 @@ private:
 	
 	mutable String dynamicBypassId;
 
-	void updateFrozenState(Identifier id, var newValue);
-
 	bool containsNetwork = false;
 
-	valuetree::PropertyListener frozenListener;
 	valuetree::PropertyListener bypassListener;
 
 	bool bypassState = false;
 
-	WeakReference<NodeBase::Holder> embeddedNetwork;
 	WeakReference<NodeBase::Holder> parent;
 	WeakReference<NodeBase::Holder> subHolder;
 	
@@ -534,8 +527,6 @@ private:
 
 	JUCE_DECLARE_WEAK_REFERENCEABLE(NodeBase);
 };
-
-#define ENABLE_NODE_PROFILING 1
 
 struct DummyNodeProfiler
 {
@@ -571,25 +562,6 @@ struct FrameDataPeakChecker
 	NodeBase& p;
 	dyn<float> b;
 };
-
-struct RealNodeProfiler
-{
-	RealNodeProfiler(NodeBase* n, int numSamples);
-
-	~RealNodeProfiler();
-
-	NodeBase* node;
-	bool enabled;
-	double& profileFlag;
-	double start;
-	const int numSamples;
-};
-
-#if ENABLE_NODE_PROFILING
-using NodeProfiler = RealNodeProfiler;
-#else
-using NodeProfiler = DummyNodeProfiler;
-#endif
 
 struct ConnectionSourceManager
 {

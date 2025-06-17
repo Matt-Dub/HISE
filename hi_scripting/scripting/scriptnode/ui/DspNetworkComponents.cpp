@@ -236,8 +236,8 @@ juce::Path DspNetworkPathFactory::createPath(const String& url) const
 	LOAD_EPATH_IF_URL("undo", EditorIcons::undoIcon);
     LOAD_PATH_IF_URL("eject", ScriptnodeIcons::ejectIcon);
 	LOAD_EPATH_IF_URL("redo", EditorIcons::redoIcon);
-	LOAD_PATH_IF_URL("rebuild", ColumnIcons::moveIcon);
-	LOAD_PATH_IF_URL("comment", ColumnIcons::commentIcon);
+	LOAD_EPATH_IF_URL("rebuild", ColumnIcons::moveIcon);
+	LOAD_EPATH_IF_URL("comment", ColumnIcons::commentIcon);
 	LOAD_PATH_IF_URL("goto", ScriptnodeIcons::gotoIcon);
 	LOAD_PATH_IF_URL("properties", ScriptnodeIcons::propertyIcon);
 	LOAD_EPATH_IF_URL("bypass", HiBinaryData::ProcessorEditorHeaderIcons::bypassShape);
@@ -260,7 +260,7 @@ juce::Path DspNetworkPathFactory::createPath(const String& url) const
 	LOAD_EPATH_IF_URL("surround", HnodeIcons::injectNodeIcon);
     LOAD_EPATH_IF_URL("save", SampleMapIcons::saveSampleMap);
     LOAD_EPATH_IF_URL("export", SampleMapIcons::monolith);
-	LOAD_PATH_IF_URL("lock", ColumnIcons::lockIcon);
+	LOAD_EPATH_IF_URL("lock", ColumnIcons::lockIcon);
 	LOAD_PATH_IF_URL("debug", SnexIcons::bugIcon);
 #endif
 
@@ -273,6 +273,11 @@ DspNetworkGraph::DspNetworkGraph(DspNetwork* n) :
 	dragOverlay(*this),
 	rootUndoButtons(*this)
 {
+	n->getParentHolder()->dllRebuildBroadcaster.addListener(*this, [](DspNetworkGraph& g, DspNetwork::Holder*)
+	{
+		g.rebuildNodes();
+	});
+
 	addChildComponent(rootUndoButtons);
 	network->addSelectionListener(this);
 	rebuildNodes();
@@ -400,6 +405,7 @@ void DspNetworkGraph::rebuildNodes()
 
 void DspNetworkGraph::resizeNodes()
 {
+	heatmap.clear();
 	ScopedValueSetter<bool> svs(dynamic_cast<NodeContainer*>(getCurrentRootNode())->forceNoLock, true);
 
     Component::callRecursive<NodeComponent>(this, [](NodeComponent* nc)
@@ -524,7 +530,6 @@ void DspNetworkGraph::resized()
 		if(!isShowingRootNode())
 		{
 			auto& hm = getCurrentRootNode()->getHelpManager();
-			auto hb = hm.getHelpSize();
 
 			if(!hm.isHelpBelow())
 			{
@@ -724,9 +729,6 @@ void DspNetworkGraph::paintOverChildren(Graphics& g)
 	
 	if (Component::isMouseButtonDownAnywhere())
 		HoverAlpha += 0.1f;
-
-	if (network->isFrozen())
-		return;
 
 	Array<ParameterSlider*> targetSlidersWithCable;
 
@@ -1092,10 +1094,9 @@ void DspNetworkGraph::paintOverChildren(Graphics& g)
 
 		if (connection.isNotEmpty())
 		{
-			
-
 			if (connection.contains("["))
 			{
+				// Multi mod source
 				auto nodeId = connection.upToFirstOccurrenceOf("[", false, false);
 				auto slotIndex = connection.fromFirstOccurrenceOf("[", false, false).getIntValue();
 
@@ -1120,8 +1121,10 @@ void DspNetworkGraph::paintOverChildren(Graphics& g)
 					}
 				}
 			}
-			else
+			else if (connection.containsChar('.'))
 			{
+				// Parameter
+
 				auto nodeId = connection.upToFirstOccurrenceOf(".", false, false);
 				auto pId = connection.fromFirstOccurrenceOf(".", false, false);
 
@@ -1147,6 +1150,33 @@ void DspNetworkGraph::paintOverChildren(Graphics& g)
 
 						GlobalHiseLookAndFeel::paintCable(g, start, end, c, alpha, hc);
 						break;
+					}
+				}
+			}
+			else
+			{
+				// Single Mod source
+
+				for(auto m: modSourceList)
+				{
+					
+
+					if(auto mn = m->getSourceNodeFromParent())
+					{
+						if(mn->getId() == connection)
+						{
+							auto c = n->isBypassed() ? Colours::grey : Colour(SIGNAL_COLOUR).withAlpha(0.8f);
+
+							c = getSpecialColour(m, c);
+
+							auto start = getCircle(m, false);
+							auto end = getCircle(&b->powerButton).translated(0.0, -60.0f);
+							
+							Colour hc = m->isMouseOver(true) ? Colours::red : Colour(0xFFAAAAAA);
+
+							GlobalHiseLookAndFeel::paintCable(g, start, end, c, alpha, hc);
+							break;
+						}
 					}
 				}
 			}
@@ -1350,9 +1380,6 @@ void DspNetworkGraph::paintOverChildren(Graphics& g)
 							{
 								auto start = getCircle(dynamic_cast<Component*>(m), false);
 								auto end = getCircle(c, false);
-
-								auto t = network->getNodeWithId(ev[PropertyIds::NodeId].toString());
-
 								auto c = MultiOutputDragSource::getFadeColour(connectionIndex, m->getNumOutputs()).withAlpha(1.0f);
 								
 								GlobalHiseLookAndFeel::paintCable(g, start, end, c, alpha * 0.5f);
@@ -1491,11 +1518,7 @@ void DspNetworkGraph::paintOverChildren(Graphics& g)
 		delta.setX(cd.clipValue(currentPosition.getX() - lastMousePos.getX()));
 		delta.setY(cd.clipValue(currentPosition.getY() - lastMousePos.getY()));
 
-		auto fadeAlpha = jlimit(0.0f, 1.0f, 1.0f - delta.getDistanceFromOrigin() / 30.0f);
-
 		auto c = c2;
-
-		
 
 		GlobalHiseLookAndFeel::paintCable(g, start, end, c, alpha, c, false, hanging, delta);
 
@@ -1503,7 +1526,17 @@ void DspNetworkGraph::paintOverChildren(Graphics& g)
 		lastMousePos.setY(lastMousePos.getY() * dragSmoothAlpha + currentPosition.getY() * (1.0f - dragSmoothAlpha));
 	}
 
-	
+	for(const auto& h: heatmap)
+	{
+		
+		auto alpha = std::pow((float)h.second, JUCE_LIVE_CONSTANT_OFF(3.0f));
+		FloatSanitizers::sanitizeFloatNumber(alpha);
+		alpha = jlimit(0.0f, 1.0f, alpha);
+		g.setColour(Colour(HISE_WARNING_COLOUR).withAlpha(alpha));
+		g.drawRect(h.first, 3);
+		g.setColour(Colour(HISE_WARNING_COLOUR).withAlpha(alpha * 0.2f));
+		g.fillRect(h.first);
+	}
 }
 
 scriptnode::NodeComponent* DspNetworkGraph::getComponent(NodeBase::Ptr node)
@@ -1608,129 +1641,6 @@ bool DspNetworkGraph::Actions::swapOrientation(DspNetworkGraph& g)
 	return true;
 }
 
-bool DspNetworkGraph::Actions::freezeNode(NodeBase::Ptr node)
-{
-#if 0
-	auto freezedId = node->getValueTree()[PropertyIds::FreezedId].toString();
-
-	if (freezedId.isNotEmpty())
-	{
-		if (auto fn = dynamic_cast<NodeBase*>(node->getRootNetwork()->get(freezedId).getObject()))
-		{
-			node->getRootNetwork()->deselect(fn);
-
-			auto newTree = fn->getValueTree();
-			auto oldTree = node->getValueTree();
-			auto um = node->getUndoManager();
-
-			auto f = [oldTree, newTree, um]()
-			{
-				auto p = oldTree.getParent();
-
-				int position = p.indexOf(oldTree);
-				p.removeChild(oldTree, um);
-				p.addChild(newTree, position, um);
-			};
-
-			MessageManager::callAsync(f);
-
-			auto nw = node->getRootNetwork();
-			auto s = [newTree, nw]()
-			{
-				auto newNode = nw->getNodeForValueTree(newTree);
-				nw->deselectAll();
-				nw->addToSelection(newNode, ModifierKeys());
-			};
-
-			MessageManager::callAsync(s);
-		}
-
-		return true;
-	}
-
-	auto freezedPath = node->getValueTree()[PropertyIds::FreezedPath].toString();
-
-	if (freezedPath.isNotEmpty())
-	{
-		auto newNode = node->getRootNetwork()->create(freezedPath, node->getId() + "_freezed");
-
-		if (auto nn = dynamic_cast<NodeBase*>(newNode.getObject()))
-		{
-			auto newTree = nn->getValueTree();
-			auto oldTree = node->getValueTree();
-			auto um = node->getUndoManager();
-
-			auto f = [oldTree, newTree, um]()
-			{
-				auto p = oldTree.getParent();
-
-				int position = p.indexOf(oldTree);
-				p.removeChild(oldTree, um);
-				p.addChild(newTree, position, um);
-			};
-
-			MessageManager::callAsync(f);
-
-			auto nw = node->getRootNetwork();
-			auto s = [newTree, nw]()
-			{
-				auto newNode = nw->getNodeForValueTree(newTree);
-				nw->deselectAll();
-				nw->addToSelection(newNode, ModifierKeys());
-			};
-
-			MessageManager::callAsync(s);
-		}
-
-		return true;
-	}
-#endif
-
-	return false;
-}
-
-bool DspNetworkGraph::Actions::unfreezeNode(NodeBase::Ptr node)
-{
-	if (auto fn = node->getEmbeddedNetwork())
-	{
-		auto newTree = fn->getRootNode()->getValueTree();
-        
-        Array<DspNetwork::IdChange> changes;
-        
-		newTree = node->getRootNetwork()->cloneValueTreeWithNewIds(newTree, changes, true);
-
-		{
-			auto oldTree = node->getValueTree();
-			auto um = node->getUndoManager();
-
-			auto newNode = node->getRootNetwork()->createFromValueTree(true, newTree, true);
-
-			auto f = [oldTree, newTree, um]()
-			{
-				auto p = oldTree.getParent();
-
-				int position = p.indexOf(oldTree);
-				p.removeChild(oldTree, um);
-				p.addChild(newTree, position, um);
-			};
-
-			MessageManager::callAsync(f);
-
-			auto nw = node->getRootNetwork();
-
-			auto s = [newNode, nw]()
-			{
-				nw->deselectAll();
-				nw->addToSelection(newNode, ModifierKeys());
-			};
-
-			MessageManager::callAsync(s);
-		}
-	}
-
-	return false;
-}
-
 bool DspNetworkGraph::Actions::toggleBypass(DspNetworkGraph& g)
 {
 	auto selection = g.network->getSelection();
@@ -1767,42 +1677,6 @@ bool DspNetworkGraph::Actions::toggleSignalDisplay(DspNetworkGraph& g)
     
     return true;
 }
-
-bool DspNetworkGraph::Actions::toggleFreeze(DspNetworkGraph& g)
-{
-	auto selection = g.network->getSelection();
-
-	if (selection.isEmpty())
-	{
-		if (g.network->canBeFrozen())
-			g.network->setUseFrozenNode(!g.network->isFrozen());
-
-		g.repaint();
-
-		return true;
-	}
-	else
-	{
-		auto f = selection.getFirst();
-
-
-		if (auto fn = f->getEmbeddedNetwork())
-		{
-			if (fn->canBeFrozen())
-			{
-				auto state = !fn->isFrozen();
-
-				for (auto s : selection)
-					s->setValueTreeProperty(PropertyIds::Frozen, state);
-			}
-		}
-
-		return true;
-	}
-		
-	return false;
-}
-
 
 
 bool DspNetworkGraph::Actions::save(DspNetworkGraph& g)
@@ -2051,12 +1925,70 @@ bool DspNetworkGraph::Actions::toggleComments(DspNetworkGraph& g)
 
 bool DspNetworkGraph::Actions::toggleCpuProfiling(DspNetworkGraph& g)
 {
+#if HISE_INCLUDE_PROFILING_TOOLKIT
 	auto& b = g.network->getCpuProfileFlag();
 	b = !b;
-	
-	g.enablePeriodicRepainting(b);
 
+	if(b)
+	{
+		Component::SafePointer<DspNetworkGraph> sg(&g);
+		auto delay = g.network->getScriptProcessor()->getMainController_()->getDebugSession().getOptions().millisecondsToRecord;
+		Timer::callAfterDelay(delay, [sg]()
+		{
+			if(sg.getComponent() && sg->network->getCpuProfileFlag())
+			{
+				toggleCpuProfiling(*sg);
+			}
+		});
+
+		auto jp = dynamic_cast<JavascriptProcessor*>(g.network->getScriptProcessor());
+		g.network->getScriptProcessor()->getMainController_()->getDebugSession().clearData(jp);
+
+		DspNetworkHeatmapGenerator hg(g.network->getRootNode());
+		hg.generateHeatmapIndexes();
+
+		jp->heatmapManager.heatmapBroadcaster.addListener(g, [](DspNetworkGraph& g, DebugInformationBase::Ptr p, const std::map<int, double>* map)
+		{
+			g.heatmap.clear();
+
+			if(map != nullptr)
+			{
+				Array<NodeComponent*> list;
+				fillChildComponentList(list, &g);
+
+				for(auto nc: list)
+				{
+					auto idx = nc->node->profileData->lineRange.getStart();
+					auto ex = map->find(idx);
+
+					if(ex != map->end())
+					{
+						auto alpha = ex->second;
+						auto b = g.getLocalArea(nc, nc->getLocalBounds());
+						g.heatmap.push_back({ b, alpha });
+					}
+				}
+
+				g.repaint();
+			}
+		});
+	}
+	else
+	{
+#if USE_BACKEND
+		if(auto r = g.network->getScriptProcessor()->getMainController_()->getDebugSession().getLastProfileRoot(DebugSession::ThreadIdentifier::Type::AudioThread))
+		{
+			auto ptr = &g;
+			auto c = g.network->getScriptProcessor()->getMainController_()->getDebugSession().createPopupViewer(r);
+
+			GET_BACKEND_ROOT_WINDOW(ptr)->getRootFloatingTile()->showComponentInRootPopup(c, &g, { g.getWidth() / 2 , 15 } , false);
+		}
+#endif
+	}
+
+	g.enablePeriodicRepainting(b);
 	g.repaint();
+#endif
 
 	return true;
 }
@@ -3208,9 +3140,6 @@ void DspNetworkGraph::WrapperWithMenuBar::rebuildAfterContentChange()
 	auto id = n->getId();
 
     //addButton("debug");
-    
-	if(n->canBeFrozen())
-		addButton("export");
 
 	addButton("zoom");
 
@@ -3342,39 +3271,6 @@ void DspNetworkGraph::WrapperWithMenuBar::addButton(const String& name)
 		b->stateFunction = [](DspNetworkGraph& g) { return (bool)g.dataReference[PropertyIds::ShowComments]; };
 		b->setTooltip("Show / Hide comments");
 	}
-	if (name == "export")
-	{
-		b->actionFunction = Actions::toggleFreeze;
-		b->enabledFunction = [](DspNetworkGraph& g) 
-		{
-			auto s = g.network->getSelection();
-
-			if (s.isEmpty())
-				return g.network->canBeFrozen();
-			else
-			{
-				if (auto fn = s.getFirst()->getEmbeddedNetwork())
-					return fn->canBeFrozen();
-
-				return false;
-			}
-		};
-
-		b->stateFunction = [](DspNetworkGraph& g)
-		{
-			auto s = g.network->getSelection();
-
-			if (s.isEmpty())
-				return g.network->isFrozen();
-			else
-			{
-				if (auto fn = s.getFirst()->getEmbeddedNetwork())
-					return fn->isFrozen();
-
-				return false;
-			}
-		};
-	}
 	if (name == "swap-orientation")
 	{
 		b->actionFunction = Actions::swapOrientation;
@@ -3433,7 +3329,6 @@ void DspNetworkGraph::WrapperWithMenuBar::addButton(const String& name)
 			m.addItem((int)NodeComponent::MenuActions::WrapIntoSoftBypass, "Wrap into soft bypass container");
 			m.addItem((int)NodeComponent::MenuActions::WrapIntoOversample4, "Wrap into 4x oversample container");
 
-			m.addItem((int)NodeComponent::MenuActions::UnfreezeNode, "Explode DSP Network", s != nullptr && s->getEmbeddedNetwork() != nullptr);
 			m.addItem((int)NodeComponent::MenuActions::ExplodeLocalCables, "Replace local cable connections");
 
 			int result = m.show();

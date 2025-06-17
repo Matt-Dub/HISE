@@ -216,14 +216,10 @@ void local_cable_base::Manager::refreshAllConnections(const String& v)
 
 	for(auto con: registeredCables)
 	{
-		
-
 		if(con->cable->getVariableId() == v || v.isEmpty())
-		{
 			con->variableIndex = variables.indexOf(con->cable->getVariableId());
-			con->cable->refreshConnection(con->variableIndex);
-		}
-			
+
+		con->cable->refreshConnection(con->variableIndex);
 	}
 }
 
@@ -1128,7 +1124,7 @@ void dynamic::editor::resized()
 
 	auto iconBounds = isSend ? b.removeFromRight(getHeight()) : b.removeFromLeft(getHeight());
 
-	icon.loadPathFromData(ColumnIcons::targetIcon, sizeof(ColumnIcons::targetIcon));
+	icon.loadPathFromData(ColumnIcons::targetIcon, SIZE_OF_PATH(ColumnIcons::targetIcon));
 
 	PathFactory::scalePath(icon, iconBounds.toFloat().reduced(2.0f));
 
@@ -1290,7 +1286,7 @@ juce::Image dynamic::editor::createDragImage(const String& m, Colour bgColour)
 
 	float margin = 10.0f;
 
-	p.loadPathFromData(ColumnIcons::targetIcon, sizeof(ColumnIcons::targetIcon));
+	p.loadPathFromData(ColumnIcons::targetIcon, SIZE_OF_PATH(ColumnIcons::targetIcon));
 	p.scaleToFit(5.0f, 5.0f, 15.0f, 15.0f, true);
 
 	MarkdownRenderer mp(m, nullptr);

@@ -73,30 +73,19 @@ public:
 	static constexpr int AsyncMagicNumber = 912;
 	static constexpr int AsyncHiPriorityMagicNumber = 913;
 
-	static var getDispatchTypeMagicNumber(dispatch::DispatchType n)
-	{
-		using Type = dispatch::DispatchType;
-
-		switch(n)
-		{
-		case dispatch::dontSendNotification: return var(false);
-		case dispatch::sendNotification: return var(true);
-		case dispatch::sendNotificationSync: return var(SyncMagicNumber);
-		case dispatch::sendNotificationAsync: return var(AsyncMagicNumber);;
-		case dispatch::sendNotificationAsyncHiPriority: return var(AsyncHiPriorityMagicNumber);
-		default: return var(false);
-		}
-	}
+	static var getDispatchTypeMagicNumber(dispatch::DispatchType n);
 
 	static dispatch::DispatchType getDispatchType(const var& syncValue, bool getDontForFalse);
 
 	static bool isSynchronous(const var& syncValue);
 
+	static var createRectangle(const var::NativeFunctionArgs& a);
+
 	static var getVarFromPoint(Point<float> pos);
 
 	static Point<float> getPointFromVar(const var& data, Result* r = nullptr);
 
-	static var getVarRectangle(Rectangle<float> floatRectangle, Result* r = nullptr);
+	static var getVarRectangle(bool useRectangleClass, Rectangle<float> floatRectangle, Result* r = nullptr);
 
 	static Rectangle<float> getRectangleFromVar(const var& data, Result* r = nullptr);
 
@@ -115,8 +104,10 @@ public:
 	static Colour getColourFromVar(const var& value);
 
 	static var convertStyleSheetProperty(const var& value, const String& type);
-	
-	
+
+	static StringArray getMouseCursorNames();
+
+	static MouseCursor::StandardCursorType getMouseCursorFromString(const String& name, Result* r = nullptr);
 
 	static Array<Identifier> getGlobalApiClasses();
 
@@ -202,14 +193,23 @@ namespace ScriptingObjects
         var toCharString(int numChars, var range);
         
 		/** Returns an array with the min and max value in the given range. */
-		var getPeakRange(int startSample, int numSamples);
-        
+		var getPeakRange(int startSample, int numSamples) { jassertfalse; return -1; }
+
+		/** Returns a resampled buffer using the given resample ratio and interpolation type. */
+		var resample(double ratio, String interpolationType, bool wrapAround) { return var(); }
+
+		/** Returns a new buffer that contains a reference to a slice of this buffer. */
+		var getSlice(int offsetInBuffer, int numSamples) { return var(); }
+
         /** Trims a buffer at the start and end and returns a copy of it. */
         var trim(int trimFromStart, int trimFromEnd)
         {
             jassertfalse;
             return {};
         }
+
+		/** Returns the next zero crossing at the position. */
+		var getNextZeroCrossing(int index) const { return -1; }
 
 	};
 
@@ -385,6 +385,9 @@ namespace ScriptingObjects
 		/** Loads the track (zero-based) of the MIDI file. If successful, it returns an object containing the time signature and a list of all events. */
 		var loadAsMidiFile(int trackIndex);
 
+		/** Loads the binary file, compresses it with zstd and returns a Base64 string. */
+		String loadAsBase64String() const;
+		
 		/** Replaces the file content with the given text. */
 		bool writeString(String text);
 
@@ -403,11 +406,14 @@ namespace ScriptingObjects
 		/** Renames the file. */
 		bool rename(String newName);
 
-		/** Moves the file. */
+		/** Moves the file. The target isn't the directory to put it in, it's the actual file to create. */
 		bool move(var target);
 
-		/** Copies the file. */
+		/** Copies the file. The target isn't the directory to put it in, it's the actual file to create. */
 		bool copy(var target);
+
+		/** Recursively copies the directory. The target is the actual directory to create, not the directory into which the new one should be placed. */
+		bool copyDirectory(var target);
 
 		/** Loads the given file as audio file. */
 		var loadAsAudioFile() const;
@@ -514,6 +520,7 @@ namespace ScriptingObjects
 
 		~ScriptBackgroundTask()
 		{
+			recordingSession = nullptr;
 			stopThread(timeOut);
 		}
 
@@ -606,6 +613,8 @@ namespace ScriptingObjects
 
 	private:
 
+		ScopedPointer<ProfiledRecordingSession> recordingSession;
+
 		bool forwardToLoadingThread = false;
 
 		void callFinishCallback(bool isFinished, bool wasCancelled)
@@ -654,6 +663,7 @@ namespace ScriptingObjects
         bool realtimeSafe = true;
         
 		JUCE_DECLARE_WEAK_REFERENCEABLE(ScriptBackgroundTask);
+		JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ScriptBackgroundTask);
 	};
 
 	class ScriptThreadSafeStorage: public ConstScriptingObject
@@ -715,7 +725,9 @@ namespace ScriptingObjects
 			API_VOID_METHOD_WRAPPER_1(ScriptFFT, setEnableInverseFFT);
 			API_VOID_METHOD_WRAPPER_1(ScriptFFT, setSpectrum2DParameters);
 			API_METHOD_WRAPPER_0(ScriptFFT, getSpectrum2DParameters);
-			API_METHOD_WRAPPER_2(ScriptFFT, dumpSpectrum);
+			API_VOID_METHOD_WRAPPER_1(ScriptFFT, setUseSpectrumList);
+			API_METHOD_WRAPPER_4(ScriptFFT, dumpSpectrum);
+			API_VOID_METHOD_WRAPPER_1(ScriptFFT, setUseFallbackEngine);
 		};
 
 		ScriptFFT(ProcessorWithScriptingContent* pwsc);
@@ -763,14 +775,39 @@ namespace ScriptingObjects
 		/** Returns the JSON data for the spectrum parameters. */
 		var getSpectrum2DParameters() const;
 
-		/** Dumps the spectrum image to the given file (as PNG image). */
-		bool dumpSpectrum(var file, bool output);
+		/** Flushes the given spectrum list to a file. */
+		void setUseSpectrumList(int numRows);
+
+		bool dumpSpectrum(var file, bool output, int numFreqPixels, int numTimePixels);
+
+		/** This forces the FFT object to use the fallback engine. */
+		void setUseFallbackEngine(bool shouldUseFallback)
+		{
+			useFallback = shouldUseFallback;
+		}
 
 		// ======================================================================================================= End of API Methods
 
 		Image getSpectrum(bool getOutput) const { return getOutput ? outputSpectrum : spectrum; }
 
+		Image getRescaledAndRotatedSpectrum(bool getOutput, int numFreqPixels, int numTimePixels);
+
 	private:
+
+		struct SpectrumList
+		{
+			SpectrumList(int numItems);
+
+			bool dump(const File& outputFile);
+
+			bool setImage(int imageIndex, const Image& img);
+			
+			std::vector<Image> images;
+		};
+
+		ScopedPointer<SpectrumList> spectrumList;
+
+		bool useFallback = false;
 
 		AudioSampleBuffer windowBuffer;
 
@@ -1105,6 +1142,9 @@ namespace ScriptingObjects
 		/** Loads an audio file from the given reference. */
 		void loadFile(const String& filePath);
 
+		/** Loads a buffer into the audio sample slot. */
+		void loadBuffer(var bufferData, double sampleRate, var loopRange);
+		
 		/** Returns the current audio data as array of channels. */
 		var getContent();
 
@@ -1600,6 +1640,15 @@ namespace ScriptingObjects
 		/** Loads the model layout and weights from a Pytorch model JSON. */
 		void loadPytorchModel(const var& modelJSON);
 
+		/** Loads the model from a NAM file. */
+		void loadNAMModel(const var& modelJSON); 
+
+		/** Loads the ONNX runtime model for spectral analysis. */
+		bool loadOnnxModel(const var& base64Data, int numOutputValues);
+
+		/** Processes the FFT spectrum and returns the output tensor as array of float numbers. */
+		var processFFTSpectrum(var fftObject, int numFreqPixels, int numTimePixels);
+
 		/** Returns the model JSON. */
 		var getModelJSON();
 
@@ -1628,6 +1677,9 @@ namespace ScriptingObjects
 #if HISE_INCLUDE_RT_NEURAL
 		NeuralNetwork::Ptr nn;
 #endif
+
+		ONNXLoader::Ptr onnx;
+		std::vector<float> onnxOutput;
 
 		JUCE_DECLARE_WEAK_REFERENCEABLE(ScriptNeuralNetwork);
 	};
@@ -2099,6 +2151,12 @@ namespace ScriptingObjects
 
 		/** Sets the amount of channels (if the matrix is resizeable). */
 		void setNumChannels(int numSourceChannels);
+		
+		/** Gets the amount of source channels. */
+		int getNumSourceChannels();
+		
+		/** Gets the amount of destination channels. */
+		int getNumDestinationChannels();
 
 		/** adds a connection to the given channels. */
 		bool addConnection(int sourceIndex, int destinationIndex);
@@ -2603,7 +2661,10 @@ namespace ScriptingObjects
 
 		/** Sends the value to all targets (after converting it from the input range. */
 		void setValue(double inputWithinRange);
-		
+
+		/** Sends any type of data (JSON, string, buffers) to the target. */
+		void sendData(var dataToSend);
+
 		/** Set the input range using a min and max value (no steps / no skew factor). */
 		void setRange(double min, double max);
 
@@ -2612,6 +2673,9 @@ namespace ScriptingObjects
 
 		/** Set the input range using a min and max value as well as a step size. */
 		void setRangeWithStep(double min, double max, double stepSize);
+
+		/** Registers a function that will be executed asynchronously when the data receives a JSON data chunk. */
+		void registerDataCallback(var dataCallbackFunction);
 
 		/** Registers a function that will be executed whenever a value is sent through the cable. */
 		void registerCallback(var callbackFunction, var synchronous);
@@ -2635,12 +2699,16 @@ namespace ScriptingObjects
 		struct DummyTarget;
 		struct Wrapper;
 		struct Callback;
+		struct DataCallback;
 
 		var cable;
 
 		ScopedPointer<DummyTarget> dummyTarget;
 		OwnedArray<Callback> callbacks;
+		OwnedArray<DataCallback> dataCallbacks;
 		scriptnode::InvertableParameterRange inputRange;
+
+		bool dataRecursion = false;
 	};
 
 	class TimerObject : public ConstScriptingObject,
@@ -2754,10 +2822,7 @@ namespace ScriptingObjects
 		
 	private:
 
-		void handleAsyncUpdate() override
-		{
-			sendUpdateMessage(sendNotificationAsync);
-		}
+		void handleAsyncUpdate() override;
 
 		struct ScopedUpdateDelayer
 		{

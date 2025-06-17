@@ -261,6 +261,8 @@ public:
 			saveInPreset,
 			isPluginParameter,
 			pluginParameterName,
+			pluginParameterGroup,
+			deferControlCallback,
             isMetaParameter,
 			linkedTo,
 			automationId,
@@ -330,9 +332,23 @@ public:
 		{
 			controlSender.cancelMessage();
             localLookAndFeel = var();
-		};
+		}
 
-		virtual ValueTree exportAsValueTree() const override;;
+		PROFILE_ONLY(int getProfilePropertyTrackId(const Identifier& id) const { return (int)propertyTrackIds[id]; })
+
+		virtual ValueTree exportAsValueTree() const override;
+		bool isScriptPluginParameter()
+		{
+			bool ok = isAutomatable();
+			ok &= (bool)getScriptObjectProperty(ScriptingApi::Content::ScriptComponent::Properties::isPluginParameter);
+
+#if HISE_MACROS_ARE_PLUGIN_PARAMETERS
+			ok |= isAdditionalPluginParameter;
+#endif
+
+			return ok;
+		}
+
 		virtual void restoreFromValueTree(const ValueTree &v) override;;
 
 		String getDebugValue() const override { return getValue().toString(); };
@@ -698,24 +714,25 @@ public:
 			modulationData = newMod;
 		}
 
+		bool shouldDeferControlCallback() const { return defersControlCallback; }
+
 		MacroControlledObject::ModulationPopupData::Ptr getModulationData() const { return modulationData; }
 
 		int getStyleSheetPseudoState() const { return pseudoState; }
 
+		ProfileCollection::ID pSetValue, pChanged, pControlCallback, pSetAttribute, pSetProperty, pOnProperty;
+
+		int tSetAttribute;
+
+		ProfileCollection::PS::ScopedProfiler profile(ProfileCollection::ID id);
+		void openTrack(ProfileCollection::ID id);
+		void closeTrack(ProfileCollection::ID id);
+
+		bool isAdditionalPluginParameter = false;
+
 	protected:
 
-		String getCSSFromLocalLookAndFeel()
-		{
-			if (auto l = dynamic_cast<ScriptingObjects::ScriptedLookAndFeel*>(localLookAndFeel.getObject()))
-			{
-				if(l->isUsingCSS())
-				{
-					return l->currentStyleSheet;
-				}
-			}
-
-			return {};
-		}
+		String getCSSFromLocalLookAndFeel();
 
 		bool isCorrectlyInitialised(int p) const
 		{
@@ -756,6 +773,8 @@ public:
 		bool removePropertyIfDefault = true;
 
 		CustomAutomationPtr currentAutomationData;
+
+		PROFILE_ONLY(NamedValueSet propertyTrackIds);
 
 #if USE_BACKEND
 		juce::SharedResourcePointer<hise::ScriptComponentPropertyTypeSelector> selectorTypes;
@@ -856,6 +875,8 @@ public:
 
 		mutable hise::SimpleReadWriteLock valueLock;
 
+		bool defersControlCallback = false;
+
 		bool countJsonSetProperties = true;
 		Identifier searchedProperty;
 
@@ -864,6 +885,8 @@ public:
         WeakReference<ScriptComponent> linkedComponent;
 
 		Array<WeakReference<ScriptComponent>> linkedComponentTargets;
+
+		bool useRectangleClass = false;
 
 		var customControlCallback;
 
@@ -1052,6 +1075,7 @@ public:
 			isMomentary,
 			enableMidiLearn,
             setValueOnClick,
+			mouseCursor,
 			numProperties
 		};
 
@@ -1333,6 +1357,15 @@ public:
 		void setTablePopupFunction(var newFunction);
 
 		void connectToOtherTable(String processorId, int index);
+
+		/** Resets the table with the given index to a 0..1 line. */
+		void reset();
+		
+		/** Adds a new table point (x and y are normalized coordinates). */
+		void addTablePoint(float x, float y);
+		
+		/** Sets the point with the given index to the values. */
+		void setTablePoint(int pointIndex, float x, float y, float curve);
 
 		/** Returns the table value from 0.0 to 1.0 according to the input value from 0.0 to 1.0. */
 		float getTableValue(float inputValue);
@@ -1663,6 +1696,8 @@ public:
 			NumDebugWatchIndexes
 		};
 
+		ProfileCollection::ID pRepaint, pPaintRoutine;
+
 		ScriptPanel(ProcessorWithScriptingContent *base, Content *parentContent, Identifier panelName, int x, int y, int width, int height);;
 		
 		ScriptPanel(ScriptPanel* parent);
@@ -1793,6 +1828,8 @@ public:
 
 		// ========================================================================================================
 
+		void changed() override;
+
 #if HISE_INCLUDE_RLOTTIE
 		bool isAnimationActive() const;
 		RLottieAnimation::Ptr getAnimation();
@@ -1865,6 +1902,14 @@ public:
 		ScopedPointer<RLottieAnimation> animation;
 		var animationData;
 #endif
+
+		struct PluginParameterInfo
+		{
+			void update(ScriptPanel* sp);
+
+			int pluginParameterIndex = -1;
+			Processor* p = nullptr;
+		} pluginParameterInfo;
 
 		Array<WeakReference<AnimationListener>> animationListeners;
 
@@ -2036,6 +2081,8 @@ public:
 
 		hise::WebViewData::Ptr getData() const { return data; }
 
+		void preRecompileCallback() override;
+
 		// ========================================================================================================= API Methods
 
 		/** Binds a HiseScript function to a Javascript callback id. */
@@ -2047,7 +2094,25 @@ public:
 		/** Evaluates the code in the web view. You need to pass in an unique identifier so that it will initialise new web views correctly. */
 		void evaluate(const String& identifier, const String& jsCode);
 
-        /** Sets the file to be displayed by the WebView. */
+		/** Sets the HTML content to be used by the webview. */
+		void setHtmlContent(const String& htmlCode);
+
+		/** Enables Websocket communication between HISE and the webview. */
+		void setEnableWebSocket(int port);
+
+		/** Sends the data to the websocket. */
+		void sendToWebSocket(String id, var data);
+
+		/** Adds a buffer to be synchronised through the websocket. */
+		void addBufferToWebSocket(int bufferIndex, var buffer);
+
+		/** Registers a callable object to be notified for incoming messages from the websocket. */
+		void setWebSocketCallback(var callbackFunction);
+
+		/** Sends the buffer to the webview through the websocket connection. */
+		void updateBuffer(int bufferIndex);
+
+		/** Sets the file to be displayed by the WebView. */
         void setIndexFile(var indexFile);
         
 		/** Resets the entire webview. */
@@ -2073,6 +2138,8 @@ public:
 			const String& callbackId;
 			WeakCallbackHolder f;
 		};
+
+		WeakCallbackHolder webSocketCallback;
 
 		OwnedArray<HiseScriptCallback> callbacks;
 
@@ -2627,6 +2694,9 @@ public:
 	/** Returns an array of all components that match the given regex. */
     var getAllComponents(String regex);
 
+	/** Checks if the component exists. */
+	bool componentExists(const Identifier &name);
+
 	/** Restore the Component from a JSON object. */
 	void setPropertiesFromJSON(const Identifier &name, const var &jsonData);
 
@@ -2663,6 +2733,9 @@ public:
     /** Opens a text input box with the given properties and executes the callback when finished. */
     void showModalTextInput(var properties, var callback);
     
+		/** Returns an array containing the width and height of the interface. */
+		var getInterfaceSize();
+		
     /** Sets this script as main interface with the given size. */
     void makeFrontInterface(int width, int height);
     
@@ -2781,6 +2854,7 @@ public:
 	ScriptComponent * getComponentWithName(const Identifier &componentName);
 	const ScriptComponent * getComponentWithName(const Identifier &componentName) const;
 	int getComponentIndex(const Identifier &componentName) const;
+	int getComponentIndex(ScriptComponent* sc) const;
 
 	StringArray getMacroNames();
 
@@ -2974,6 +3048,8 @@ public:
 
 		return false;
 	}
+
+	ProfileCollection contentProfile;
 
 private:
 

@@ -110,7 +110,7 @@ class ProcessorEditor;
 
 /** This defines the tail duration for suspending effects when the input is silent. */
 #ifndef HISE_SUSPENSION_TAIL_MS
-#define HISE_SUSPENSION_TAIL_MS 500
+#define HISE_SUSPENSION_TAIL_MS 1000
 #endif
 
 

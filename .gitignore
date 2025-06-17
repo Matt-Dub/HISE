@@ -30,6 +30,10 @@ tools/SDK/ASIOSDK2.3/
 JUCE/extras/Projucer/Builds
 tools/SDK/vstsdk2.4/
 tools/SDK/AAX/
+tools/SDK/AAX Old/
+tools/SDK/AAX 2.7/
+tools/SDK/AAX Before/
+tools/SDK/AAX Replaced From other HISE/
 projects/native_jit_test/Builds/MacOSX/NativeJIT Test.xcodeproj/project.xcworkspace/xcuserdata/christophhart.xcuserdatad/UserInterfaceState.xcuserstate
 projects/native_jit_test/Builds/
 projects/native_jit_test/JuceLibraryCode/
@@ -129,3 +133,9 @@ extras/hise_dialogs/AdditionalSourceCode/
 extras/hise_dialogs/expansion_info.xml
 extras/hise_dialogs/project_info.xml
 extras/hise_dialogs/user_info.xml
+tools/onnx_lib/Builds/
+tools/onnx_lib/JuceLibraryCode/
+tools/onnx_lib/Source/lib/
+tools/onnx_lib/onnx_hise_library.dll
+tools/auto_build/installer
+hi_scripting/scripting/api/bx

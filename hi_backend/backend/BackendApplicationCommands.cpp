@@ -61,6 +61,16 @@ currentColumnMode(OneColumn)
 }
 
 
+void BackendCommandTarget::setCommandTarget(ApplicationCommandInfo& result, const String& name, bool active,
+	bool ticked, char shortcut, bool useShortCut, ModifierKeys mod)
+{
+	result.setInfo(name, name, "Unused", 0);
+	result.setActive(active); 
+	result.setTicked(ticked);
+
+	if (useShortCut) result.addDefaultKeypress(shortcut, mod);
+}
+
 void BackendCommandTarget::setEditor(BackendRootWindow *editor)
 {
 	bpe = dynamic_cast<BackendRootWindow*>(editor);
@@ -105,6 +115,7 @@ void BackendCommandTarget::getAllCommands(Array<CommandID>& commands)
 		MenuFileExtractEmbeddeSnippetFiles,
 		MenuFileImportSnippet,
 		MenuExportSetupWizard,
+		MenuExportCompileProject,
 		MenuExportFileAsPlugin,
 		MenuExportFileAsEffectPlugin,
 		MenuExportFileAsMidiFXPlugin,
@@ -152,8 +163,10 @@ void BackendCommandTarget::getAllCommands(Array<CommandID>& commands)
 		MenuToolsApplySampleMapProperties,
 		MenuToolsSimulateChangingBufferSize,
 		MenuToolsShowDspNetworkDllInfo,
+		MenuToolsReplaceScriptFXWithHardcodedFX,
         MenuToolsCreateRnboTemplate,
 		MenuToolsCreateGlobalCableCppCode,
+		MenuToolsCheckLatency,
 		MenuViewResetLookAndFeel,
 		MenuViewReset,
         MenuViewRotate,
@@ -326,6 +339,10 @@ void BackendCommandTarget::getCommandInfo(CommandID commandID, ApplicationComman
 		break;
 	case MenuExportSetupWizard:
 		setCommandTarget(result, "Setup Export Wizard", true, false, 'X', false);
+		result.categoryName = "Export";
+		break;
+	case MenuExportCompileProject:
+		setCommandTarget(result, "Compile project", true, false, 'X', false);
 		result.categoryName = "Export";
 		break;
     case MenuExportFileAsPlugin:
@@ -518,6 +535,10 @@ void BackendCommandTarget::getCommandInfo(CommandID commandID, ApplicationComman
         setCommandTarget(result, "Create C++ template for RNBO patch", true, false, 'X', false);
         result.categoryName = "Tools";
         break;
+	case MenuToolsCheckLatency:
+        setCommandTarget(result, "Check latency of signal chain", true, false, 'X', false);
+        result.categoryName = "Tools";
+        break;
 	case MenuToolsConvertSampleMapToWavetableBanks:
 		setCommandTarget(result, "Show Wavetable Creator", true, false, 'X', false);
 		result.categoryName = "Tools";
@@ -556,6 +577,10 @@ void BackendCommandTarget::getCommandInfo(CommandID commandID, ApplicationComman
 		break;
 	case MenuToolsCreateGlobalCableCppCode:
 		setCommandTarget(result, "Create C++ code for global cables", true, false, 'X', false);
+		result.categoryName = "Tools";
+		break;
+	case MenuToolsReplaceScriptFXWithHardcodedFX:
+		setCommandTarget(result, "Replace Scriptnode modules with Hardcoded modules", true, false, 'X', false);
 		result.categoryName = "Tools";
 		break;
 	case MenuToolsConvertSVGToPathData:
@@ -687,6 +712,7 @@ bool BackendCommandTarget::perform(const InvocationInfo &info)
 	case MenuToolsRecompile:            Actions::recompileAllScripts(bpe); return true;
 	case MenuToolsCheckCyclicReferences:Actions::checkCyclicReferences(bpe); return true;
 	case MenuToolsCreateExternalScriptFile:	Actions::createExternalScriptFile(bpe); updateCommands(); return true;
+	case MenuExportCompileProject: Actions::compileProject(bpe); return true;
 	case MenuExportValidateUserPresets:	Actions::validateUserPresets(bpe); return true;
 	case MenuExportRestoreToDefault:		Actions::restoreToDefault(bpe); return true;
 	case MenuExportCheckUnusedImages:	Actions::checkUnusedImages(bpe); return true;
@@ -702,6 +728,7 @@ bool BackendCommandTarget::perform(const InvocationInfo &info)
 	case MenuExportUnloadAllAudioFiles:  Actions::unloadAllAudioFiles(bpe); return true;
 	case MenuToolsCreateRSAKeys:		Actions::createRSAKeys(bpe); return true;
 	case MenuToolsCreateDummyLicenseFile: Actions::createDummyLicenseFile(bpe); return true;
+	case MenuToolsCheckLatency:			Actions::checkLatency(bpe); return true;
 	case MenuExportCheckAllSampleMaps:	Actions::checkAllSamplemaps(bpe); return true;
     case MenuExportCheckPluginParameters:    Actions::checkPluginParameterSanity(bpe); return true;
 	case MenuExportCleanDspNetworkFiles: Actions::cleanDspNetworkFiles(bpe); return true;
@@ -750,6 +777,7 @@ bool BackendCommandTarget::perform(const InvocationInfo &info)
     case MenuViewClearConsole:         owner->getConsoleHandler().clearConsole(); return true;
 	case MenuHelpShowAboutPage:			Actions::showAboutPage(bpe); return true;
     case MenuHelpCheckVersion:          Actions::checkVersion(bpe); return true;
+	case MenuToolsReplaceScriptFXWithHardcodedFX: Actions::replaceScriptModules(bpe); return true;
 	case MenuHelpShowDocumentation:		Actions::showDocWindow(bpe); return true;
 	}
 
@@ -974,7 +1002,10 @@ PopupMenu BackendCommandTarget::getMenuForIndex(int topLevelMenuIndex, const Str
 		{
 			ADD_MENU_ITEM(MenuExportSetupWizard);
 
+			ADD_MENU_ITEM(MenuExportCompileProject);
+
 			p.addSectionHeader("Export As");
+
 			ADD_MENU_ITEM(MenuExportFileAsPlugin);
 			ADD_MENU_ITEM(MenuExportFileAsEffectPlugin);
 			ADD_MENU_ITEM(MenuExportFileAsMidiFXPlugin);
@@ -1061,11 +1092,13 @@ PopupMenu BackendCommandTarget::getMenuForIndex(int topLevelMenuIndex, const Str
 			p.addSectionHeader("DSP Tools");
 
 			ADD_MENU_ITEM(MenuToolsShowDspNetworkDllInfo);
+			ADD_MENU_ITEM(MenuToolsReplaceScriptFXWithHardcodedFX);
 			ADD_MENU_ITEM(MenuToolsRecordOneSecond);
 			ADD_MENU_ITEM(MenuToolsSimulateChangingBufferSize);
 	        ADD_MENU_ITEM(MenuToolsCreateRnboTemplate);
 			ADD_MENU_ITEM(MenuToolsCreateThirdPartyNode);
 			ADD_MENU_ITEM(MenuToolsCreateGlobalCableCppCode);
+			ADD_MENU_ITEM(MenuToolsCheckLatency);
 			p.addSeparator();
 			p.addSectionHeader("License Management");
 			ADD_MENU_ITEM(MenuToolsCreateRSAKeys);
@@ -1703,13 +1736,6 @@ void BackendCommandTarget::Actions::setCompileTimeOut(BackendRootWindow * /*bpe*
 	jassertfalse;
 }
 
-void BackendCommandTarget::Actions::toggleUseBackgroundThreadsForCompiling(BackendRootWindow * bpe)
-{
-	const bool lastState = bpe->getBackendProcessor()->isUsingBackgroundThreadForCompiling();
-
-	bpe->getBackendProcessor()->setShouldUseBackgroundThreadForCompiling(!lastState);
-}
-
 void BackendCommandTarget::Actions::toggleCompileScriptsOnPresetLoad(BackendRootWindow * bpe)
 {
 	const bool lastState = bpe->getBackendProcessor()->isCompilingAllScriptsOnPresetLoad();
@@ -2074,8 +2100,14 @@ DialogWindowWithBackgroundThread* BackendCommandTarget::Actions::importProject(B
 	return nullptr;
 }
 
+void BackendCommandTarget::Actions::compileProject(BackendRootWindow* bpe)
+{
+	auto cw = new multipage::library::CompileProjectDialog(bpe);
+	cw->setModalBaseWindowComponent(bpe);
+}
+
 struct HeadlessImporter: public ImporterBase,
-						 public Thread
+                         public Thread
 {
 	HeadlessImporter(BackendRootWindow* bpe, const File& projectRoot):
 	  ImporterBase(bpe),
@@ -2627,8 +2659,13 @@ void BackendCommandTarget::Actions::compileNetworksToDll(BackendRootWindow* bpe)
 		return;
 	}
 
+#if JUCE_WINDOWS || JUCE_MAC
+	auto s = new multipage::library::NetworkCompiler(bpe);
+	s->setModalBaseWindowComponent(bpe);
+#else
 	auto s = new DspNetworkCompileExporter(bpe, bpe->getBackendProcessor());
 	s->setModalBaseWindowComponent(bpe);
+#endif
 }
 
 void BackendCommandTarget::Actions::cleanBuildDirectory(BackendRootWindow * bpe)
@@ -3356,6 +3393,20 @@ void BackendCommandTarget::Actions::exportAudio(BackendRootWindow* bpe)
 {
 	auto n = new multipage::library::HiseAudioExporter(bpe);
 	bpe->setModalComponent(n);
+}
+
+void BackendCommandTarget::Actions::replaceScriptModules(BackendRootWindow* bpe)
+{
+	auto b = new multipage::library::ScriptModuleReplacer(bpe);
+	bpe->setModalComponent(b);		
+}
+
+void BackendCommandTarget::Actions::checkLatency(BackendRootWindow* bpe)
+{
+	if(PresetHandler::showYesNoWindow("Check latency", "This will send a short impulse through the signal chain to measure the latency of your DSP processing.\n> Turn down your speaker and make sure that there is no sound from a reverb trail or sound generator as this will mess up the measurements.", PresetHandler::IconType::Warning))
+	{
+		bpe->getBackendProcessor()->checkLatency();
+	}
 }
 
 #undef REPLACE_WILDCARD

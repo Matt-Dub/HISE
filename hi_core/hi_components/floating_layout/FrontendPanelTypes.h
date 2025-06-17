@@ -496,12 +496,15 @@ public:
 		ShowAddButton,
 		ShowRenameButton,
 		ShowDeleteButton,
+    ShowSearchBar,
 		ButtonsInsideBorder,
 		ColumnRowPadding,
 		SearchBarBounds,
 		SaveButtonBounds,
 		MoreButtonBounds,
 		FavoriteButtonBounds,
+    FullPathFavorites,
+    FavoriteIconOffset,
 		numSpecialProperties
 	};
 
@@ -681,6 +684,7 @@ public:
 	enum ColumnId
 	{
 		CCNumber = 1,
+		Channel,
 		ParameterName,
 		Inverted,
 		Minimum,
@@ -690,7 +694,7 @@ public:
 	};
 
 	TableFloatingTileBase(FloatingTile* parent);
-	void initTable();
+	void initTable(bool addChannelColumn=false);
 
 	virtual ~TableFloatingTileBase() {};
 

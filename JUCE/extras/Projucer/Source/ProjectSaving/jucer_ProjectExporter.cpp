@@ -512,6 +512,12 @@ static bool isLoadCurlSymbolsLazilyEnabled (Project& project)
             && project.isConfigFlagEnabled ("JUCE_LOAD_CURL_SYMBOLS_LAZILY", false));
 }
 
+bool isPackageAvailable (const juce::String& package)
+{
+    juce::String cmd = "pkg-config --exists " + package;
+    return std::system (cmd.toRawUTF8()) == 0;
+}
+
 StringArray ProjectExporter::getLinuxPackages (PackageDependencyType type) const
 {
     auto packages = linuxPackages;
@@ -522,7 +528,11 @@ StringArray ProjectExporter::getLinuxPackages (PackageDependencyType type) const
 
     if (isWebBrowserComponentEnabled (project) && type == PackageDependencyType::compile)
     {
-        packages.add ("webkit2gtk-4.0");
+      if (isPackageAvailable ("webkit2gtk-4.1"))
+          packages.add ("webkit2gtk-4.1");
+      else if (isPackageAvailable ("webkit2gtk-4.0"))
+          packages.add ("webkit2gtk-4.0");
+			
         packages.add ("gtk+-x11-3.0");
     }
 

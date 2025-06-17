@@ -222,11 +222,17 @@ juce::String ScriptingApiDatabase::Resolver::getContent(const MarkdownLink& url)
 
 			s << "  \n";
 			s << "# Class methods  \n";
-			
+
+			apiDump << "### API Class: " << classTree.getType().toString() << "\n";
+
+			apiDump << "\n```javascript\n";
+
 			for (auto c : classTree)
 			{
 				s << createMethodText(c);
 			}
+
+			apiDump << "\n```\n";
 
 			return s;
 		}
@@ -248,14 +254,43 @@ juce::String ScriptingApiDatabase::Resolver::createMethodText(ValueTree& mv)
 	String className = mv.getParent().getType().toString();
 	String methodName = mv.getProperty("name").toString();
 
-	s << "## `" << methodName << "`\n";
+	apiDump << "/* " << mv.getProperty("description").toString().trim() << " */\n";
+	apiDump << className << "." << methodName << mv.getProperty("arguments").toString() << ";\n\n";
 
-	s << "> " << mv.getProperty("description").toString().trim() << "\n";
+	s << "## `" << methodName;
+	
+	s << "`\n";
+
+	s << "> " << mv.getProperty("description").toString().trim();
+
+	auto fileLink = rootURL.getChildUrl(className).getChildUrl(methodName);
+	auto docFile = fileLink.getMarkdownFile(rootURL.getRoot());
+
+	if(rootURL.getRoot().isDirectory() && (!docFile.existsAsFile() || docFile.loadFileAsString().isEmpty()))
+	{
+		if(!docFile.existsAsFile())
+			docFile.create();
+
+		s << fileLink.getEditLinkOnGitHub(false);
+	}
+
+	s << "\n";
 
 	s << "```javascript\n" << className << "." << methodName << mv.getProperty("arguments").toString() << "```  \n";
 
-	auto fileLink = rootURL.getChildUrl(className).getChildUrl(methodName);
-	s << fileLink.toString(MarkdownLink::ContentWithoutHeader, rootURL.getRoot());
+	auto extendedDescription = fileLink.toString(MarkdownLink::ContentWithoutHeader, rootURL.getRoot());
+
+	if(extendedDescription.contains("```"))
+	{
+		auto code = extendedDescription.fromFirstOccurrenceOf("```", false, false).upToLastOccurrenceOf("```", false, false);
+
+		if(code.startsWith("javascript"))
+			code = code.fromFirstOccurrenceOf("javascript", false, false);
+
+		exampleDump << code.trim();
+	}
+
+	s << extendedDescription;
 	s << "  \n";
 
 	return s;

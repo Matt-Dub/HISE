@@ -87,8 +87,9 @@ bool MainController::unitTestMode = false;
 	}
 
 	MainController::MainController() :
-
+	debugSessionHandler(getGlobalUIUpdater()),
 	sampleManager(new SampleManager(this)),
+	
 	javascriptThreadPool(new JavascriptThreadPool(this)),
 	rootDispatcher(getGlobalUIUpdater()),
 	processorHandler(rootDispatcher),
@@ -135,6 +136,42 @@ bool MainController::unitTestMode = false;
 	xyzPool(new MultiChannelAudioBuffer::XYZPool()),
 	defaultFont(GLOBAL_FONT().getTypefacePtr(), "Oxygen")
 {
+#if HISE_INCLUDE_PROFILING_TOOLKIT
+
+	loadProfile.setHolder(&getDebugSession(), true);
+	loadProfile.setSourceType(DebugSession::ProfileDataSource::SourceType::BackgroundTask);
+	loadProfile.add("loadProject()");
+	loadProfile.add("buildModuleTree()");
+	loadProfile.add("compileScripts()");
+	loadProfile.add("prepareToPlay()");
+	loadProfile.add("initUserPresets()");
+
+	lockProfile.setDurationThreshold(3.0);	
+	lockProfile.setHolder(&getDebugSession(), true);
+	lockProfile.setSourceType(DebugSession::ProfileDataSource::SourceType::Lock);
+	lockProfile.setColour(Colour(HISE_WARNING_COLOUR));
+
+	for(int i = 0; i < (int)LockHelpers::Type::numLockTypes; i++)
+	{
+		lockProfile.add("Lock " + LockHelpers::getLockName((LockHelpers::Type)i).toString());
+	}
+
+	for(int i = 0; i < (int)LockHelpers::Type::numLockTypes; i++)
+	{
+		lockProfile.add("Wait for " + LockHelpers::getLockName((LockHelpers::Type)i).toString() + " Lock");
+		lockProfile.getSource(i + (int)LockHelpers::Type::numLockTypes)->colour = Colour(HISE_ERROR_COLOUR);
+	}
+
+	lockProfile.clearSource((int)LockHelpers::Type::IteratorLock);
+	lockProfile.clearSource((int)LockHelpers::Type::IteratorLock + (int)LockHelpers::Type::numLockTypes);
+
+	getDebugSession().getBufferDuration = [this]()
+	{
+		return 1000.0 * (double)getOriginalBufferSize() / (double)getOriginalSamplerate();
+	};
+
+#endif
+
 	PresetHandler::setCurrentMainController(this);
 
 	getUserPresetHandler().addStateManager(getMacroManager().getMidiControlAutomationHandler());
@@ -158,6 +195,8 @@ bool MainController::unitTestMode = false;
 	hostInfo = new DynamicObject();
     
 	startTimer(HISE_UNDO_INTERVAL);
+
+	getGlobalUIUpdater()->setDebugSession(&getDebugSession());
 
 	javascriptThreadPool->startThread(8);
 	getKillStateHandler().setScriptingThreadId(javascriptThreadPool->getThreadId());
@@ -215,6 +254,81 @@ void MainController::initProjectDocsWithURL(const String& projectDocURL)
 	getProjectDocHolder()->setProjectURL(URL(projectDocURL));
 }
 
+#if USE_BACKEND
+int MainController::getExtraDefinitionsValue(const String& extraDefinition, int defaultValue) const
+{
+	if(cachedPreprocessors.contains(extraDefinition))
+		return cachedPreprocessors[extraDefinition];
+
+#if JUCE_WINDOWS
+	auto ed = HiseSettings::Project::ExtraDefinitionsWindows;
+#elif JUCE_MAC
+		auto ed = HiseSettings::Project::ExtraDefinitionsOSX;
+#else
+		auto ed = HiseSettings::Project::ExtraDefinitionsLinux;
+#endif
+
+	auto gm = dynamic_cast<const GlobalSettingManager*>(this);
+
+	String s;
+
+	if(gm == nullptr)
+	{
+		// commencing uggo sequence, we don't have the filehandler initialised
+		// as well as the settings are not available so we must do EVERYTHING by hand
+		auto hiseAppRoot = ProjectHandler::getAppDataDirectory(nullptr);
+
+		if(auto projectsXml = XmlDocument::parse(hiseAppRoot.getChildFile("projects.xml")))
+		{
+			auto currentProject = projectsXml->getStringAttribute("current");
+
+			if(File::isAbsolutePath(currentProject))
+			{
+				auto projectSettings = File(currentProject).getChildFile("project_info.xml");
+
+				if(auto projectXml = XmlDocument::parse(projectSettings))
+				{
+					if(auto c = projectXml->getChildByName(ed))
+					{
+						s = c->getStringAttribute("value");
+					}
+				}
+			}
+		}
+	}
+	else
+		s = gm->getSettingsObject().getSetting(ed).toString();
+
+	if(s.isEmpty())
+	{
+		cachedPreprocessors.set(extraDefinition, defaultValue);
+		return defaultValue;
+	}
+
+	StringArray entries;
+
+	if(s.contains("\n"))
+		entries = StringArray::fromTokens(s, "\n", "");
+	else if(s.contains(";"))
+		entries = StringArray::fromTokens(s, ";", "");
+	else
+		entries.add(s.trim());
+
+	for(const auto& e: entries)
+	{
+		auto key = e.upToFirstOccurrenceOf("=", false, false).trim();
+		if(key == extraDefinition)
+		{
+			auto v = e.fromFirstOccurrenceOf("=", false, false).trim().getIntValue();
+			cachedPreprocessors.set(extraDefinition, v);
+			return v;
+		}
+	}
+
+	cachedPreprocessors.set(extraDefinition, defaultValue);
+	return defaultValue;
+}
+#endif
 
 hise::SampleMapPool* MainController::getCurrentSampleMapPool()
 {
@@ -298,6 +412,7 @@ void MainController::clearPreset(NotificationType sendPresetLoadMessage)
 		SUSPEND_GLOBAL_DISPATCH(mc, "reset main controller");
 		LockHelpers::freeToGo(mc);
 
+		mc->rebuildPluginParameters();
 		mc->getMacroManager().getMidiControlAutomationHandler()->getMPEData().clear();
 		mc->getScriptComponentEditBroadcaster()->getUndoManager().clearUndoHistory();
 		mc->getControlUndoManager()->clearUndoHistory();
@@ -373,6 +488,8 @@ void MainController::loadPresetInternal(const ValueTree& valueTreeToLoad)
 	{
 		LockHelpers::freeToGo(this);
 
+		auto sp = loadProfile.profile(0); // loadProject();
+
 		try
 		{
 			getSampleManager().setPreloadFlag();
@@ -414,27 +531,32 @@ void MainController::loadPresetInternal(const ValueTree& valueTreeToLoad)
 			// synthChain->setCurrentPlaybackSampleRate(-1.0);
 			synthChain->setId(v.getProperty("ID", "MainSynthChain"));
 
-			skipCompilingAtPresetLoad = true;
-			getSampleManager().setCurrentPreloadMessage("Building modules...");
-			synthChain->restoreFromValueTree(v);
-            
-            Processor::Iterator<GlobalModulator> gi(synthChain, false);
-            
-            while(auto m = gi.getNextProcessor())
-                m->connectIfPending();
-            
-            
-			skipCompilingAtPresetLoad = false;
+			{
+				auto sp1 = loadProfile.profile(1); // buildModules()
 
-			getSampleManager().setCurrentPreloadMessage("Compiling scripts...");
+				skipCompilingAtPresetLoad = true;
+				getSampleManager().setCurrentPreloadMessage("Building modules...");
+				synthChain->restoreFromValueTree(v);
+	            
+	            Processor::Iterator<GlobalModulator> gi(synthChain, false);
+	            
+	            while(auto m = gi.getNextProcessor())
+	                m->connectIfPending();
+	            
+				skipCompilingAtPresetLoad = false;
+			}
 
-			getMacroManager().getMidiControlAutomationHandler()->setUnloadedData(v.getChildWithName("MidiAutomation"));
-
-			synthChain->compileAllScripts();
+			{
+				auto sp2 = loadProfile.profile(2); // compileScripts();
+				getSampleManager().setCurrentPreloadMessage("Compiling scripts...");
+				getMacroManager().getMidiControlAutomationHandler()->setUnloadedData(v.getChildWithName("MidiAutomation"));
+				synthChain->compileAllScripts();
+			}
 
 			if (processingSampleRate > 0.0)
 			{
 				LOG_START("Initialising audio callback");
+				auto sp3 = loadProfile.profile(3); // prepareToPlay();
 
 				getSampleManager().setCurrentPreloadMessage("Initialising audio...");
 				prepareToPlay(processingSampleRate, processingBufferSize.get());
@@ -463,10 +585,10 @@ void MainController::loadPresetInternal(const ValueTree& valueTreeToLoad)
                 getSampleManager().clearPreloadFlag();
             
 			allNotesOff(true);
-            
+
+			auto sp4 = loadProfile.profile(4); // initUserPreset();
 			getUserPresetHandler().initDefaultPresetManager({});
-            
-            
+
 		}
 		catch (String& errorMessage)
 		{
@@ -724,6 +846,22 @@ bool MainController::shouldUseSoftBypassRamps() const noexcept
 #else
 	return allowSoftBypassRamps;
 #endif
+}
+
+ONNXLoader::Ptr MainController::getONNXLoader()
+{
+#if USE_BACKEND
+	File libraryPath(GET_HISE_SETTING(getMainSynthChain(), HiseSettings::Compiler::HisePath).toString());
+	libraryPath = libraryPath.getChildFile("tools/onnx_lib");
+#else
+	auto libraryPath = FrontendHandler::getAppDataDirectory(this);
+#endif
+	return new ONNXLoader(libraryPath.getFullPathName());
+}
+
+MarkdownContentProcessor* MainController::getCurrentMarkdownPreview()
+{
+	return currentPreview;
 }
 
 void callOnAllChildren(Component* c, const std::function<void(Component*)>& f)
@@ -1258,7 +1396,7 @@ void MainController::processBlockCommon(AudioSampleBuffer &buffer, MidiBuffer &m
 			for (int i = 0; i < osOutput.getNumChannels(); i++)
 				data[i] = osOutput.getChannelPointer(i);
 
-			AudioSampleBuffer thisMultiChannelBufferOs(data, osOutput.getNumChannels(), osOutput.getNumSamples());
+			AudioSampleBuffer thisMultiChannelBufferOs(data, (int)osOutput.getNumChannels(), (int)osOutput.getNumSamples());
 			synthChain->renderNextBlockWithModulators(thisMultiChannelBufferOs, masterEventBuffer);
 			oversampler->processSamplesDown(osInput);
 		}
@@ -1562,7 +1700,19 @@ void MainController::prepareToPlay(double sampleRate_, int samplesPerBlock)
 {
     if(sampleRate_ <= 0.0 || samplesPerBlock <= 0)
         return;
-    
+
+#if 0
+	if(auto ap = dynamic_cast<AudioProcessor*>(this))
+	{
+		juce::PluginHostType hostType;
+
+		if(hostType.isLogic())
+			getMasterClock().setClockTolerance(0.2);
+		else
+			getMasterClock().setClockTolerance(0.0);
+	}
+#endif
+
 	auto oldSampleRate = processingSampleRate;
 	auto oldBlockSize = processingBufferSize.get();
 
@@ -1593,7 +1743,7 @@ void MainController::prepareToPlay(double sampleRate_, int samplesPerBlock)
 	if (logger == nullptr)
 	{
 		logger = new ConsoleLogger(getMainSynthChain());
-		Logger::setCurrentLogger(logger);
+		//Logger::setCurrentLogger(logger);
 	}
 
 #endif
@@ -2161,6 +2311,73 @@ void MainController::timerCallback()
 #if USE_BACKEND
 	getScriptComponentEditBroadcaster()->getUndoManager().beginNewTransaction();
 #endif
+}
+
+void MainController::savePluginState(MemoryBlock& destData, int currentlyLoadedProgram)
+{
+	MemoryOutputStream output(destData, false);
+
+	ValueTree v("ControlData");
+
+	if (auto e = getExpansionHandler().getCurrentExpansion())
+		v.setProperty("CurrentExpansion", e->getProperty(ExpansionIds::Name), nullptr);
+
+	//synthChain->saveMacroValuesToValueTree(v);
+
+    getUserPresetHandler().saveStateManager(v, UserPresetIds::Modules);
+    
+    getUserPresetHandler().saveStateManager(v, UserPresetIds::MidiAutomation);
+
+	if (getUserPresetHandler().isUsingCustomDataModel())
+    {
+        getUserPresetHandler().saveStateManager(v, UserPresetIds::CustomJSON);
+        
+    }
+	else
+		getMainSynthChain()->saveInterfaceValues(v);
+
+	v.setProperty("MidiChannelFilterData", getMainSynthChain()->getActiveChannelData()->exportData(), nullptr);
+
+	v.setProperty("Program", currentlyLoadedProgram, nullptr);
+
+	auto storeTempo = HISE_GET_PREPROCESSOR(this, HISE_INCLUDE_TEMPO_IN_PLUGIN_STATE);
+
+	if(storeTempo)
+	{
+		auto globalBPM = dynamic_cast<GlobalSettingManager*>(this)->globalBPM;
+		v.setProperty("HostTempo", globalBPM, nullptr);
+	}
+
+	auto up = getActiveFileHandler()->getSubDirectory(FileHandlerBase::UserPresets);
+
+	auto currentUserPreset = getUserPresetHandler().getCurrentlyLoadedFile();
+
+	if(currentUserPreset.isAChildOf(up))
+	{
+		v.setProperty("UserPreset", currentUserPreset.getRelativePathFrom(up).replaceCharacter('\\', '/'), nullptr);
+	}
+	else
+	{
+		v.setProperty("UserPreset", currentUserPreset.getFullPathName(), nullptr);
+	}
+
+#if USE_BACKEND
+	auto version = GET_HISE_SETTING(getMainSynthChain(), HiseSettings::Project::Version).toString();
+#else
+	auto version = FrontendHandler::getVersionString();
+#endif
+
+	// Make sure to save the version string into the plugin state
+	v.setProperty("Version", version, nullptr);
+
+    getUserPresetHandler().saveStateManager(v, UserPresetIds::MPEData);
+	
+	// Reload the macro connections before restoring the preset values
+		// so that it will update the correct connections with `setMacroControl()` in a control callback
+	if (getMacroManager().isMacroEnabledOnFrontend())
+		getMacroManager().getMacroChain()->saveMacrosToValueTree(v);
+
+	v.writeToStream(output);
 }
 
 void MainController::handleSuspendedNoteOffs()

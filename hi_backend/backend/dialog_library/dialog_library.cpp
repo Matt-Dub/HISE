@@ -8,6 +8,177 @@ namespace hise {
 namespace multipage {
 namespace library {
 
+struct ScriptReplaceHelpers
+{
+	static StringArray getListOfAllConvertableScriptModules(MainController* mc)
+	{
+		Processor::Iterator<DspNetwork::Holder> iter(mc->getMainSynthChain());
+
+		StringArray sa;
+		
+		while(auto h = iter.getNextProcessor())
+		{
+			if(auto an = h->getActiveNetwork())
+			{
+				auto isCompileable = an->getValueTree()[scriptnode::PropertyIds::AllowCompilation];
+
+				if(isCompileable)
+				{
+					auto id = dynamic_cast<Processor*>(h)->getId();
+					sa.add(id);
+				}
+			}
+		}
+
+		return sa;
+	}
+
+	static void replace(MainController* mc, const StringArray& sa={}, NotificationType rebuild=sendNotification)
+	{
+		std::map<Identifier, Identifier> converters;
+
+		converters[JavascriptMasterEffect::getClassType()] = HardcodedMasterFX::getClassType();
+		converters[JavascriptPolyphonicEffect::getClassType()] = HardcodedPolyphonicFX::getClassType();
+		converters[JavascriptTimeVariantModulator::getClassType()] = HardcodedTimeVariantModulator::getClassType();
+
+		for(auto& idToReplace: sa)
+		{
+			auto p = ProcessorHelpers::getFirstProcessorWithName(mc->getMainSynthChain(), idToReplace);
+			auto type = p->getType();
+
+			auto parent = p->getParentProcessor(false);
+			auto chain = dynamic_cast<Chain*>(parent);
+
+			int index = 0;
+
+			while(index < chain->getHandler()->getNumProcessors())
+			{
+				if(chain->getHandler()->getProcessor(index) == p)
+					break;
+
+				index++;
+			}
+
+			auto typeToCreate = converters[type];
+
+			raw::Builder b(mc);
+
+			auto np = b.create(parent, typeToCreate, raw::IDs::Chains::Direct);
+
+			chain->getHandler()->moveProcessor(np, index - chain->getHandler()->getNumProcessors());
+
+			SaveData sd;
+			sd.save(p);
+			
+			sd.restore(np);
+			p->setIsOnAir(false);
+
+			chain->getHandler()->remove(p, false);
+			mc->getGlobalAsyncModuleHandler().removeAsync(p, {});
+
+			if(rebuild != dontSendNotification)
+				mc->getProcessorChangeHandler().sendProcessorChangeMessage(np, MainController::ProcessorChangeHandler::EventType::RebuildModuleList, false);
+		}
+
+		if(rebuild != dontSendNotification)
+		{
+			{
+				Processor::Iterator<JavascriptMidiProcessor> iter(mc->getMainSynthChain());
+
+				while(auto jmp = iter.getNextProcessor())
+					jmp->getContent()->resetContentProperties();
+			}
+
+			mc->compileAllScripts();
+		}
+	}
+
+	struct SaveData
+	{
+		Array<float> parameters;
+		Array<Identifier> parameterIds;
+		String id;
+		String effect;
+		bool bypassed;
+
+		struct ExternalDataStorage
+		{
+			ExternalData::DataType dt;
+			int index;
+			String b64;
+		};
+
+		Array<ExternalDataStorage> externalDataStorage;
+
+		ValueTree routing;
+
+		void save(Processor* p)
+		{
+			id = p->getId();
+			bypassed = p->isBypassed();
+
+			for(int i = 0; i < p->getNumParameters(); i++)
+			{
+				parameters.add(p->getAttribute(i));
+				parameterIds.add(p->getIdentifierForParameterIndex(i));
+			}
+
+			if(auto rp = dynamic_cast<RoutableProcessor*>(p))
+				routing = rp->getMatrix().exportAsValueTree();
+
+			if(auto h = dynamic_cast<DspNetwork::Holder*>(p))
+			{
+				if(auto an = h->getActiveNetwork())
+					effect = an->getId();
+			}
+
+			if(auto eh = dynamic_cast<ExternalDataHolder*>(p))
+			{
+				ExternalData::forEachType([&](ExternalData::DataType dt)
+				{
+					if(auto numObjects = eh->getNumDataObjects(dt))
+					{
+						for(int i = 0; i < numObjects; i++)
+						{
+							auto obj = eh->getData(dt, i).obj;
+							auto s = obj->toBase64String();
+							externalDataStorage.add({ dt, i, s});
+						}
+					}
+				});
+			}
+		}
+
+		void restore(Processor* p)
+		{
+			p->setId(id);
+			p->setBypassed(bypassed);
+
+			if(auto rp = dynamic_cast<RoutableProcessor*>(p))
+				rp->getMatrix().restoreFromValueTree(routing);
+
+			if(auto s = dynamic_cast<HardcodedSwappableEffect*>(p))
+			{
+				s->setEffect(effect, false);
+				s->preallocateUnloadedParameters(parameterIds);
+			}
+
+			for(int i = 0; i < parameters.size(); i++)
+				p->setAttribute(i, parameters[i], dontSendNotification);
+
+			if(auto eh = dynamic_cast<ExternalDataHolder*>(p))
+			{
+				for(const auto& ed: externalDataStorage)
+				{
+					auto obj = eh->getData(ed.dt, ed.index).obj;
+					jassert(obj != nullptr);
+					obj->fromBase64String(ed.b64);
+				}
+			}
+		}
+	};
+};
+
 CleanDspNetworkFiles::CleanDspNetworkFiles(BackendRootWindow* bpe):
   EncodedDialogBase(bpe)
 {
@@ -238,11 +409,7 @@ var ExportSetupWizard::checkIDE(const var::NativeFunctionArgs& args)
             writeState("xcodeExists", xcodeExists);
         }
         {
-            juce::ChildProcess xcp;
-            xcp.start("gem list xcpretty");
-            auto output = xcp.readAllProcessOutput();
-            auto xcPrettyExists = output.contains("xcpretty");
-            writeState("xcPrettyExists", xcPrettyExists);
+            writeState("xcPrettyExists", true);
         }
 #endif
 
@@ -316,6 +483,9 @@ var ExportSetupWizard::onPost(const var::NativeFunctionArgs& args)
 
 var AboutWindow::initValues(const var::NativeFunctionArgs& args)
 {
+	
+
+#define set_dynamic(X) state->globalState.getDynamicObject()->setProperty(Identifier(#X), getMainController()->getExtraDefinitionsValue(#X, X));
 #define set(X) state->globalState.getDynamicObject()->setProperty(Identifier(#X), X);
 #define setXY(X, Y) state->globalState.getDynamicObject()->setProperty(Identifier(#X), Y);
     
@@ -365,7 +535,6 @@ var AboutWindow::initValues(const var::NativeFunctionArgs& args)
 #else
     setXY(HISE_INCLUDE_FAUST, 0);
 #endif
-    
 
     set(Version);
     set(USE_IPP);
@@ -373,8 +542,12 @@ var AboutWindow::initValues(const var::NativeFunctionArgs& args)
     set(HISE_INCLUDE_RT_NEURAL);
     set(NUM_POLYPHONIC_VOICES);
     set(NUM_MAX_CHANNELS);
-    set(NUM_HARDCODED_FX_MODS);
-    set(NUM_HARDCODED_POLY_FX_MODS);
+    set_dynamic(NUM_HARDCODED_FX_MODS);
+    set_dynamic(NUM_HARDCODED_POLY_FX_MODS);
+	set_dynamic(HISE_NUM_MACROS);
+	set_dynamic(HISE_MACROS_ARE_PLUGIN_PARAMETERS);
+	set_dynamic(HISE_SUSPENSION_TAIL_MS);
+
     set(HISE_MAX_DELAY_TIME_SAMPLES);
     set(HISE_USE_SVF_FOR_CURVE_EQ);
     set(USE_MOD2_WAVETABLESIZE);
@@ -900,6 +1073,791 @@ void NewProjectCreator::threadFinished()
 		bpe->loadNewContainer(presetToLoad);
 	}
 }
-}	
-}	
+
+CompileProjectDialog::CompileProjectDialog(BackendRootWindow* bpe_):
+	EncodedDialogBase(bpe_, false),
+	bpe(bpe_)
+{
+	setMinimizable(true);
+	setWantsBackdrop(true);
+	loadFrom("1709.sNB..D...............35H...oi...AZ.........J09R+fQjE8NC.5NDWLvBrPzsMrSmgRDRBYc.4dR5JL6ROjoG5uZkH9fsl8xhI79l6n13Gz+Ac+YKrB.L.1Bfs.rM+YFq5m9nkijEDdo2Ody.IcTbetIGSNd7bmLxUL5sijHam3Zy1v869OyJo2h0fxsCl4Xjr6iLziTHkgpNvxdA0qyhgUrTBOfPAhEHnzskw3miyDjIVlLE41xMf6O6SwhDJQrTYhEHRr7WvOEHrPQhEKdtdRkIRfnRDbysh.YxDISdTAhDkRJN81wb8YxQkGJkDuAWUB.4hbUC4aqPPq8HJfTb64EGA0+kijRI8OWijpp5.FJkz9aFtG8URp5.FAzqKiBfpzg8pk5u9uUjN8QpmQJYIXo2XxhNPOdF+nCEwtJpToxCPTJ4z01XiH2h9jGONPEHOnTs2ziWVXse9I7mP.5uzAjFOWV.lldnTXeyIx8PWzRxMGQt0tlm6Z1TzNMMQNl7gl+rsxvQc9nCuXAOHtUp2kq2FGfeGlHkJ5sa87+meZv80k+N3m+TpQaCktlTxwKOBaz66eFOOGnhdAbJhRc8bs1BeLdd9G+O7777T.I3D5TzAKKyhNneaJztovEIb44oSUEbjwTNysr9tlkp+JGZwzW.OuIU40y8OyZiudKlkxeTW1q9VqeeeBMANX4Ta8zwjf7Wwrj7ykE4mavlavlLaj34ApTPyyiLi+MR7ONaFeITYKmigACX.COQdyh3JgDDdQ4m2a6seUmGSydqHiHnf9234thalpTOeE2N5eA2gaXlqRJi28nnxLwlHvfaNl1lLVuolMz5.oyBbr0NLLSUnfc43FLMMgKO.xvgKDwJie4HoFet13n+RU5Zrk252yED2XHDj.43kSMnbHATwsCj1TQNVE+b2SPRIaYMkpbEYoTv8xxB41YaexVNSjnTXNFacgHec4hb7IlDw6foEW+CzMBJkaig5x4nO286Ka1NlKbA6XjEuoFOPu4PbFOdnvPoOONzlKzEMyifzGjopw7SmdETGx18WNWBLpetVAAqMa.PBouSBWt1FjlA3rJCt9XH2hX.Eh7UIk1fiy2heGlULAJGpwGhLDMi.MAffFDDC.fwxAgT2AHGnrn.cTPfbHD..HBLDI.BD..Ph..P.IG.xEtFKm2S5DR2tOiB629D5.XaFiP4ruOU1vkW5Nvbio+Bp3aDs+2lnmuEm0IS7iZr.kltGvxYymUnCfoH8didDy0Nh6Cxq.20UzjZggfaPSCRQaWNw.KkSFITPOGR71+n0smbfxSv1lkRpGLqaPn82sAsADtvZ31biI8SbFQITjJu4.xEeLJCAWttELtuTjWOycMNdB7Ro0KW2I0EBxxxt1IlVXU1tezY.MMRJEa5lZpDAbZgqJxTdWLk+ulm5Jb.MxIhzwamwb+C6yGjNzM.TulxBXxtRpFEFjW42Fn8nxfv9yyZzXXbd4XRPO863fVXRzVHuzy7jRTj1xil.afRWRA05tW6b3MZCwU7GCXF6UbOEckteZxGYLK1.KnsvFXg3Yje2ORcMcn0RRRYICJtO1iKTN20nInfBIw1li2XibbaobqzwYFxPzI8qFx0R1eRl66XX3FA.u3PwBUply6h+bMGnJmn+SgIWAP0.vnsfQWlQmYT5sXuE+09KbmEBUv+u+EGNoO4RKzgEwrQuxpAbjzRyCByHQ65ECeCLJNZoW89kLW9tXKD.CkC67cCa6AlyOm8aVTvglfaws8YL1xhiwprgOX5YvUnwAPxz0H1UPwOyFtodlOhkX3Q7f516qDjviKwnMcrNHzsso8a+ErIp6UWilcRgHksJA+4U5MoSSSXrlFLDkEbq53.lqyCGltZVDsGmf7zj7NlXPG7t63Nr5FXgg11f6h7KcdlNPxQZ4grRZ5ieSWIWqEZOJv38x2LLuuJOU7Wz47bW5lzDpBIUJzLwhOjAr8GFAT7+Aa1kkPI11DFJS9RZ7SxDwInmLl6UwD0hV0CRmATYXAfGpzaziGymHOvUZFZrsBSMFk1K+0sVeSyTzfoj5QSm8pMCAcQ.D2m2YYNLHXjwuYs2E4OK6r21AbaKmgrD3+sCtzIYYCHyXW7.ZTVsYB+wYEapV+bxDcHaoQwHEAAggf37i923eD7WskaNAR+COwTvrzL4U0K+K2LxMJTr++sN4WiiFwvUA5sBtjj.GPfhBX94zjAMGJH1g0cqOflwHQVcEO3jMn3qy4r0cRMxmzeOg7Poi...lNB..v5H...");
+
+	state.get()->dynamicComponentFactory = [this](const String& id)
+	{
+		return new CompileLogger(this);
+	};
+
+	dialog->setFinishCallback([this]()
+	{
+		dllCompiler = nullptr;
+		findParentComponentOfClass<ModalBaseWindow>()->clearModalComponent();
+	});
+
+	auto dllManager = bpe->getBackendProcessor()->dllManager;
+
+	if(!dllManager->isDllLoaded() && dllManager->hasFilesToCompile())
+	{
+		dllCompiler = new DspNetworkCompileExporter(bpe, bpe->getBackendProcessor(), true);
+		dllCompiler->setAdditionalLogFunction(BIND_MEMBER_FUNCTION_1(NetworkCompiler::logMessage));
+		dynamic_cast<DspNetworkCompileExporter*>(dllCompiler.get())->managerToUse = this;
+	}
+}
+
+CompileProjectDialog::~CompileProjectDialog()
+{
+	if(killFunction)
+		killFunction();
+
+    dialog = nullptr;
+    
+	state->clearCompletedJobs();
+
+}
+
+	/** 0xABCD
+	*
+	*	A = OS (0 = Linux / 1 = Windows / 2 = OSX / 4 = iPad, 8=iPhone, 12 = iPad/iPhone)
+	*	B = type (1 = Standalone, 2 = Instrument, 4 = Effect, 8 = MidiFX)
+	*	C = platform (0 = void, 1 = VST, 2 = AU, 4 = VST / AU, 8 = AAX);
+	*	D = bit (1 = 32bit, 2 = 64bit, 4 = both) 
+	*/
+
+#if JUCE_WINDOWS
+#define OS_FLAG 0x1000
+#elif JUCE_MAC
+#define OS_FLAG 0x2000
+#else
+#define OS_FLAG 0x0000
+#endif
+
+#define IS_FLAG(functionName) CompileExporter::BuildOptionHelpers::functionName((CompileExporter::BuildOption)flags)
+#define TEST_FLAG(functionName) jassert(IS_FLAG(functionName))
+
+	
+
+int CompileProjectDialog::getBuildFlag() const
+{
+	auto exportType = (int)readState("ExportType");
+	auto pluginType = readState("pluginType").toString();
+
+	if(pluginType.isEmpty())
+		pluginType = "VST";
+
+	auto projectType = readState("projectType").toString();
+
+	int flags = OS_FLAG;
+	
+	flags |= 0x0002; // always 64 bit now
+
+	if(exportType == 1) // plugin
+	{
+		flags |= 0x0100;
+		TEST_FLAG(isStandalone);
+	}
+	else
+	{
+		if(projectType == "Instrument")
+		{
+			flags |= 0x0200;
+			TEST_FLAG(isInstrument);
+		}
+			
+		if(projectType == "FX plugin")
+		{
+			flags |= 0x0400;
+			TEST_FLAG(isEffect);
+		}
+			
+		if(projectType == "MIDI plugin")
+		{
+			flags |= 0x0800;
+			TEST_FLAG(isMidiEffect);
+		}
+
+		if(pluginType == "VST")
+		{
+			flags |= 0x0010;
+			TEST_FLAG(isVST);
+		}
+		if(pluginType == "AU")
+		{
+			flags |= 0x0020;
+			TEST_FLAG(isAU);
+		}
+		if(pluginType == "AAX")
+		{
+			flags |= 0x0080;
+			TEST_FLAG(isAAX);
+		}
+		if(pluginType == "All Platforms")
+		{
+			flags |= 0x10000;
+			TEST_FLAG(isVST);
+			TEST_FLAG(isAU);
+			TEST_FLAG(isAAX);
+		}
+	}
+
+	return flags;
+}
+
+
+
+
+var CompileProjectDialog::onInit(const var::NativeFunctionArgs& args)
+{
+	auto type = GET_HISE_SETTING(getMainController()->getMainSynthChain(), HiseSettings::Project::ProjectType).toString();
+
+	if(type.isNotEmpty())
+		writeState("projectType", type);
+
+    refreshOutputFile();
+
+	return var();
+}
+
+var CompileProjectDialog::compileTask(const var::NativeFunctionArgs& args)
+{
+
+	
+
+	if(dllCompiler != nullptr)
+		dllCompiler->run();
+	
+
+	CompileExporter ep(bpe->getBackendProcessor()->getMainSynthChain());
+
+#if NOPE
+	auto modulesToReplace = ScriptReplaceHelpers::getListOfAllConvertableScriptModules(bpe->getBackendProcessor());
+
+	if(!modulesToReplace.isEmpty())
+	{
+		logMessage("> Converting compileable script modules to hardcoded modules");
+
+		for(auto m: modulesToReplace)
+			logMessage("  " + m);
+
+		ScriptReplaceHelpers::replace(bpe->getBackendProcessor(), modulesToReplace, sendNotificationAsync);
+	}
+#endif
+
+	ep.manager = this;
+
+	CompileExporter::ErrorCodes ok = CompileExporter::ErrorCodes::UserAbort;
+
+	auto flags = getBuildFlag();
+
+	ChildProcessManager::ScopedLogger sl(*this);
+
+    ep.errorFunction = [this](const String& message)
+    {
+        this->logMessage(message);
+    };
+    
+	if(IS_FLAG(isStandalone))
+		ok = ep.exportMainSynthChainAsStandaloneApp((CompileExporter::BuildOption)flags);
+	if(IS_FLAG(isInstrument))
+		ok = ep.exportMainSynthChainAsInstrument((CompileExporter::BuildOption)flags);
+	if(IS_FLAG(isEffect))
+		ok = ep.exportMainSynthChainAsFX((CompileExporter::BuildOption)flags);
+	if(IS_FLAG(isMidiEffect))
+		ok = ep.exportMainSynthChainAsMidiFx((CompileExporter::BuildOption)flags);
+
+	if(ok != CompileExporter::OK)
+	{
+		auto error = CompileExporter::getCompileResult(ok);
+		throw Result::fail(error);
+	}
+
+	return var();
+}
+
+var CompileProjectDialog::onPluginType(const var::NativeFunctionArgs& args)
+{
+	auto flags = getBuildFlag();
+
+    refreshOutputFile();
+
+	if(IS_FLAG(isAAX))
+	{
+		auto hiseDirectory = GET_HISE_SETTING(getMainController()->getMainSynthChain(), HiseSettings::Compiler::HisePath).toString();
+        const File aaxSDK = File(hiseDirectory).getChildFile("tools/SDK/AAX/Libs");
+        
+        if(!aaxSDK.isDirectory())
+            throw Result::fail("AAX SDK not found.  \n> You need to get the AAX SDK from Avid and copy it to '%HISE_SDK%/tools/SDK/AAX/'");
+	}
+
+#if JUCE_WINDOWS || JUCE_LINUX
+	if(IS_FLAG(isAU) && !(flags & 0x10000))
+	{
+		throw Result::fail("The AU plugin format is only supported on macOS.  \n> You need to compile this project on a macOS system to support this plugin format.");
+	}
+#endif
+
+	return var();
+}
+
+var CompileProjectDialog::onComplete(const var::NativeFunctionArgs& args)
+{
+	auto flags = getBuildFlag();
+
+	auto enabled = IS_FLAG(isStandalone);
+
+	setElementProperty("showPluginFolder", mpid::Enabled, enabled);
+	return var();
+}
+
+var CompileProjectDialog::onShowPluginFolder(const var::NativeFunctionArgs& args)
+{
+	auto flags = getBuildFlag();
+
+	
+
+#if JUCE_WINDOWS
+    File folder = File::getSpecialLocation(File::SpecialLocationType::globalApplicationsDirectory);
+#elif JUCE_MAC
+    File folder = File::getSpecialLocation(File::SpecialLocationType::commonApplicationDataDirectory).getChildFile("Audio/Plug-Ins");
+#elif JUCE_LINUX
+		File folder = File::getSpecialLocation(File::SpecialLocationType::userHomeDirectory);
+#endif
+    
+	if(IS_FLAG(isVST))
+	{
+		auto isVST3 = (bool)GET_HISE_SETTING(getMainController()->getMainSynthChain(), HiseSettings::Project::VST3Support);
+
+#if JUCE_WINDOWS
+		if(isVST3)
+			folder = folder.getChildFile("Common Files").getChildFile("VST3");
+		else
+		{
+			// not a real default folder, but hey...
+			folder = folder.getChildFile("VSTPlugins");
+		}
+#elif JUCE_MAC
+      folder = folder.getChildFile(isVST3 ? "VST3" : "VST");
+#else
+	folder = folder.getChildFile(isVST3 ? ".vst3" : ".vst");
+#endif
+	}
+	if(IS_FLAG(isAAX))
+	{
+#if JUCE_WINDOWS
+		folder = folder.getChildFile("Common Files").getChildFile("Avid").getChildFile("Audio").getChildFile("Plug-Ins");
+#elif JUCE_MAC
+        folder = File("/Library/Application Support/Avid/Audio/Plug-Ins");
+#endif
+	}
+    if(IS_FLAG(isAU))
+    {
+        folder = folder.getChildFile("Components");
+    }
+
+	if(folder.isDirectory())
+	{
+		auto firstChild = folder.findChildFiles(File::findFilesAndDirectories, false, "*").getFirst();
+
+		if(firstChild.exists())
+			firstChild.revealToUser();
+		else
+			folder.revealToUser();
+	}
+		
+	else
+		throw Result::fail("Can't find default plugin folder `" + folder.getFullPathName() + "`");
+
+	return var();
+}
+
+var CompileProjectDialog::onShowCompiledFile(const var::NativeFunctionArgs& args)
+{
+	auto compiledFile = getTargetFile();
+
+	if(compiledFile.exists())
+		compiledFile.revealToUser();
+	else
+		throw Result::fail("Can't find file `" + compiledFile.getFullPathName() + "`");
+
+	return var();
+}
+
+var CompileProjectDialog::onCopyToClipboard(const var::NativeFunctionArgs& args)
+{
+	SystemClipboard::copyTextToClipboard(log.getAllContent());
+	PresetHandler::showMessageWindow("Copied", "The console output was copied to the clipboard");
+	return var();
+}
+
+File CompileProjectDialog::getTargetFile() const
+{
+	auto flags = getBuildFlag();
+
+	auto binaries = getMainController()->getCurrentFileHandler().getSubDirectory(FileHandlerBase::SubDirectories::Binaries);
+
+	auto filename = GET_HISE_SETTING(getMainController()->getMainSynthChain(), HiseSettings::Project::Name).toString();
+
+	if(IS_FLAG(isStandalone))
+	{
+#if JUCE_WINDOWS
+		auto compiledFile = binaries.getChildFile("Compiled").getChildFile("App");
+		return compiledFile.getChildFile(filename).withFileExtension(".exe");
+#elif JUCE_MAC
+        auto compiledFile = binaries.getChildFile("Compiled");
+        return compiledFile.getChildFile(filename).withFileExtension(".app");
+#else
+        // David...
+        return File();
+#endif
+	}
+	if(IS_FLAG(isVST))
+    {
+		auto isVST3 = (bool)GET_HISE_SETTING(getMainController()->getMainSynthChain(), HiseSettings::Project::VST3Support);
+
+#if JUCE_WINDOWS
+		auto compiledFile = binaries.getChildFile("Compiled").getChildFile(isVST3 ? "VST3" : "VST");
+		return compiledFile.getChildFile(filename).withFileExtension(isVST3 ? ".vst3" : ".dll");
+#elif JUCE_MAC
+        auto compiledFile = binaries.getChildFile("Builds/MacOSX/build/Release");
+        return compiledFile.getChildFile(filename).withFileExtension(isVST3 ? ".vst3" : ".vst");
+#else
+        // David...
+        return File();
+#endif
+	}
+    if(IS_FLAG(isAU))
+    {
+        auto compiledFile = binaries.getChildFile("Builds/MacOSX/build/Release");
+        return compiledFile.getChildFile(filename).withFileExtension(".component");
+    }
+	if(IS_FLAG(isAAX))
+	{
+#if JUCE_WINDOWS
+		auto compiledFile = binaries.getChildFile("Compiled").getChildFile("AAX");
+		return compiledFile.getChildFile(filename).withFileExtension(".aaxplugin");
+#elif JUCE_MAC
+        auto compiledFile = binaries.getChildFile("Builds/MacOSX/build/Release");
+        return compiledFile.getChildFile(filename).withFileExtension(".aaxplugin");
+#endif
+	}
+
+	return File();
+}
+
+#undef OS_FLAG
+#undef IS_FLAG
+#undef TEST_FLAG
+
+var CompileProjectDialog::onExportType(const var::NativeFunctionArgs& args)
+{
+	auto enabled = (bool)readState("ExportType");
+
+	setElementProperty("projectType", mpid::Enabled, !enabled);
+	setElementProperty("pluginType", mpid::Enabled, !enabled);
+
+    refreshOutputFile();
+
+	return var();
+}
+
+
+
+NetworkCompiler::NetworkCompiler(BackendRootWindow* bpe_):
+	EncodedDialogBase(bpe_, false),
+	bpe(bpe_)
+{
+	setMinimizable(true);
+
+	auto dn = new DspNetworkCompileExporter(bpe, bpe->getBackendProcessor());
+	dn->setAdditionalLogFunction(BIND_MEMBER_FUNCTION_1(NetworkCompiler::logMessage));
+	dn->managerToUse = this;
+
+	compileExporter = dn;
+
+	setWantsBackdrop(true);
+	
+	loadFrom("2061.sNB..D...............35H...oi...ge.........J09R+fwzG85C.Z6DPNzBvtx1FHDhYyQKkTYnzZK21U5yW48aVJpOvNlWB1Af60i4iYiu9P11TTnqKGL.3.PM.UCvC2992waCIrnffPfPmtdcqsvOCuM9G+A3swaiGhfSnmgaa9yL1le5gVKhpfvD3VJ2ofHMTbeMDIHRQddKirFgdanKxVL9J1BWallH22O0birSz+7LFJ6ZXliIRmhjb+QF5wLh5fkt0xscEC2vxGDQREIWhnB+ZWaYL90V.QBkKTfD41xKfcT6W4xjJPbwBkKRlb4AwekHtTYxkNu1QwBkIQXYBt4UPHgBkIThXQxDcJJNcmi4hBhjkH5TDigdSy4S7PTbcyK1Ap+qEQ5Tz+7JhTU0FxfNEs+lgcg9MQp1PFBy5MXdYOAN1bMFFHVpfc07Bf.ABWta6LH.pxF60J0e8e6Gc5gTOiTxWvR2gIK1VOdF+nC+vsFWdHu1uwwGYyILFZIWsPo+7LcJjqyVqG+ysp.Zcv4RfxwAcRgDQHnEKVhtyqjnSxY213iH2hNkHQjvhj.nSs2ziWcpVpeB+YCd75LID.DHQ5G1wJI2zIru0ef9Kkhby4U75qoKCWWQ6iiICfioVmxvPb9nCAQwawNc5wy+eR8fcWWebe4CPrSlwe+3c0tE5uD+7mNEZcPY2jRNd4QX.OGCFx4YH0fg91pe6172ntcJaMZNlHnQ2Rau+nuFIol4ubVY4pdMo3lV.k+N9Q5PF+xPRMxx4iBmhLZzWqP0BKxnOF1.M99oQR979q3262lB5McqGkyVI6IxRNB4nRebgQ9eyF27pVL1L12ezmlwlL5prmESwpZrOpyspUqfbpNUMGniWf+tHJY2r4YZDpPkJWsNH6fIdaTgJTgFhf9KAbuZv5kysBHrhcskR.BfohBbyeYzDIBUr4sAGtLPRbU6Xvg938wach6EQOdY6jjx0gYBDygcA.niFnfjNxky1nxVJSzILGKCKbLr.AlVbcJXGBNc4VzPF0byKxWWcjy+XOTzohwph538lx0yxfFKQmf9+30WwMC1cjxUe18e6vPKUJc.Jm0uxUy1ud5uZ4lDB4jSu8P4pKcKGbnROnWqMVN8nPcU9WN9wctDv+1fSJPHIxDHj71Hx6Z4HwTYrzxUYziQd+GKolxkcs9fji87BbbeGdd60VaeOvgjjzAz.CCnbH090VbSqrznGPkxZ2i13ecvL9es9rTYJYi4mdsNqnNllxfglIxPUGDnznFZIBoTyfA..P.I.Aw..TjfRozYGxALJJKIFiBoLDq.BvPHB..PA.D.S.fDBXv.fEjh2CjJVIbElHjBrmxf0kMaysoQnU6jLkVk0uhTErFBDKwBEaEo63kL31vIjRyroEif3AvUJpuKJrv433q9hKTIdJZaGFq5qEpgpznHOzZgHKSfbGZHVFHzCtSzajAQg5u64bgjOjXiHHYjQMIZmf5UhmJJUU5Lok9YoTKHpZFGVdFA7jk7AR9GtmDSNVfhMnpWNR2EN3ZabA+JITgQFJn+nkX+ojumhOMjJJzb91TL1lqOfljEBkBzCIgFxxNXpkcKDjEfcRiBGrjFTxm6KLF7g3QtaPhLcRQlaIuPSTGvQt5KOKO6hFd8J2kou5HWYOAbedKbVhGahl2XCTDYZIw.6ltKKBABJTvgRMAQlLC7WYEv+sTPf84OVhoe1PU.5EA.riNJg86WiYNpjh6OPtXpw2rQxjiXM6YvAGVVwjtKxOpGRbPrfz1gMcLfUWQJVc4MUIDkZr2IJhvRLyCPHsQN+ghakcY2DFdA3+yrKMKGCkEjMmK0HcOBZWCnz6OLc3fk33zf9f.XXvLS6qvMOg++TiBP586jQdc82CigX5xW+9fqtTlxsXj7XHz++LQeTY50uohgkJiBEM9AKduWnTvMUOxEy8MERjXem9KShm5TnBXTFsq7wRMDG0XO.QFVHbGPGinKm2ULU32aS82EpIrYX7V3Y7MJYqx1VP4+raQyvEC78ygO1YRFGQjhQxFWncaB34fTvbsc.8iL+3uUX1tiqxkG6VNf0S7unTPVl78pB.VNjPpMqGOGsZ6O4ccUaeWM+JsCf+fbSXP.gFHlyEwPXOTK1u45A4q1JljX+sYPmMi5PrxTzcAdrI39jWLJY4h7DQd+.6cY6T+pZ57swNhY3xY6UiyVU+7dPC+2yjglcLkgl1aJT0TYXXTZwKTchwAO.IlPFiry9zN6OFxSljFTHcLENTLWQPQdKidW4HNfyDulE4XkBUSlQ3etyaOCrViYkqkUoSMvmx4RyGvUTTff95AwWvaq.2TeFEIqPyTasF1cwQf.1q.EqIEAYNnQypjaFcIgk4uDA.EQQbaLyvm.8MdhLJYWA0AIyyEyNBGQi22BB55lCHlTHXmWfaCIik4fYNQx+3bNOWmMJ.f3cAaVQLQttFYFnbLFyXnW3bWevoG3Pr2TeSVW1yZuC340SZWenzlm9x5q2ewx1XDrUhx0iqfVZVLAM8NtsVY.CXZQJbh..XS3HquObwr29q5bVOtT5b2m9TlKWBNCKERKQ8B.FN6SQqsnAGS0Iv0yxISnJO03zuE8z.oj25lbDGRSr6.p3+.R7HS2vYpf2ctjf7j99n3Zk+kKBjoEQPz.N+au2NoMDhK1dqD8WJHSfbnuVAN2mLL3m3GtLb24GXliKhhgGewjMRw5Nw111vkG+uvpCkNB..X5H...qi...");
+
+	state.get()->dynamicComponentFactory = [this](const String& id)
+	{
+		return new CompileLogger(this);
+	};
+
+	dialog->setFinishCallback([this]()
+	{
+		dynamic_cast<DspNetworkCompileExporter*>(compileExporter.get())->threadFinished();
+
+		if(readState("replaceScriptModules"))
+		{
+			logMessage("> Replacing ScriptFX modules...");
+			auto list = ScriptReplaceHelpers::getListOfAllConvertableScriptModules(bpe->getBackendProcessor());
+
+			for(auto l: list)
+				logMessage("  convert " + l + " to hardcoded module");
+
+			ScriptReplaceHelpers::replace(bpe->getBackendProcessor(), list);
+		}
+
+		findParentComponentOfClass<ModalBaseWindow>()->clearModalComponent();
+	});
+}
+
+NetworkCompiler::~NetworkCompiler()
+{
+	if(killFunction)
+		killFunction();
+
+	state->clearCompletedJobs();
+	dialog = nullptr;
+	dynamic_cast<DspNetworkCompileExporter*>(compileExporter.get())->managerToUse = nullptr;
+	
+	compileExporter = nullptr;
+
+}
+
+var NetworkCompiler::onInit(const var::NativeFunctionArgs& args)
+{
+	String ns, cs, fs;
+
+	const auto& nodes = dynamic_cast<DspNetworkCompileExporter*>(compileExporter.get())->nodesToCompile;
+	const auto& cpp = dynamic_cast<DspNetworkCompileExporter*>(compileExporter.get())->cppFilesToCompile;
+
+	auto faustDir = BackendDllManager::getSubFolder(getMainController(), BackendDllManager::FolderSubType::FaustCode);
+	auto faust = faustDir.findChildFiles(File::findFiles, false, "*.dsp");
+
+	if(!nodes.isEmpty())
+	{
+		for(auto& n: nodes)
+			ns << "- `" << n << "`\n";
+	}
+	else
+	{
+		ns << "No networks";
+	}
+
+	if(!faust.isEmpty())
+	{
+		for(auto& n: faust)
+			fs << "- `" << n.getFileNameWithoutExtension() << "`\n";
+	}
+	else
+	{
+		fs << "No faust files";
+	}
+
+	if(!cpp.isEmpty())
+	{
+		for(auto& n: cpp)
+			cs << "- `" << n << "`\n";
+	}
+	else
+	{
+		cs << "No C++ files";
+	}
+
+	setElementProperty("nodeList", mpid::Text, ns);
+	setElementProperty("cppList", mpid::Text, cs);
+	setElementProperty("faustList", mpid::Text, fs);
+
+	auto thirdPartyFiles = BackendDllManager::getThirdPartyFiles(getMainController(), false);
+
+	Array<var> nodeList;
+
+	for(auto f: thirdPartyFiles)
+		nodeList.add(f.getFileNameWithoutExtension());
+
+	allNodeList = nodeList;
+
+	setElementProperty(PropertyIds::IsPolyphonic.toString(), mpid::Items, var(nodeList));
+	setElementProperty(PropertyIds::AllowPolyphonic.toString(), mpid::Items, var(nodeList));
+
+	auto v = JSON::parse(getNodePropertyFile());
+
+	Array<var> isPolyphonicList, allowPolyphonicList;
+	
+	var IsPolyphonic(scriptnode::PropertyIds::IsPolyphonic.toString());
+	var AllowPolyphonic(PropertyIds::AllowPolyphonic.toString());
+
+	int numElements = 0;
+
+	if(auto obj = v.getDynamicObject())
+	{
+		numElements = obj->getProperties().size();
+
+		for(const auto& p: obj->getProperties())
+		{
+			if(p.value.indexOf(IsPolyphonic) != -1)
+				isPolyphonicList.add(p.name.toString());
+
+			if(p.value.indexOf(AllowPolyphonic) != -1)
+				allowPolyphonicList.add(p.name.toString());
+		}
+	}
+
+	writeState(PropertyIds::IsPolyphonic, var(isPolyphonicList), sendNotification);
+	writeState(PropertyIds::AllowPolyphonic, var(allowPolyphonicList), sendNotification);
+	
+	return var();
+
+}
+
+var NetworkCompiler::compileTask(const var::NativeFunctionArgs& args)
+{
+	auto nc = dynamic_cast<DspNetworkCompileExporter*>(compileExporter.get());
+	
+	nc->run();
+
+	{
+		MessageManagerLock mm;
+		findParentComponentOfClass<ModalBaseWindow>()->minimizeModalComponent(false, state.get());
+	}
+
+	auto ok = nc->getErrorCode();
+
+	if(ok != CompileExporter::OK)
+	{
+		throw nc->getCompilationResult();
+	}
+
+	return var();
+}
+
+var NetworkCompiler::onClipboard(const var::NativeFunctionArgs& args)
+{
+	SystemClipboard::copyTextToClipboard(this->log.getAllContent());
+	return var();
+}
+
+var NetworkCompiler::updateNodeProperties(const var::NativeFunctionArgs& args)
+{
+	auto isPolyphonicList = readState(PropertyIds::IsPolyphonic);
+	auto allowPolyphonicList = readState(PropertyIds::AllowPolyphonic);
+
+	auto list = BackendDllManager::getThirdPartyFiles(getMainController(), false);
+
+	DynamicObject::Ptr newData = new DynamicObject();
+
+	for(auto& f: list)
+	{
+		auto nodeName = f.getFileNameWithoutExtension();
+
+		Array<var> props;
+
+		if(isPolyphonicList.indexOf(nodeName) != -1)
+			props.add(PropertyIds::IsPolyphonic.toString());
+
+		if(allowPolyphonicList.indexOf(nodeName) != -1)
+			props.add(PropertyIds::AllowPolyphonic.toString());
+
+		newData->setProperty(nodeName, props);
+	}
+
+	
+
+	rebuildNodes = true;
+
+	
+
+	getNodePropertyFile().replaceWithText(JSON::toString(var(newData.get())));
+
+	return var();
+}
+
+var NetworkCompiler::checkProperties(const var::NativeFunctionArgs& args)
+{
+	if(!checkPropertyMismatch())
+	{
+		throw Result::fail("The C++ node properties are not properly initialised. Open the C++ node property tab and adjust the properties for each node.  \n> As soon as you tick / untick a node item it will recreate the `node_properties.json` file to include all available third party nodes with the given properties.");
+	}
+
+	if(rebuildNodes)
+	{
+		auto dn = dynamic_cast<DspNetworkCompileExporter*>(compileExporter.get());
+		if(auto n = dn->getNetwork())
+		{
+			snex::cppgen::CustomNodeProperties::setInitialised(false);
+			n->createAllNodesOnce();
+		}
+
+		if(allNodeList.isArray())
+		{
+			auto isPolyphonic = readState(PropertyIds::IsPolyphonic);
+			auto allowPolyphonic = readState(PropertyIds::AllowPolyphonic);
+
+			for(const auto& n: *allNodeList.getArray())
+			{
+				snex::cppgen::CustomNodeProperties::clearNodeProperties(n.toString());
+
+				if(isPolyphonic.indexOf(n) != -1)
+					snex::cppgen::CustomNodeProperties::addNodeIdManually(n.toString(), PropertyIds::IsPolyphonic);
+
+				if(allowPolyphonic.indexOf(n) != -1)
+					snex::cppgen::CustomNodeProperties::addNodeIdManually(n.toString(), PropertyIds::AllowPolyphonic);
+				
+			}
+		}
+
+		
+	}
+
+	return var();
+}
+
+var NetworkCompiler::toggleIsPolyphonic(const var::NativeFunctionArgs& args)
+{
+	auto isAll = readState(PropertyIds::IsPolyphonic).size() == allNodeList.size();
+
+	writeState(PropertyIds::IsPolyphonic, isAll ? var() : allNodeList.clone(), sendNotification);
+
+	return updateNodeProperties(args);
+}
+
+var NetworkCompiler::toggleAllowPolyphonic(const var::NativeFunctionArgs& args)
+{
+	auto isAll = readState(PropertyIds::AllowPolyphonic).size() == allNodeList.size();
+
+	writeState(PropertyIds::AllowPolyphonic, isAll ? var() : allNodeList.clone(), sendNotification);
+
+	return updateNodeProperties(args);
+}
+
+File NetworkCompiler::getNodePropertyFile() const
+{
+	return BackendDllManager::getSubFolder(getMainController(), BackendDllManager::FolderSubType::ThirdParty).getChildFile("node_properties.json");
+}
+
+bool NetworkCompiler::checkPropertyMismatch() const
+{
+	auto numThirdPartyFiles = BackendDllManager::getThirdPartyFiles(const_cast<MainController*>(getMainController()), false).size();
+
+	auto obj = JSON::parse(getNodePropertyFile());
+
+	if(auto o = obj.getDynamicObject())
+	{
+		return numThirdPartyFiles == o->getProperties().size();
+	}
+
+	return false;
+}
+
+ScriptModuleReplacer::ScriptModuleReplacer(BackendRootWindow* bpe_):
+	EncodedDialogBase(bpe_),
+	bpe(bpe_)
+{
+	setWantsBackdrop(true);
+
+	loadFrom("1019.sNB..D...............35H...oi...OO.........J09R+fUTBs3A.l0Bhl.NsnSAhkjdCJoSuM5jYaV+3tgmOuSDKp.Cfziy.r2yYvLLLMem.CBfd.XG.ZNjBoQYJYir5AqOqUqZiWPoxkJYJ3B6zEa6mmoJTYnlfqS2GV9iRcIikKDjACUlJVx7gr+kBxbwRFP8iovPYo.LKrN2hfJTTVnnfohE3ly9lqOSSvPYE4UgfGO3VMPr0pCbruf.RPk2t1JR+UORoFou8FjxLSIijZjzW4rrnuRJSIiTnbyEkNmXbiXiNuIC97n2M3CcsP6CiQMGFrs2oFQJqEetmiliQZNhwEd4PsAX88O.Ajz1zbJX04+tXU+lKR8HYooo.qeb1gTDT62zjoITZ+EgKFhZUKy2HJhLUh2Z+3Ry5v+6+rUEWdy4Y45790dPqpbsTVaqHtuGtA.2eyTnRgmsmAcOfqV6oqU0Y2xOsL2JWPTrLBB5g9swrdX+5RQLqVuWy7eSyuShPOQiFRmCpOjXuVxPUmGxuWHbyJWrO6WFgIyuPVDxZQGxcffZDw2pIxhMVnieXallJ.65sOLMg8tWFWNqONInkwG1mVo+42Z..ijzAAs+x9rU0SH88BBCfhpEp6Sl5YT6tNV8VTAQgfRpQy+A52ETynnQCMGh.0aMDy1+RkzwFqX7utyFuXjFMbjnyBi37Mv855A48i5wkvfPzlnHH0DhYEhb5z9+aKn4Urm2pNai8McLRZxlowWaAk6GNcheuYKuo9pKCYYAhA.XtnFXlBwPjIXFPhRD..Q..wpxJ.HJzjb33XLMCLy.EHAPPZIjP.oRBCyPHo6HKlEwE.Pub6I+tTiPjFjqHk4NuLLz4Rp7yEZbolfFBuPfSeiE898bVw.IjZV0ZIyflBe1j1Ij2Pv9gYnBAh5YywmeHd4g3Wlw7bsqPMWfayN.xyZ3d5IVuNupQ7p5OFykAhXYhB0XIOsS2V8meCUX2YwR4GfUDPJxZ22H824TwoZ+Pw55Eju3mDHqNwxVLrpAGnqohFEAdsC8oF0sCGL7MCDmCDUz+I.ewV46upZdZXXv9Rv.oYWwZvUVu4TUhhr80bU+IcUkERAGMjjJVFeoZwqLniMuuShoK+09O8Y0yGAdPqOhInAD6AFw24JmjFsgRySBV1KP1XE5fCCQxAcdP0zimAM5DHrK1kskDEMEqiMsRPfLWEsAD1Bzx1B13rD8owCjf+rwB6UHUC9RRL4Y9A5c3.PhaZUA4OBZjQTHz+e844MZaDHTAnwko6jiIfFJcCrx8KAri5utt5tW.ROYAsr3KjE6VexFy4U08MN3i0g96MySoi...lNB..v5H...");
+
+	dialog->setFinishCallback([this]()
+	{
+		findParentComponentOfClass<ModalBaseWindow>()->clearModalComponent();
+	});
+}
+
+var ScriptModuleReplacer::onInit(const var::NativeFunctionArgs& args)
+{
+	auto sa = ScriptReplaceHelpers::getListOfAllConvertableScriptModules(bpe->getBackendProcessor());
+
+	for(auto s: sa)
+		allValues.add(s);
+
+	setElementProperty("moduleList", mpid::Items, sa.joinIntoString("\n"));
+
+	return var();
+}
+
+var ScriptModuleReplacer::onReplace(const var::NativeFunctionArgs& args)
+{
+	auto values = readState("moduleList");
+
+	if(auto ar = values.getArray())
+	{
+		StringArray sa;
+
+		for(auto v: *ar)
+			sa.add(v.toString());
+
+		ScriptReplaceHelpers::replace(bpe->getBackendProcessor(), sa);
+
+	}
+
+	return var();
+}
+
+var ScriptModuleReplacer::selectAll(const var::NativeFunctionArgs& args)
+{
+	writeState("moduleList", var(allValues));
+
+	if(auto b = dialog->findPageBaseForID("moduleList"))
+		b->postInit();
+
+	return var();
+}
+
+DebugSessionOptions::DebugSessionOptions(BackendRootWindow* bpe_):
+	EncodedDialogBase(bpe_, false)
+{
+	setName("Profiler Options");
+
+	loadFrom("1637.sNB..D...............35H...oi...4X.........J09R+fg2D8EC.ZHD5KrBzPpHCrCBfH+MJ4RAgTKekvWPA7Nbxbs3FwnrlxyvBHRp+QrscPtZbChmH7B.r..K.upVW9LuSRwyDFlB3LiyM3A63xdifhfbz99b5D5zI1kSoSEWID9IECU4kE92OS1kW66iEAzo7RI87z8cJl6r3YC5iSJN2IE6h9vvwCIOlDgDsWtkpk1KEQOhLIRjSao5.kyjQjLAhDHlHQjIOfL44nujHlHAxDM8xQjHBjHjXBs4SP7HRDHQbHwCHnziKyYmRUlHHIbfROpF1KM1mn.OtjypTIf9mT7fROe6L3AQDCPFnzS9YEk67WdPL.YTTTDTnx4bqj.L7sVONg9iemavLuC5UdOsB84LkK2R0NkM5NAHdmiwQUtpxeHDxCLVsZzgaGBy+F8V4xFYlNm8oFNs47CLYxDGPoVmoYJyzTMSp0jT6+mkIRBD+a4FU4+TJiRc0xYiMtqpAGkazWYrOA8.kTMruFe6TNvAKBhCTx5a6lF8dwZljc56NkCMlMzXNf1diRcRF6ssGSiIiFy6otJ2g0fy2eGJvCVFlaAmMO7tvPMk47BDX.PuVpNqKt.57AfM8sXqVaPoGd3gGvFuK+G94S68xou1zLs7DpuL+yvZKnkJVpnwzRmBDM.p71X3LqyJ3nsHmVUstKdfdeqYPQl2MXnZ8XU6LtwsPmSgsue5xZXS4rTXhuWeXr5fHOhbzXf3coeEZl6eWXTTjiLNmvu8FrdpiRcRRUffkIxPaNEWEKRVeUqTfU81b9jJAcZ8+sJVmKpf5Z7ZQI5spV0AA.XCAvBsCgHb4A3KQ0I.pEe5q27c5Dps0hJwN6U1cz7xKPcJc8lV7xoV5tInzXzl2ZlbJVfEfHfN04kyobJFZwkJVv.pRG.puNb14Kf1ael6cNgHnoO7sc5D8GVfkwvxGR6kWr23VOr0I1zLHyIqWZVlHCN0oZbNEtXAiFC5aKSAeUdw6k7yKCPkwt1K5TR4z243COPY5BonP88FSTu1GeNZ2t+XfPDnoO15lBDXbnFdGxTzPCDD.CZPPP.DFLJDRuIJjDkDobHkiHMAB.RzD..PXIjPBAAACCZcX6UPuf8Lc+1bsZy8Z5cQ+gMMIVzSSn0r2K43yhoI2npRhFdhNGVWW6KDnNnX9WJwhENn3vqw5WFxeaZwW+L1XyR8c.TaAtHYw7.oSwx6bjhj.VMPXNCpSdD.L6Ly1KohgfKGL3MDlVbtqq9fAtknqo8sArkDaw45nMrwy+Pl2ZPf9qcoIYMh+isYUKPtqeCib.AZs4rP7Wu81y1rav+oxFkWbjznZofZC2lNBYGrkK7+vqEAx2afChT3FhdXANi2RWMSq1TsHZ4FQBli9PtEIqyQlkVCevalYWIOKyrrwMLR2fSukdNlhheSgDsA2CmoHtPpwkajgBkngmjNnCdTGvHdqQcb5KYKUnZjovo7LKFuiuDXPx.iIGbt.jbPv2vcRxQMu4pJoPvXJk+1xrVCjFmb9XVzKIKU7nNxG.ftH6TQ8cWroPzyHcolOX9.IZL6dAWfv7f6fY+cQIcMKnJsnFxb03USI.LxsihIkwXgg6BFP8cmJISY5wVmruiEKxQLeXBzdDZT.z2FZRemv.z8eu6WrALnxs.xGD7TMjeUwn8lCxzMwtWH2KrkHCqSreEFqN6hxzmk50p7K5n0t6IjqYph3GoVsR3HYBojzvNQo61MIb1KBRZkvBI63wnpWrtJf0TJ7GQvyhTaPv3sa9F3XHDIQ8nEDTaOokJ2QvamoQdz96JJsLXA92beaC0l+WNcRQIEjZLIM7CaBX3l4q2fqpjkYVbGq2ymHwMqab5jPqntz2LX8x4glvtHTjAW4K7QHf4X7MTN95zRyClOUsDRiqeL18gxFPIxgM5ixBmoM9BSZTm9HVhhGMZ.+UXd3O+1XeZjffBCMOwth9KqPZC1tfOAHxYgLf7LWbvJx.EEmKkdyCIXv7mUE2+1mUIJ.trluoU5gNHU8OeyGEHvR9+DXvJfEZT9.LHiuc0ODRnjKu9aYt.QiRtN2C87ioDj2NBt6.f9yA4.0HkWz8u.QRjMAIN5XzEWGCODWl16L5bI.5XJB4oEAXd9IF5IB2VFdc7+pMOPoi...lNB..v5H...");
+
+	dialog->setFinishCallback([this]()
+	{
+		findParentComponentOfClass<ModalBaseWindow>()->clearModalComponent();
+	});
+
+#if HISE_INCLUDE_PROFILING_TOOLKIT
+	auto options = bpe_->getBackendProcessor()->getDebugSession().getOptions();
+	options.writeToObject(dialog->getState().globalState.getDynamicObject());
+#endif
+
+	if(auto b = dialog->findPageBaseForID("threadFilter"))
+		b->postInit();
+
+	if(auto b = dialog->findPageBaseForID("eventFilter"))
+		b->postInit();
+
+	if(auto b = dialog->findPageBaseForID("recordingLength"))
+		b->postInit();
+
+	if(auto b = dialog->findPageBaseForID("recordingTrigger"))
+		b->postInit();
+}
+
+var DebugSessionOptions::refresh(const var::NativeFunctionArgs& args)
+{
+	PROFILE_ONLY(getMainController()->getDebugSession().setOptions(dialog->getState().globalState));
+	return var();
+}
+
+var DebugSessionOptions::onExport(const var::NativeFunctionArgs& args)
+{
+#if HISE_INCLUDE_PROFILING_TOOLKIT
+
+	auto options = getMainController()->getDebugSession().getOptions();
+
+	DynamicObject::Ptr obj = new DynamicObject();
+
+	options.writeToObject(obj);
+
+	auto jsonText = JSON::toString(var(obj.get()), false);
+
+	SystemClipboard::copyTextToClipboard(jsonText);
+	PresetHandler::showMessageWindow("Export successfull", "The current options have been copied to the clipboard", PresetHandler::IconType::Info);
+
+#endif
+
+	return var();
+}
+
+} // namespace library
+} // namespace multipage
+
+#if USE_BACKEND && HISE_INCLUDE_PROFILING_TOOLKIT
+void hise::DebugSession::ProfileDataSource::ViewComponents::Manager::showOptions()
+{
+		auto bpe = GET_BACKEND_ROOT_WINDOW(this);
+		auto b = new multipage::library::DebugSessionOptions(bpe);
+
+		findParentComponentOfClass<FloatingTile>()->getRootFloatingTile()->showComponentAsDetachedPopup(b, &moreButton, {8, 16});
+};
+#endif
 }

@@ -1497,13 +1497,6 @@ void ParameterSlider::sliderValueChanged(Slider*)
 	if (parameterToControl != nullptr)
 	{
         auto value = getValue();
-        
-        if(isControllingFrozenNode())
-		{
-			auto n = parameterToControl->parent->getRootNetwork();
-			n->getCurrentParameterHandler()->setParameter(index, value);
-		}
-		
 		parameterToControl->data.setProperty(PropertyIds::Value, value, parameterToControl->parent->getUndoManager());
 	}
 
@@ -1550,31 +1543,11 @@ double ParameterSlider::getValueToDisplay() const
     double v;
     
 	if (parameterToControl != nullptr)
-	{
-		if (isControllingFrozenNode())
-			v = getValue();
-        else
-            v = parameterToControl->getValue();
-	}
+        v = parameterToControl->getValue();
 	else
-	{
 		v = getValue();
-	}
 	
     return v;
-}
-
-bool ParameterSlider::isControllingFrozenNode() const
-{
-	if (parameterToControl != nullptr)
-	{
-		auto n = parameterToControl->parent->getRootNetwork();
-
-		return n->getRootNode() == parameterToControl->parent &&
-			n->isFrozen();
-	}
-	
-	return false;
 }
 
 void ParameterSlider::repaintParentGraph()
@@ -1754,7 +1727,14 @@ MacroParameterSlider::MacroParameterSlider(NodeBase* node, int index) :
 void MacroParameterSlider::checkAllParametersForWarning(const Identifier& , const var& )
 {
     auto nTree = slider.pTree.getParent().getParent().getChildWithName(PropertyIds::Nodes);
- 
+
+	if(slider.pTree.getChildWithName(PropertyIds::Connections).getNumChildren() == 0)
+	{
+		warningButton.setVisible(false);
+		return;
+	}
+		
+
     jassert(nTree.isValid());
     
     ScriptingApi::Content::Helpers::callRecursive(nTree, [&](ValueTree& v)
@@ -1828,7 +1808,7 @@ Path MacroParameterSlider::createPath(const String& url) const
     Path p;
     
 	LOAD_EPATH_IF_URL("warning", EditorIcons::warningIcon);
-    LOAD_PATH_IF_URL("drag", ColumnIcons::targetIcon);
+    LOAD_EPATH_IF_URL("drag", ColumnIcons::targetIcon);
 	LOAD_EPATH_IF_URL("delete", SampleMapIcons::deleteSamples);
     return p;
 }

@@ -52,6 +52,30 @@ struct NodeBase::Wrapper
 };
 
 
+#if HISE_INCLUDE_PROFILING_TOOLKIT
+struct DspNetworkHeatmapGenerator: public DebugSession::ProfileDataSource::HeatmapGenerator<NodeBase>
+{
+	DspNetworkHeatmapGenerator(NodeBase* rootNode):
+	  HeatmapGenerator<NodeBase>(rootNode)
+	{};
+
+	DebugSession::ProfileDataSource* getSourceFromDataType(NodeBase* d) override
+	{
+		return d->profileData.get();
+	}
+
+	int getNumChildren(NodeBase* d) const override
+	{
+		return d->getValueTree().getChildWithName(PropertyIds::Nodes).getNumChildren();
+	}
+
+	NodeBase* getChild(NodeBase* n, int index) override
+	{
+		auto children = n->getValueTree().getChildWithName(PropertyIds::Nodes);
+		return n->getRootNetwork()->getNodeForValueTree(children.getChild(index));
+	}
+};
+#endif
 
 NodeBase::NodeBase(DspNetwork* rootNetwork, ValueTree data_, int numConstants_) :
 	ConstScriptingObject(rootNetwork->getScriptProcessor(), 8),
@@ -59,8 +83,16 @@ NodeBase::NodeBase(DspNetwork* rootNetwork, ValueTree data_, int numConstants_) 
 	v_data(data_),
 	helpManager(this, data_),
 	currentId(v_data[PropertyIds::ID].toString()),	
-	subHolder(rootNetwork->getCurrentHolder())
+	subHolder(rootNetwork->getCurrentHolder()),
+	profileData(new DebugSession::ProfileDataSource())
 {
+#if HISE_INCLUDE_PROFILING_TOOLKIT
+	profileData->name = getId();
+	profileData->preferredDomain = DebugSession::ProfileDataSource::TimeDomain::CpuUsage;
+	profileData->locationString = dynamic_cast<Processor*>(getScriptProcessor())->getId() + "." + profileData->name;
+	profileData->sourceType = DebugSession::ProfileDataSource::SourceType::Scriptnode;
+#endif
+
 	if (!v_data.hasProperty(PropertyIds::Bypassed))
 		v_data.setProperty(PropertyIds::Bypassed, false, getUndoManager());
 
@@ -528,28 +560,6 @@ bool NodeBase::isClone() const
 	return findParentNodeOfType<CloneNode>() != nullptr;
 }
 
-void NodeBase::setEmbeddedNetwork(NodeBase::Holder* n)
-{
-	embeddedNetwork = n;
-
-	if (getEmbeddedNetwork()->canBeFrozen())
-	{
-		setDefaultValue(PropertyIds::Frozen, true);
-		frozenListener.setCallback(v_data, { PropertyIds::Frozen }, valuetree::AsyncMode::Synchronously,
-			BIND_MEMBER_FUNCTION_2(NodeBase::updateFrozenState));
-	}
-}
-
-scriptnode::DspNetwork* NodeBase::getEmbeddedNetwork()
-{
-	return static_cast<DspNetwork*>(embeddedNetwork.get());
-}
-
-const scriptnode::DspNetwork* NodeBase::getEmbeddedNetwork() const
-{
-	return static_cast<const DspNetwork*>(embeddedNetwork.get());
-}
-
 ValueTree findBypassConnectionTree(const ValueTree& v, const String& nodeId)
 {
 	if (v.getType() == PropertyIds::Connection)
@@ -615,22 +625,6 @@ String NodeBase::getDynamicBypassSource(bool forceUpdate /*= true*/) const
 	}
 
 	return dynamicBypassId;
-}
-
-void NodeBase::updateFrozenState(Identifier id, var newValue)
-{
-	if (auto n = getEmbeddedNetwork())
-	{
-		try
-		{
-			if (n->canBeFrozen())
-				n->setUseFrozenNode((bool)newValue);
-		}
-		catch (Error& e)
-		{
-			getRootNetwork()->getExceptionHandler().addError(this, e);
-		}
-	}
 }
 
 Colour NodeBase::getColour() const
@@ -887,7 +881,7 @@ bool NodeBase::setComplexDataIndex(String dataType, int dataSlot, int indexValue
 	if(!v.isValid())
 		return false;
         
-	v.setProperty(PropertyIds::Index, dataSlot, getUndoManager());
+	v.setProperty(PropertyIds::Index, indexValue, getUndoManager());
         
 	return true;
 }
@@ -1012,6 +1006,12 @@ void Parameter::setDynamicParameter(parameter::dynamic_base::Ptr ownedNew)
 {
 	// We don't need to lock if the network isn't active yet...
 	bool useLock = parent->isActive(true) && parent->getRootNetwork()->isInitialised();
+
+	auto ph = parent->getRootNetwork()->getParentHolder();
+
+	if(ph == nullptr)
+		return;
+
 	SimpleReadWriteLock::ScopedWriteLock sl(parent->getRootNetwork()->getConnectionLock(), useLock);
 
 	dynamicParameter = ownedNew;
@@ -1231,6 +1231,7 @@ struct DragHelpers
 void NodeBase::connectToBypass(var dragDetails)
 {
 	auto sourceParameterTree = DragHelpers::getValueTreeOfSourceParameter(this, dragDetails);
+	auto modNode = DragHelpers::getModulationSource(this, dragDetails);
 
 	if (sourceParameterTree.isValid())
 	{
@@ -1238,11 +1239,18 @@ void NodeBase::connectToBypass(var dragDetails)
 		newC.setProperty(PropertyIds::NodeId, getId(), nullptr);
 		newC.setProperty(PropertyIds::ParameterId, PropertyIds::Bypassed.toString(), nullptr);
 
-		String connectionId = DragHelpers::getSourceNodeId(dragDetails) + "." + 
-							  DragHelpers::getSourceParameterId(dragDetails);
-
 		ValueTree connectionTree = sourceParameterTree.getChildWithName(PropertyIds::Connections);
 		connectionTree.addChild(newC, -1, getUndoManager());
+		return;
+	}
+	else if (modNode != nullptr)
+	{
+		ValueTree newC(PropertyIds::Connection);
+		newC.setProperty(PropertyIds::NodeId, getId(), nullptr);
+		newC.setProperty(PropertyIds::ParameterId, PropertyIds::Bypassed.toString(), nullptr);
+
+		modNode->getModulationTargetTree().addChild(newC, -1, getUndoManager());
+		return;
 	}
 	else
 	{
@@ -1273,6 +1281,20 @@ void NodeBase::connectToBypass(var dragDetails)
 				auto slotIndex = src.fromFirstOccurrenceOf("[", false, false).getIntValue();
 
 				for (auto c : stree.getChild(slotIndex).getChildWithName(PropertyIds::Connections))
+				{
+					if (c[PropertyIds::NodeId] == getId() && c[PropertyIds::ParameterId].toString() == "Bypassed")
+					{
+						c.getParent().removeChild(c, getUndoManager());
+						return;
+					}
+				}
+			}
+		}
+		else
+		{
+			if (auto modNode = dynamic_cast<ModulationSourceNode*>(getRootNetwork()->getNodeWithId(src)))
+			{
+				for(auto c: modNode->getModulationTargetTree())
 				{
 					if (c[PropertyIds::NodeId] == getId() && c[PropertyIds::ParameterId].toString() == "Bypassed")
 					{
@@ -1646,8 +1668,9 @@ scriptnode::parameter::dynamic_base::Ptr ConnectionBase::createParameterFromConn
 
 		n->getRootNetwork()->getExceptionHandler().removeError(tn, Error::UnscaledModRangeMismatch);
 
-
 		parameter::dynamic_base::Ptr p;
+
+		auto targetIsMacro = dynamic_cast<NodeContainer*>(tn) != nullptr;
 
 		if (pId == PropertyIds::Bypassed.toString())
 		{
@@ -1665,13 +1688,23 @@ scriptnode::parameter::dynamic_base::Ptr ConnectionBase::createParameterFromConn
 		{
 			p = param->getDynamicParameter();
 
+			if(auto dh = dynamic_cast<parameter::dynamic_base_holder*>(p.get()))
+			{
+				dh->setAllowForwardToParameter(false);
+				dh->updateRange(param->data);
+			}
+
 			isUnscaledTarget = cppgen::CustomNodeProperties::isUnscaledParameter(param->data);
 		}
 		else
 			return nullptr;
 
+		auto targetNodeType = tn->getPath().toString();
+		auto isCableValueParameter = targetNodeType.contains("local_cable") || targetNodeType.contains("global_cable");
 
-		if (numConnections == 1)
+		
+		
+		if (numConnections == 1 && !isCableValueParameter && !targetIsMacro)
 		{
 			auto sameRange = RangeHelpers::equalsWithError(p->getRange(), inputRange, 0.001);
 			
@@ -1795,26 +1828,7 @@ void ProcessDataPeakChecker::check(bool post)
 #endif
 }
 
-RealNodeProfiler::RealNodeProfiler(NodeBase* n, int numSamples_) :
-	enabled(n->getRootNetwork()->getCpuProfileFlag()),
-	profileFlag(n->getCpuFlag()),
-	numSamples(numSamples_),
-	node(n)
-{
-	if (enabled)
-		start = Time::getMillisecondCounterHiRes();
-}
 
-RealNodeProfiler::~RealNodeProfiler()
-{
-	if (enabled)
-	{
-		auto delta = Time::getMillisecondCounterHiRes() - start;
-		profileFlag = profileFlag * 0.9 + 0.1 * delta;
-
-		node->processProfileInfo(profileFlag, numSamples);
-	}
-}
 
 Parameter::ScopedAutomationPreserver::ScopedAutomationPreserver(NodeBase* n) :
 	parent(n)

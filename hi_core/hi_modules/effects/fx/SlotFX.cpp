@@ -330,9 +330,9 @@ public:
 			g.setColour(Colours::white.withAlpha(0.5f));
 			g.setFont(GLOBAL_BOLD_FONT());
 
-			auto ta = body.toFloat();
+			auto ta = selector.getBoundsInParent().translated(0, 20);
 			
-			g.drawText("ERROR: " + errorMessage, ta, Justification::centred);
+			g.drawMultiLineText("ERROR: " + errorMessage, ta.getX(), ta.getY() + 15, ta.getWidth());
 		}
 
 	}
@@ -342,26 +342,43 @@ public:
 		currentEditors.clear();
 		currentParameters.clear();
 
+#if 0
 		if(!getErrorMessage().isEmpty())
 			return;
+#endif
+
+		std::function<int(ExternalData::DataType)> numObjectsFunction;
 
 		if (auto on = getEffect()->opaqueNode.get())
 		{
+			numObjectsFunction = [on](ExternalData::DataType dt) { return on->numDataObjects[(int)dt]; };
+
+		}
+		else if (getEffect()->hasLoadedButUncompiledEffect())
+		{
+			numObjectsFunction = [this](ExternalData::DataType dt){ return getEffect()->getNumDataObjects(dt); };
+		}
+
+		if(numObjectsFunction)
+		{
 			ExternalData::forEachType([&](ExternalData::DataType dt)
+			{
+				int numObjects = numObjectsFunction(dt);
+
+				for (int i = 0; i < numObjects; i++)
 				{
-					int numObjects = on->numDataObjects[(int)dt];
+					auto f = ExternalData::createEditor(getEffect()->getComplexBaseType(dt, i));
 
-					for (int i = 0; i < numObjects; i++)
-					{
-						auto f = ExternalData::createEditor(getEffect()->getComplexBaseType(dt, i));
+					auto c = dynamic_cast<Component*>(f);
 
-						auto c = dynamic_cast<Component*>(f);
-
-						currentEditors.add(f);
-						addAndMakeVisible(c);
-					}
-				});
-
+					currentEditors.add(f);
+					addAndMakeVisible(c);
+				}
+			});
+		}
+		
+		if (auto on = getEffect()->opaqueNode.get())
+		{
 			for(const auto& p: OpaqueNode::ParameterIterator(*on))
 			{
 				auto pData = p.info;
@@ -372,6 +389,27 @@ public:
 
 				s->setRange(pData.min, pData.max, jmax<double>(0.001, pData.interval));
 				s->setSkewFactor(pData.skew);
+				s->setSliderStyle(Slider::RotaryHorizontalVerticalDrag);
+				s->setTextBoxStyle(Slider::TextBoxRight, true, 80, 20);
+				s->setColour(Slider::thumbColourId, Colour(0x80666666));
+				s->setColour(Slider::textBoxTextColourId, Colours::white);
+
+				currentParameters.add(s);
+			}
+		}
+		else if (getEffect()->hasLoadedButUncompiledEffect())
+		{
+			auto& p = getEffect()->asProcessor();
+			for(int i = 0; i < p.getNumAttributes(); i++)
+			{
+				auto id = p.getIdentifierForParameterIndex(i);
+				auto s = new HiSlider(id.toString());
+				addAndMakeVisible(s);
+				s->setup(getProcessor(), i, id.toString());
+
+				auto v = (double)p.getAttribute(i);
+				
+				s->setRange(jmin(0.0, v), jmax(1.0, v), 0.01);
 				s->setSliderStyle(Slider::RotaryHorizontalVerticalDrag);
 				s->setTextBoxStyle(Slider::TextBoxRight, true, 80, 20);
 				s->setColour(Slider::thumbColourId, Colour(0x80666666));
@@ -472,6 +510,7 @@ HardcodedSwappableEffect::HardcodedSwappableEffect(MainController* mc, bool isPo
 #if USE_BACKEND
 	auto dllManager = dynamic_cast<BackendProcessor*>(mc)->dllManager.get();
 	dllManager->loadDll(false);
+	dllManager->reloadBroadcaster.addListener(*this, onDllReload, false);
 	factory = new scriptnode::dll::DynamicLibraryHostFactory(dllManager->projectDll);
 #else
 	factory = scriptnode::DspNetwork::createStaticFactory();
@@ -606,14 +645,21 @@ bool HardcodedSwappableEffect::setEffect(const String& factoryId, bool /*unused*
 	}
 	else
 	{
-		currentEffect = {};
+		if(factory == nullptr || factory->getNumNodes() == 0)
+		{
+			// just set the effect so it will be exported properly
+			currentEffect = factoryId;
+		}
+		else
+		{
+			currentEffect = {};
+			effectUpdater.sendMessage(sendNotificationAsync, currentEffect, true, 0);
+		}
 
 		{
 			SimpleReadWriteLock::ScopedWriteLock sl(lock);
 			std::swap(newNode, opaqueNode);
 		}
-
-		effectUpdater.sendMessage(sendNotificationAsync, currentEffect, true, 0);
 	}
 
 	if (newNode != nullptr)
@@ -633,11 +679,16 @@ bool HardcodedSwappableEffect::swap(HotswappableProcessor* other)
 		if (otherFX->isPolyphonic() != isPolyphonic())
 			return false;
 
+#if USE_BACKEND
 		std::swap(previouslySavedTree, otherFX->previouslySavedTree);
+#endif
 		std::swap(currentEffect, otherFX->currentEffect);
 
 		auto& ap = asProcessor();
 		auto& op = otherFX->asProcessor();
+
+		unloadedParameters.swapWith(otherFX->unloadedParameters);
+		std::swap(numParameters, otherFX->numParameters);
 
 		ap.parameterNames.swapWith(op.parameterNames);
 		tables.swapWith(otherFX->tables);
@@ -647,10 +698,7 @@ bool HardcodedSwappableEffect::swap(HotswappableProcessor* other)
 		displayBuffers.swapWith(otherFX->displayBuffers);
 		listeners.swapWith(otherFX->listeners);
 
-		for (int i = 0; i < OpaqueNode::NumMaxParameters; i++)
-		{
-			std::swap(lastParameters, otherFX->lastParameters);
-		}
+		std::swap(lastParameters, otherFX->lastParameters);
 
 		{
 			SimpleReadWriteLock::ScopedWriteLock sl(lock);
@@ -685,18 +733,12 @@ bool HardcodedSwappableEffect::swap(HotswappableProcessor* other)
 
 juce::Result HardcodedSwappableEffect::sanityCheck()
 {
+#if USE_BACKEND
 	String errorMessage;
 
 	errorMessage << dynamic_cast<Processor*>(this)->getId();
 	errorMessage << ":  > ";
 
-	if (!properlyLoaded)
-	{
-		errorMessage << "Can't find effect in DLL";
-
-		return Result::fail(errorMessage);
-	}
-	
 	if (opaqueNode != nullptr)
 	{
 		for (const auto& p : OpaqueNode::ParameterIterator(*opaqueNode))
@@ -710,7 +752,8 @@ juce::Result HardcodedSwappableEffect::sanityCheck()
 			}
 		}
 	}
-
+#endif
+	
 	return Result::ok();
 }
 
@@ -758,23 +801,30 @@ hise::ProcessorEditorBody* HardcodedSwappableEffect::createHardcodedEditor(Proce
 
 void HardcodedSwappableEffect::restoreHardcodedData(const ValueTree& v)
 {
-	previouslySavedTree = v.createCopy();
-
 	auto effect = v.getProperty("Network", "").toString();
-
-	if (factory->getNumNodes() == 0 && effect.isNotEmpty())
-	{
-		properlyLoaded = false;
-		return;
-	}
-
-	
 
 	setEffect(effect, false);
 
 	SimpleReadWriteLock::ScopedReadLock sl(lock);
 
-	if (opaqueNode != nullptr)
+	std::function<int(ExternalData::DataType)> numDataObjectFunction;
+
+	// First check which complex data objects to restore
+	if(hasLoadedButUncompiledEffect())
+	{
+		numDataObjectFunction = [v](ExternalData::DataType dt)
+		{
+			auto parentId = Identifier(ExternalData::getDataTypeName(dt, true));
+			return v.getChildWithName(parentId).getNumChildren();
+		};
+	}
+	else if(opaqueNode != nullptr)
+	{
+		auto on = opaqueNode.get();
+		numDataObjectFunction = [on](ExternalData::DataType dt) { return on->numDataObjects[(int)dt]; };
+	}
+
+	if(numDataObjectFunction)
 	{
 		ExternalData::forEachType([&](ExternalData::DataType dt)
 		{
@@ -783,10 +833,9 @@ void HardcodedSwappableEffect::restoreHardcodedData(const ValueTree& v)
 				return;
 
 			auto parentId = Identifier(ExternalData::getDataTypeName(dt, true));
-
 			auto dataTree = v.getChildWithName(parentId);
 
-			jassert(dataTree.getNumChildren() == opaqueNode->numDataObjects[(int)dt]);
+			jassert(dataTree.getNumChildren() == numDataObjectFunction(dt));
 
 			int index = 0;
 			for (auto d : dataTree)
@@ -807,47 +856,108 @@ void HardcodedSwappableEffect::restoreHardcodedData(const ValueTree& v)
 				index++;
 			}
 		});
+	}
 
+
+	if(hasLoadedButUncompiledEffect())
+	{
+#if USE_BACKEND
+		previouslySavedTree = v.createCopy();
+
+		unloadedParameters.clear();
+		DBG(v.createXml()->createDocument(""));
+
+		int propertyOffset = -1;
+
+		for(int i = 0; i < v.getNumProperties(); i++)
+		{
+			if(v.getPropertyName(i) == scriptnode::PropertyIds::Network)
+			{
+				propertyOffset = i + 1;
+				break;
+			}
+		}
+
+		jassert(propertyOffset == 4);
+
+		numParameters = jmax(0, v.getNumProperties() - propertyOffset);
+
+		if(numParameters > 0)
+		{
+			lastParameters.setSize(numParameters);
+
+			Array<Identifier> up;
+
+			for(int i = 0; i < numParameters; i++)
+			{
+				up.add(v.getPropertyName(i + propertyOffset));
+			}
+
+			preallocateUnloadedParameters(up);
+
+			for(int i = 0; i < numParameters; i++)
+			{
+				if(auto ptr = getParameterPtr(i))
+				{
+					auto value = (float)v[up.getLast()];
+					*ptr = value;
+				}
+			}
+		}
+#endif
+	}
+	else if (opaqueNode != nullptr)
+	{
 		for (const auto& p : OpaqueNode::ParameterIterator(*opaqueNode))
 		{
-			auto value = v.getProperty(p.info.getId(), p.info.defaultValue);
+			auto id = getSanitizedParameterId(p.info.getId());
+			auto value = v.getProperty(id, p.info.defaultValue);
 			setHardcodedAttribute(p.info.index, value);
 		}
-	}
-	else
-	{
-		properlyLoaded = effect.isEmpty();
 	}
 }
 
 ValueTree HardcodedSwappableEffect::writeHardcodedData(ValueTree& v) const
 {
-	if (!properlyLoaded)
-	{
-		return previouslySavedTree;
-	}
-
 	v.setProperty("Network", currentEffect, nullptr);
 	
 	SimpleReadWriteLock::ScopedReadLock sl(lock);
+
+	std::function<int(ExternalData::DataType)> numObjectsFunction;
 
 	if (opaqueNode != nullptr)
 	{
 		for (const auto& p : OpaqueNode::ParameterIterator(*opaqueNode))
 		{
-			auto id = p.info.getId();
+			auto id = getSanitizedParameterId(p.info.getId());
 
 			if(auto ptr = getParameterPtr(p.info.index))
 				v.setProperty(id, *ptr, nullptr);
 		}
-		
+
+		auto on = opaqueNode.get();
+		numObjectsFunction = [on](ExternalData::DataType dt) { return on->numDataObjects[(int)dt]; };
+	}
+	else if (hasLoadedButUncompiledEffect())
+	{
+		for(int i = 0; i < unloadedParameters.size(); i++)
+		{
+			if(auto ptr = getParameterPtr(i))
+				v.setProperty(unloadedParameters[i], *ptr, nullptr);
+		}
+
+		numObjectsFunction = [this](ExternalData::DataType dt) { return getNumDataObjects(dt); };
+	}
+
+	if(numObjectsFunction)
+	{
 		ExternalData::forEachType([&](ExternalData::DataType dt)
 		{
 			if (dt == ExternalData::DataType::DisplayBuffer ||
 				dt == ExternalData::DataType::FilterCoefficients)
 				return;
 
-			int numObjects = opaqueNode->numDataObjects[(int)dt];
+			int numObjects = numObjectsFunction(dt);
 
 			ValueTree dataTree(ExternalData::getDataTypeName(dt, true));
 
@@ -1001,6 +1111,37 @@ int HardcodedSwappableEffect::getNumDataObjects(ExternalData::DataType t) const
 	}
 }
 
+#if USE_BACKEND
+void HardcodedSwappableEffect::onDllReload(HardcodedSwappableEffect& fx, const std::pair<scriptnode::dll::ProjectDll*,
+	scriptnode::dll::ProjectDll*>& update)
+{
+	auto thisId = fx.currentEffect;
+
+	auto prevNumParameters = fx.numParameters;
+
+	HeapBlock<float> parametersToRetain;
+
+	parametersToRetain.allocate(prevNumParameters, false);
+	memcpy(parametersToRetain.get(), fx.lastParameters.getObjectPtr(), sizeof(float) * prevNumParameters);
+
+	fx.setEffect("", true);
+	fx.factory = new scriptnode::dll::DynamicLibraryHostFactory(update.second);
+	fx.setEffect(thisId, true);
+
+	debugToConsole(dynamic_cast<Processor*>(&fx), "Reloading FX " + thisId);
+
+	if(fx.numParameters == prevNumParameters)
+	{
+		for(int i = 0; i < prevNumParameters; i++)
+			fx.setHardcodedAttribute(i, parametersToRetain[i]);
+	}
+	else
+	{
+		debugToConsole(dynamic_cast<Processor*>(&fx), "Parameter amount changed, ignoring previous values");
+	}
+}
+#endif
+
 juce::StringArray HardcodedSwappableEffect::getModuleList() const
 {
 	if (factory == nullptr)
@@ -1056,8 +1197,9 @@ HardcodedMasterFX::HardcodedMasterFX(MainController* mc, const String& uid) :
 	MasterEffectProcessor(mc, uid),
 	HardcodedSwappableEffect(mc, false)
 {
-#if NUM_HARDCODED_FX_MODS
-	for (int i = 0; i < NUM_HARDCODED_FX_MODS; i++)
+	auto numHardcodedFXSlots = HISE_GET_PREPROCESSOR(getMainController(), NUM_HARDCODED_FX_MODS);
+
+	for (int i = 0; i < numHardcodedFXSlots; i++)
 	{
 		String p;
 		p << "P" << String(i + 1) << " Modulation";
@@ -1066,11 +1208,8 @@ HardcodedMasterFX::HardcodedMasterFX(MainController* mc, const String& uid) :
 
 	finaliseModChains();
 
-	for (int i = 0; i < NUM_HARDCODED_FX_MODS; i++)
-		paramModulation[i] = modChains[i].getChain();
-#else
-	finaliseModChains();
-#endif
+	for (int i = 0; i < numHardcodedFXSlots; i++)
+		paramModulation.push_back(modChains[i].getChain());
 
 	getMatrix().setNumAllowedConnections(NUM_MAX_CHANNELS);
 	connectionChanged();
@@ -1141,10 +1280,20 @@ void HardcodedMasterFX::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
 	MasterEffectProcessor::prepareToPlay(sampleRate, samplesPerBlock);
 
+#if USE_BACKEND
+    auto numSlots = HISE_GET_PREPROCESSOR(getMainController(), NUM_HARDCODED_FX_MODS);
+
+	if(numSlots != getNumChildProcessors())
+	{
+		errorBroadcaster.sendMessage(sendNotificationAsync, "NUM_HARDCODED_FX_MODS has changed. Reload this effect.");
+		channelCountMatches = false;
+		return ;
+	}
+#endif
+
 	SimpleReadWriteLock::ScopedReadLock sl(lock);
 
 	auto ok = prepareOpaqueNode(opaqueNode.get());
-
 	errorBroadcaster.sendMessage(sendNotificationAsync, ok.getErrorMessage());
 }
 
@@ -1164,12 +1313,15 @@ void HardcodedMasterFX::applyEffect(AudioSampleBuffer &b, int startSample, int n
 {
 	SimpleReadWriteLock::ScopedReadLock sl(lock);
 
-#if NUM_HARDCODED_FX_MODS
-	float modValues[NUM_HARDCODED_FX_MODS];
+#if USE_BACKEND
+	auto useMods = !paramModulation.empty();
+#else
+	constexpr auto useMods = NUM_HARDCODED_FX_MODS > 0;
+#endif
 
-	if (opaqueNode != nullptr)
+	if(useMods && opaqueNode != nullptr)
 	{
-		int numParametersToModulate = jmin(NUM_HARDCODED_FX_MODS, opaqueNode->numParameters);
+		int numParametersToModulate = jmin((int)paramModulation.size(), opaqueNode->numParameters);
 
 		for (int i = 0; i < numParametersToModulate; i++)
 		{
@@ -1201,9 +1353,10 @@ void HardcodedMasterFX::applyEffect(AudioSampleBuffer &b, int startSample, int n
 		}
 	}
 
-#endif
-
 	auto canBeSuspended = isSuspendedOnSilence();
+
+	if(getMainController()->getSampleManager().isNonRealtime())
+		canBeSuspended = false;
 
 	if (canBeSuspended)
 	{
@@ -1376,8 +1529,9 @@ HardcodedPolyphonicFX::HardcodedPolyphonicFX(MainController *mc, const String &u
 {
 	polyHandler.setVoiceResetter(this);
 
-#if NUM_HARDCODED_POLY_FX_MODS
-	for (int i = 0; i < NUM_HARDCODED_POLY_FX_MODS; i++)
+	auto numMods = HISE_GET_PREPROCESSOR(mc, NUM_HARDCODED_POLY_FX_MODS);
+
+	for (int i = 0; i < numMods; i++)
 	{
 		String p;
 		p << "P" << String(i + 1) << " Modulation";
@@ -1386,11 +1540,8 @@ HardcodedPolyphonicFX::HardcodedPolyphonicFX(MainController *mc, const String &u
 
 	finaliseModChains();
 
-	for (int i = 0; i < NUM_HARDCODED_POLY_FX_MODS; i++)
-		paramModulation[i] = modChains[i].getChain();
-#else
-	finaliseModChains();
-#endif
+	for (int i = 0; i < numMods; i++)
+		paramModulation.push_back(modChains[i].getChain());
 	
 	getMatrix().setNumAllowedConnections(NUM_MAX_CHANNELS);
 	getMatrix().init();
@@ -1455,6 +1606,17 @@ hise::ProcessorEditorBody * HardcodedPolyphonicFX::createEditor(ProcessorEditor 
 
 void HardcodedPolyphonicFX::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
+#if USE_BACKEND
+	auto numMods = HISE_GET_PREPROCESSOR(getMainController(), NUM_HARDCODED_POLY_FX_MODS);
+
+	if(numMods != paramModulation.size())
+	{
+		errorBroadcaster.sendMessage(sendNotificationAsync, "NUM_HARDCODED_POLY_FX_MODS has changed. Reload this effect");
+		channelCountMatches = false;
+		return;
+	}
+#endif
+
 	auto samplesToUse = jmin(samplesPerBlock, HARDCODED_POLY_FX_BLOCKSIZE);
 
 	VoiceEffectProcessor::prepareToPlay(sampleRate, samplesToUse);
@@ -1488,9 +1650,14 @@ void HardcodedPolyphonicFX::applyEffect(int voiceIndex, AudioSampleBuffer &b, in
 
 	bool ok = true;
 
-#if !NUM_HARDCODED_POLY_FX_MODS
-	blockSize = numSamples;
+#if USE_BACKEND
+	const auto useMods = !paramModulation.empty();
+#else
+	constexpr auto useMods = NUM_HARDCODED_POLY_FX_MODS > 0;
 #endif
+
+	if(!useMods)
+		blockSize = numSamples;
 
 	auto numToDo = numSamples;
 
@@ -1498,13 +1665,9 @@ void HardcodedPolyphonicFX::applyEffect(int voiceIndex, AudioSampleBuffer &b, in
 	{
 		auto numThisTime = jmin(numToDo, blockSize);
 
-#if NUM_HARDCODED_POLY_FX_MODS
-
-		float modValues[NUM_HARDCODED_POLY_FX_MODS];
-
-		if (opaqueNode != nullptr)
+		if (opaqueNode != nullptr && useMods)
 		{
-			int numParametersToModulate = jmin(NUM_HARDCODED_POLY_FX_MODS, opaqueNode->numParameters);
+			int numParametersToModulate = jmin((int)paramModulation.size(), opaqueNode->numParameters);
 
 			for (int i = 0; i < numParametersToModulate; i++)
 			{
@@ -1536,15 +1699,11 @@ void HardcodedPolyphonicFX::applyEffect(int voiceIndex, AudioSampleBuffer &b, in
 			}
 		}
 
-	#endif
-		
 		ok &= processHardcoded(b, nullptr, startSample, numThisTime);
 
 		startSample += numThisTime;
 		numToDo -= numThisTime;
 	}
-
-
 
 	getMatrix().handleDisplayValues(b, b, false);
 
@@ -1565,9 +1724,14 @@ void HardcodedPolyphonicFX::renderData(ProcessDataDyn& data)
 
 void HardcodedPolyphonicFX::handleHiseEvent(const HiseEvent& m)
 {
-#if NUM_HARDCODED_POLY_FX_MODS
-	VoiceEffectProcessor::handleHiseEvent(m);
+#if USE_BACKEND
+	const auto useMods = !paramModulation.empty();
+#else
+	constexpr auto useMods = NUM_HARDCODED_POLY_FX_MODS > 0;
 #endif
+
+	if(useMods)
+		VoiceEffectProcessor::handleHiseEvent(m);
 
 	// Already handled...
 	if(m.isNoteOn())
@@ -1579,9 +1743,14 @@ void HardcodedPolyphonicFX::handleHiseEvent(const HiseEvent& m)
 
 void HardcodedPolyphonicFX::renderVoice(int voiceIndex, AudioSampleBuffer& b, int startSample, int numSamples)
 {
-#if NUM_HARDCODED_POLY_FX_MODS
-	preVoiceRendering(voiceIndex, startSample, numSamples);
+#if USE_BACKEND
+	const auto useMods = !paramModulation.empty();
+#else
+	constexpr auto useMods = NUM_HARDCODED_POLY_FX_MODS > 0;
 #endif
+
+	if(useMods)
+		preVoiceRendering(voiceIndex, startSample, numSamples);
 
 	applyEffect(voiceIndex, b, startSample, numSamples);
 }

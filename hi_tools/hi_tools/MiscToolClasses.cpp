@@ -42,6 +42,10 @@ namespace hise {
 using namespace juce;
 
 
+SafeChangeBroadcaster::~SafeChangeBroadcaster()
+{
+	dispatcher.cancelPendingUpdate();
+}
 
 void SafeChangeBroadcaster::sendSynchronousChangeMessage()
 {
@@ -469,6 +473,56 @@ Array<int> FuzzySearcher::searchForIndexes(const String &word, const StringArray
 	return foundIndexes;
 }
 
+String FuzzySearcher::suggestCorrection(const juce::String& wrongToken, const juce::StringArray& availableTokens,
+	double fuzzyness)
+{
+	juce::Array<int> matchingIndexes = FuzzySearcher::searchForIndexes(wrongToken, availableTokens, fuzzyness);
+
+	if (matchingIndexes.isEmpty())
+		return {}; // No suitable match found
+
+	// Find the best match with the lowest Levenshtein distance
+	juce::String bestMatch;
+	double bestScore = 0.0;
+
+	auto wt = wrongToken;
+
+	if(wt.containsChar('.'))
+		wt = wt.fromLastOccurrenceOf(".", false, false);
+
+	for (int index : matchingIndexes)
+	{
+		auto ft = availableTokens[index];
+		auto t = ft;
+
+		auto preferLastToken = t.containsChar('.');
+
+		if(preferLastToken)
+			t = t.fromLastOccurrenceOf(".", false, false);
+
+		int distance = FuzzySearcher::getLevenshteinDistance(wt, t);
+		auto l = jmax(t.length(), wt.length());
+		auto score = 1.0 - (double)distance / (double)l;
+
+		if(preferLastToken)
+		{
+			int fullDistance = FuzzySearcher::getLevenshteinDistance(wrongToken, ft);
+			auto fullL = jmax(ft.length(), wrongToken.length());
+			auto fullScore = 1.0 - (double)fullDistance / (double)fullL;
+
+			score = 0.5 * score + 0.5 * fullScore;
+		}
+
+		if (score > bestScore)
+		{
+			bestScore = score;
+			bestMatch = availableTokens[index];
+		}
+	}
+
+	return bestMatch;
+}
+
 #define NUM_MAX_CHARS 128
 
 int FuzzySearcher::getLevenshteinDistance(const String &src, const String &dest)
@@ -736,6 +790,22 @@ bool FloatSanitizers::isNotSilence(const float value)
 
 void FloatSanitizers::sanitizeArray(float* data, int size)
 {
+    // Fallback for remaining elements (or non-SIMD platforms)
+    for (int i = 0; i < size; i++)
+    {
+        uint32_t valueAsInt;
+        std::memcpy(&valueAsInt, &data[i], sizeof(float));
+
+        const uint32_t exponent = valueAsInt & 0x7F800000;
+        const int aNaN = exponent < 0x7F800000;
+        const int aDen = exponent > 0;
+
+        valueAsInt = valueAsInt * (aNaN & aDen);
+
+        std::memcpy(&data[i], &valueAsInt, sizeof(float));
+    }
+
+#if 0
 	uint32* dataAsInt = reinterpret_cast<uint32*>(data);
 
 	for (int i = 0; i < size; i++)
@@ -748,10 +818,25 @@ void FloatSanitizers::sanitizeArray(float* data, int size)
 
 		*dataAsInt++ = sample * (aNaN & aDen);
 	}
+#endif
 }
 
 float FloatSanitizers::sanitizeFloatNumber(float& input)
 {
+    uint32_t valueAsInt;
+    std::memcpy(&valueAsInt, &input, sizeof(float));
+
+    const uint32_t exponent = valueAsInt & 0x7F800000;
+
+    const int aNaN = exponent < 0x7F800000;
+    const int aDen = exponent > 0;
+
+    const uint32_t sanitized = valueAsInt * (aNaN & aDen);
+
+    std::memcpy(&input, &sanitized, sizeof(float));
+    return input;
+
+#if 0 // old version, Xcode 16.3 doesn't like that
 	uint32* valueAsInt = reinterpret_cast<uint32*>(&input);
 	const uint32 exponent = *valueAsInt & 0x7F800000;
 
@@ -763,10 +848,25 @@ float FloatSanitizers::sanitizeFloatNumber(float& input)
 	input = *reinterpret_cast<const float*>(&sanitized);
 
 	return input;
+#endif
 }
 
 double FloatSanitizers::sanitizeDoubleNumber(double& input)
 {
+	uint64_t valueAsInt;
+    std::memcpy(&valueAsInt, &input, sizeof(double));
+
+    const uint64_t exponent = valueAsInt & 0x7FF0000000000000ULL;
+
+    const int aNaN = exponent < 0x7FF0000000000000ULL;
+    const int aDen = exponent > 0;
+
+    const uint64_t sanitized = valueAsInt * (aNaN & aDen);
+
+    std::memcpy(&input, &sanitized, sizeof(double));
+    return input;
+
+#if 0 // Xcode 16.3
 	uint64_t* valueAsInt = reinterpret_cast<uint64_t*>(&input);
 	const uint64_t exponent = *valueAsInt & 0x7FF0000000000000;
 
@@ -778,6 +878,7 @@ double FloatSanitizers::sanitizeDoubleNumber(double& input)
 	input = *reinterpret_cast<const double*>(&sanitized);
 
 	return input;
+#endif
 }
 
 FloatSanitizers::Test::Test():
@@ -1361,6 +1462,16 @@ void SuspendableTimer::Internal::timerCallback()
 PooledUIUpdater::PooledUIUpdater():
 	pendingHandlers(8192)
 {
+#if HISE_INCLUDE_PROFILING_TOOLKIT
+
+	auto p = new DebugSession::ProfileDataSource();
+	p->name = "UI Timer callback";
+	p->threadRoot = DebugSession::ThreadIdentifier::Type::UIThread;
+	p->sourceType = DebugSession::ProfileDataSource::SourceType::TimerCallback;
+	timerSession = p;
+
+#endif
+
 	suspendTimer(false);
 	startTimer(30);
 }
@@ -1393,9 +1504,22 @@ void PooledUIUpdater::SimpleTimer::stop()
 bool PooledUIUpdater::SimpleTimer::isTimerRunning() const
 { return isRunning; }
 
+void PooledUIUpdater::SimpleTimer::setEnableProfiling(const String& profileName)
+{
+#if HISE_INCLUDE_PROFILING_TOOLKIT
+	using PD = DebugSession::ProfileDataSource;
+
+	PD* p = new PD();
+	p->name = profileName;
+	p->sourceType = PD::SourceType::TimerCallback;
+	p->threadRoot = DebugSession::ThreadIdentifier::Type::UIThread;
+	profileData = p;
+#endif
+}
+
 void PooledUIUpdater::SimpleTimer::startOrStop(bool shouldStart)
 {
-	if(updater == nullptr)
+	if(updater == nullptr || isTimerRunning() == shouldStart)
 		return;
 
 	WeakReference<SimpleTimer> safeThis(this);
@@ -1439,6 +1563,8 @@ void PooledUIUpdater::Broadcaster::removePooledChangeListener(Listener* l)
 bool PooledUIUpdater::Broadcaster::isHandlerInitialised() const
 { return handler != nullptr; }
 
+
+
 void PooledUIUpdater::timerCallback()
 {
 	PerfettoHelpers::setCurrentThreadName("UI Timer Thread");
@@ -1446,20 +1572,60 @@ void PooledUIUpdater::timerCallback()
 	TRACE_DISPATCH("UI Timer callback");
 
 	{
+		PROFILE_ONLY(DebugSession::ProfileDataSource::ScopedProfiler sp((debugSession != nullptr && debugSession->isRecordingMultithread()) ? dynamic_cast<DebugSession::ProfileDataSource*>(timerSession.get()) : nullptr, debugSession));
+
 		ScopedLock sl(simpleTimers.getLock());
 
-		int x = 0;
+#if MEASURE_TIMER_CHILDREN
+		auto now = Time::getMillisecondCounterHiRes();
+#endif
 
 		for (int i = 0; i < simpleTimers.size(); i++)
 		{
 			auto st = simpleTimers[i];
 
-			x++;
 			if (st.get() != nullptr)
-				st->timerCallback();
+			{
+#if HISE_INCLUDE_PROFILING_TOOLKIT
+				if(debugSession != nullptr && debugSession->isRecordingMultithread())
+				{
+					if(auto pd = st->getProfileDataSource<DebugSession::ProfileDataSource>())
+					{
+						DebugSession::ProfileDataSource::ScopedProfiler sp(pd, debugSession);
+						st->timerCallback();
+						continue;
+					}
+				}
+#endif
+
+#if MEASURE_TIMER_CHILDREN
+                auto before = Time::getMillisecondCounterHiRes();
+                
+                st->timerCallback();
+                
+				auto timerDuration = Time::getMillisecondCounterHiRes() - before;
+
+				if(lastDuration != 0.0 && st->getProfileDataSource<DebugSession::ProfileDataSource>() == nullptr)
+				{
+					auto relative = timerDuration / lastDuration;
+					auto threshold = JUCE_LIVE_CONSTANT(0.05);
+
+					if(relative > threshold)
+					{
+						int x = 5;
+					}
+				}
+#else
+                st->timerCallback();
+#endif
+			}
 			else
 				simpleTimers.remove(i--);
 		}
+
+#if MEASURE_TIMER_CHILDREN
+		lastDuration = Time::getMillisecondCounterHiRes() - now;
+#endif
 	}
 
 	WeakReference<Broadcaster> b;
@@ -1552,7 +1718,12 @@ float ComplexDataUIUpdaterBase::getLastDisplayValue() const
 void ComplexDataUIUpdaterBase::updateUpdater()
 {
 	if (globalUpdater != nullptr && currentUpdater == nullptr && listeners.size() > 0)
+	{
 		currentUpdater = new Updater(*this);
+
+		if(profileName.isNotEmpty())
+			currentUpdater->setEnableProfiling(profileName);
+	}
 
 	if (listeners.size() == 0 || globalUpdater == nullptr)
 		currentUpdater = nullptr;
@@ -1740,20 +1911,20 @@ void TempoSyncer::initTempoData()
 	setTempo(Whole, "1/1", 4.0f);
 	setTempo(HalfDuet, "1/2D", 2.0f * 1.5f);
 	setTempo(Half, "1/2", 2.0f);
-	setTempo(HalfTriplet, "1/2T", 4.0f / 3.0f);
 	setTempo(QuarterDuet, "1/4D", 1.0f * 1.5f);
+	setTempo(HalfTriplet, "1/2T", 4.0f / 3.0f);
 	setTempo(Quarter, "1/4", 1.0f);
-	setTempo(QuarterTriplet, "1/4T", 2.0f / 3.0f);
 	setTempo(EighthDuet, "1/8D", 0.5f * 1.5f);
+	setTempo(QuarterTriplet, "1/4T", 2.0f / 3.0f);
 	setTempo(Eighth, "1/8", 0.5f);
-	setTempo(EighthTriplet, "1/8T", 1.0f / 3.0f);
 	setTempo(SixteenthDuet, "1/16D", 0.25f * 1.5f);
+	setTempo(EighthTriplet, "1/8T", 1.0f / 3.0f);
 	setTempo(Sixteenth, "1/16", 0.25f);
-	setTempo(SixteenthTriplet, "1/16T", 0.5f / 3.0f);
 	setTempo(ThirtyTwoDuet, "1/32D", 0.125f * 1.5f);
+	setTempo(SixteenthTriplet, "1/16T", 0.5f / 3.0f);
 	setTempo(ThirtyTwo, "1/32", 0.125f);
-	setTempo(ThirtyTwoTriplet, "1/32T", 0.25f / 3.0f);
 	setTempo(SixtyForthDuet, "1/64D", 0.125f * 0.5f * 1.5f);
+	setTempo(ThirtyTwoTriplet, "1/32T", 0.25f / 3.0f);
 	setTempo(SixtyForth, "1/64", 0.125f * 0.5f);
 	setTempo(SixtyForthTriplet, "1/64T", 0.125f / 3.0f);
 }
@@ -1941,7 +2112,7 @@ MasterClock::GridInfo MasterClock::updateFromExternalPlayHead(const AudioPlayHea
 
 			auto gridPos = std::fmod(info.ppqPosition, multiplier);
 
-			if (std::abs(gridPos) <= 0.2)
+			if (std::abs(gridPos) <= clockTolerance)
 			{
 				gi.change = true;
 				gi.gridIndex = roundToInt(info.ppqPosition / multiplier);
@@ -1980,10 +2151,13 @@ MasterClock::GridInfo MasterClock::updateFromExternalPlayHead(const AudioPlayHea
 		auto ppqAfter = ppqBefore + numSamplesInPPQ;
 		auto multiplier = (double)TempoSyncer::getTempoFactor(clockGrid);
 
-		auto i1 = (int)(ppqBefore / multiplier);
-		auto i2 = (int)(ppqAfter / multiplier);
+		auto p1 = (ppqBefore / multiplier);
+		auto p2 = (ppqAfter / multiplier);
 
-		if (i1 != i2)
+		auto i1 = (int)p1;
+		auto i2 = (int)p2;
+
+		if (i1 != i2 || hmath::sign(p1) != hmath::sign(p2))
 		{
 			auto gridPosPPQ = (double)i2 * multiplier;
 			auto deltaPPQ = gridPosPPQ - ppqBefore;
@@ -2445,7 +2619,7 @@ float FFTHelpers::getPixelValueForLogXAxis(float freq, float width)
 	return (width - 5) * (log(freq / lowFreq) / log(highFreq / lowFreq)) + 2.5f;
 }
 
-juce::PixelRGB Spectrum2D::LookupTable::getColouredPixel(float normalisedInput)
+juce::PixelARGB Spectrum2D::LookupTable::getColouredPixel(float normalisedInput, bool useAlphaValue)
 {
 	auto lutValue = data[jlimit(0, LookupTableSize - 1, roundToInt(normalisedInput * (float)LookupTableSize))];
 	float a = JUCE_LIVE_CONSTANT_OFF(0.3f);
@@ -2453,10 +2627,8 @@ juce::PixelRGB Spectrum2D::LookupTable::getColouredPixel(float normalisedInput)
 	auto r = (float)lutValue.getRed() * v;
 	auto g = (float)lutValue.getGreen() * v;
 	auto b = (float)lutValue.getBlue() * v;
-
-	PixelRGB returnValue;
-	returnValue.setARGB(255, (uint8)r, (uint8)g, (uint8)b);
-	return returnValue;
+	
+	return PixelARGB(useAlphaValue ? jmax(r, g, b) : 255, (uint8)r, (uint8)g, (uint8)b);
 }
 
 void Spectrum2D::LookupTable::setColourScheme(ColourScheme cs)
@@ -2512,76 +2684,94 @@ void Spectrum2D::LookupTable::setColourScheme(ColourScheme cs)
 Spectrum2D::LookupTable::LookupTable()
 {
 	setColourScheme(ColourScheme::violetToOrange);
-
-	
 }
 
 Image Spectrum2D::createSpectrumImage(AudioSampleBuffer& lastBuffer)
 {
 	TRACE_EVENT("scripting", "create spectrum image");
 
-    auto newImage = Image(useAlphaChannel ? Image::ARGB : Image::RGB, lastBuffer.getNumSamples(), lastBuffer.getNumChannels(), true);
+    auto newImage = Image(Image::ARGB, lastBuffer.getNumSamples(), lastBuffer.getNumChannels(), true);
 
 	Image::BitmapData bd(newImage, Image::BitmapData::writeOnly);
-	
+
+	float stddev = 1.0f;
+	float mean = 0.0f;
+
+	if(parameters->standardize)
+	{
+		size_t rows = lastBuffer.getNumSamples();
+	    size_t cols = lastBuffer.getNumChannels();
+	    size_t total = rows * cols;
+
+	    // Compute mean
+	    float sum = 0.0f;
+
+	    for (int i = 0; i < lastBuffer.getNumChannels(); i++)
+	    {
+			for(int j = 0; j < lastBuffer.getNumSamples(); j++)
+				sum += lastBuffer.getSample(i, j);
+		}
+
+	    mean = sum / total;
+
+	    // Compute standard deviation
+	    float sq_sum = 0.0f;
+
+		for (int i = 0; i < lastBuffer.getNumChannels(); i++)
+	    {
+			for(int j = 0; j < lastBuffer.getNumSamples(); j++)
+			{
+				auto val = lastBuffer.getSample(i, j);
+				sq_sum += (val - mean) * (val - mean);
+			}
+		}
+		
+	    stddev = std::sqrt(sq_sum / total);
+
+	    // Avoid division by zero
+	    float epsilon = 1e-6f;
+	    stddev = std::max(stddev, epsilon);
+	}
+
 	for(int y = 0; y < lastBuffer.getNumChannels(); y++)
 	{
 		auto src = lastBuffer.getReadPointer(y);
-		
+
 		for(int x = 0; x < lastBuffer.getNumSamples(); x++)
 		{
-			auto lutValue = parameters->lut->getColouredPixel(src[x]);
+			auto inputValue = src[x];
 
-			if(useAlphaChannel)
+			if(parameters->freqGamma != 100)
 			{
-				auto r = lutValue.getRed();
-				auto g = lutValue.getGreen();
-				auto b = lutValue.getBlue();
-				auto a = jmax(r, g, b);
+				float normX = (float)x / lastBuffer.getNumSamples();
+				normX = std::pow(normX, (float)parameters->freqGamma * 0.01f);
+				normX *= (lastBuffer.getNumSamples());
+				auto low = (int)normX;
+				auto high = low + 1;
+				auto alpha = std::fmod(normX, 1.0f);
+				inputValue = Interpolator::interpolateLinear(src[low], src[high], alpha);
+			}
 
-				auto pp = (PixelARGB*)(bd.getPixelPointer(x, y));
-				pp->set(PixelARGB(a, r, g, b));
-			}
-			else
+			if(parameters->standardize)
 			{
-				auto pp = (PixelRGB*)(bd.getPixelPointer(x, y));
-				pp->set(lutValue);
+				inputValue = (inputValue - mean) / stddev;
 			}
-				
+
+			auto lutValue = parameters->lut->getColouredPixel(inputValue, useAlphaChannel);
+			auto pp = (PixelARGB*)(bd.getPixelPointer(x, y));
+			pp->set(lutValue);
 		}
 	}
-
-#if 0
-    for (int x = 0; x < s2dHalf; x++)
-    {
-        auto skewedProportionY = holder->getYPosition((float)x / (float)s2dHalf);
-        auto fftDataIndex = jlimit(0, s2dHalf-1, (int)(skewedProportionY * (int)s2dHalf));
-
-        for (int i = 0; i < lastBuffer.getNumSamples(); i++)
-        {
-            auto s = lastBuffer.getSample(fftDataIndex, i);
-            s *= (1.0f / gf);
-
-            auto alpha = jlimit(0.0f, 1.0f, s);
-
-            alpha = holder->getXPosition(alpha);
-            alpha = std::pow(alpha, parameters->gamma);
-
-			auto lutValue = parameters->lut->getColouredPixel(alpha);
-            newImage.setPixelAt(x, i, lutValue);
-        }
-    }
-#endif
 
     return newImage;
 }
 
 
 
-AudioSampleBuffer Spectrum2D::createSpectrumBuffer()
+AudioSampleBuffer Spectrum2D::createSpectrumBuffer(bool useFallback)
 {
 	TRACE_EVENT("scripting", "create spectrum buffer");
-    auto fft = juce::dsp::FFT(parameters->order);
+    auto fft = juce::dsp::FFT(parameters->order, useFallback);
 
     auto numSamplesToFill = jmax(0, originalSource.getNumSamples() / parameters->Spectrum2DSize * parameters->oversamplingFactor - 1);
 
@@ -2719,6 +2909,10 @@ void Spectrum2D::Parameters::set(const Identifier& id, var value, NotificationTy
 		lut->setColourScheme((LookupTable::ColourScheme)(int)value);
 	if (id == Identifier("WindowType"))
 		currentWindowType = (FFTHelpers::WindowType)(int)value;
+	if(id == Identifier("FrequencyGamma"))
+		freqGamma = jlimit(100, 200, (int)value);
+	if(id == Identifier("Standardize"))
+		standardize = (bool)value;
 	if(id == Identifier("ResamplingQuality"))
 	{
 		StringArray q("Low", "Mid", "High");
@@ -2749,6 +2943,10 @@ var Spectrum2D::Parameters::get(const Identifier& id) const
 		return gainFactorDb;
 	if (id == Identifier("Gamma"))
 		return gammaPercent;
+	if( id == Identifier("FrequencyGamma"))
+		return freqGamma;
+	if(id == Identifier("Standardize"))
+		return standardize;
 	if (id == Identifier("ResamplingQuality"))
 	{
 		StringArray q("Low", "Mid", "High");
@@ -2791,6 +2989,8 @@ juce::Array<juce::Identifier> Spectrum2D::Parameters::getAllIds()
 		Identifier("GainFactor"),
 		Identifier("ResamplingQuality"),
 		Identifier("Gamma"),
+		Identifier("Standardize"),
+		Identifier("FrequencyGamma"),
 		Identifier("WindowType")
 	};
 	
@@ -2810,6 +3010,8 @@ Spectrum2D::Parameters::Editor::Editor(Parameters::Ptr p) :
     addEditor("DynamicRange");
 	addEditor("ColourScheme");
 	addEditor("Gamma");
+	addEditor("Standardize");
+	addEditor("FrequencyGamma");
 	addEditor("ResamplingQuality");
 	addEditor("GainFactor");
 
@@ -2876,6 +3078,23 @@ void Spectrum2D::Parameters::Editor::addEditor(const Identifier& id)
 		cb->addItem("Low", 1);
 		cb->addItem("Mid", 2);
 		cb->addItem("High", 3);
+	}
+	if(id == Identifier("Standardize"))
+	{
+		
+	}
+	if(id == Identifier("FrequencyGamma"))
+	{
+		cb->addItem("100%", 101);
+		cb->addItem("110%", 111);
+		cb->addItem("120%", 121);
+		cb->addItem("130%", 131);
+		cb->addItem("140%", 141);
+	}
+	if(id == Identifier("Standardize"))
+	{
+		cb->addItem("No", 1);
+		cb->addItem("Yes", 2);
 	}
 	if (id == Identifier("GainFactor"))
 	{
@@ -2944,7 +3163,7 @@ void Spectrum2D::Parameters::Editor::paint(Graphics& g)
 	for (int i = 0; i < specArea.getWidth(); i+= 2)
 	{
 		auto ninput = (float)i / (float)specArea.getWidth();
-		auto p = param->lut->getColouredPixel(ninput);
+		auto p = param->lut->getColouredPixel(ninput, true);
 
 		Colour c(p.getNativeARGB());
 		g.setColour(c);
@@ -3054,6 +3273,384 @@ double MasterClock::getBpmToUse(double hostBpm, double internalBpm) const
 		return shouldPreferInternal() ? internalBpm : hostBpm;
 
 	return internalBpm;
+}
+
+
+struct TextEditorWithAutocompleteComponent::Autocomplete: public Component,
+                                public ScrollBar::Listener,
+                                public ComponentMovementWatcher
+{
+    struct Item
+    {
+        String displayString;
+    };
+    
+    ScrollBar sb;
+    ScrollbarFader fader;
+       
+    void mouseWheelMove(const MouseEvent& e, const MouseWheelDetails& details)
+    {
+        sb.mouseWheelMove(e, details);
+    }
+    
+    void scrollBarMoved (ScrollBar* scrollBarThatHasMoved,
+                                 double newRangeStart) override
+    {
+        repaint();
+    }
+    
+    Font f;
+    
+    void componentMovedOrResized (bool wasMoved, bool wasResized) override
+    {
+        dismiss();
+    }
+
+    /** This callback happens when the component's top-level peer is changed. */
+    void componentPeerChanged() {};
+
+    /** This callback happens when the component's visibility state changes, possibly due to
+        one of its parents being made visible or invisible.
+    */
+    void componentVisibilityChanged() override
+    {
+        if(getComponent()->isShowing())
+            dismiss();
+    }
+    
+    Autocomplete(TextEditorWithAutocompleteComponent& p, int maxItemsToShow=4):
+      ComponentMovementWatcher(dynamic_cast<Component*>(&p)),
+      parent(&p),
+	  itemsToShow(maxItemsToShow),
+      sb(true)
+    {
+        f = parent->getTextEditor()->getFont();
+        
+        sb.addListener(this);
+        addAndMakeVisible(sb);
+        fader.addScrollBarToAnimate(sb);
+
+        for(auto& i: p.autocompleteItems)
+            allItems.add({i});
+
+        sb.setSingleStepSize(0.2);
+        
+        auto& ed = *parent->getTextEditor();
+        
+        update(ed.getText());
+        
+        setSize(jmax(300, ed.getWidth() + 20), TextEditorWithAutocompleteComponent::ItemHeight * itemsToShow + 5 + 20);
+        
+        setWantsKeyboardFocus(true);
+
+		auto pp = getParentAsComponent()->findParentComponentOfClass<Parent>();
+
+		Component* top = nullptr;
+
+		if(pp != nullptr)
+		{
+			if(pp->isTopLevel())
+				top = dynamic_cast<Component*>(pp);
+		}
+		
+#if !HISE_NO_GUI_TOOLS
+        if(top == nullptr)
+			top = TopLevelWindowWithOptionalOpenGL::findRoot(getParentAsComponent());
+#endif
+
+        if(top == nullptr)
+            top = getParentAsComponent()->getTopLevelComponent();
+
+        top->addChildComponent(this);
+        auto topLeft = top->getLocalArea(&ed, ed.getLocalBounds()).getTopLeft();
+        
+        setTopLeftPosition(topLeft.getX() - 10, topLeft.getY() + ed.getHeight());
+
+#if JUCE_DEBUG
+        setVisible(true);
+#else
+        Desktop::getInstance().getAnimator().fadeIn(this, 150);
+#endif
+        
+    }
+    
+    ~Autocomplete()
+    {
+        setComponentEffect(nullptr);
+    }
+
+	const int itemsToShow;
+    int selectedIndex = 0;
+    
+    void mouseDown(const MouseEvent& e) override
+    {
+        auto newIndex = sb.getCurrentRangeStart() + (e.getPosition().getY() - 15) / ItemHeight;
+        
+        if(isPositiveAndBelow(newIndex, items.size()))
+            setSelectedIndex(newIndex);
+    }
+    
+    void mouseDoubleClick(const MouseEvent& e) override
+    {
+        setAndDismiss();
+    }
+    
+    bool inc(bool next)
+    {
+        auto newIndex = selectedIndex + (next ? 1 : -1);
+        
+        if(isPositiveAndBelow(newIndex, items.size()))
+        {
+            setSelectedIndex(newIndex);
+            return true;
+        }
+        
+        return false;
+    }
+    
+    bool keyPressed(const KeyPress& k)
+    {
+        if(k == KeyPress::upKey)
+            return inc(false);
+        if(k == KeyPress::downKey)
+            return inc(true);
+        if(k == KeyPress::escapeKey)
+            return dismiss();
+        if(k == KeyPress::returnKey ||
+           k == KeyPress::tabKey)
+            return setAndDismiss();
+        
+        return false;
+    }
+    
+    void setSelectedIndex(int index)
+    {
+        selectedIndex = index;
+        
+        if(!sb.getCurrentRange().contains(selectedIndex))
+        {
+            if(sb.getCurrentRange().getStart() > selectedIndex)
+                sb.setCurrentRangeStart(selectedIndex);
+            else
+                sb.setCurrentRangeStart(selectedIndex - 3);
+        }
+        
+        repaint();
+    }
+    
+    void resized() override
+    {
+        sb.setBounds(getLocalBounds().reduced(10).removeFromRight(16).reduced(1));
+    }
+
+	LookAndFeelMethods laf;
+
+    void paint(Graphics& g) override
+    {
+        auto r = sb.getCurrentRange();
+		auto offset = roundToInt(r.getStart());
+		auto thisIndex = selectedIndex - offset;
+
+		StringArray thisItems;
+
+		if(!items.isEmpty())
+		{
+			for(int i = 0; i < itemsToShow; i++)
+			{
+				thisItems.add(items[i + offset].displayString);
+			}
+		}
+
+		laf.drawAutocompleteBackground(g, *parent->getTextEditor(), getLocalBounds().toFloat(), thisItems, thisIndex);
+    }
+    
+    bool setAndDismiss()
+    {
+        auto newTextAfterComma = items[selectedIndex].displayString;
+        auto ed = parent->getTextEditor();
+        
+        String nt = ed->getText();
+            
+        if(nt.containsChar(','))
+        {
+            nt = nt.upToLastOccurrenceOf(",", false, false);
+            nt << ", " << newTextAfterComma;
+        }
+        else
+            nt = newTextAfterComma;
+        
+        ed->setText(nt, true);
+        
+        return dismiss();
+    }
+    
+    bool dismiss()
+    {
+        SafeAsyncCall::call<TextEditorWithAutocompleteComponent>(*parent, [](TextEditorWithAutocompleteComponent& ti)
+        {
+            ti.dismissAutocomplete();
+            ti.getTextEditor()->grabKeyboardFocusAsync();
+        });
+        
+        return true;
+    }
+
+    Component* getParentAsComponent()
+    {
+	    return dynamic_cast<Component*>(parent.get());
+    }
+
+    void update(const String& currentText)
+    {
+        auto search = currentText.fromLastOccurrenceOf(",", false, false).toLowerCase().trim();
+        
+        items.clear();
+        
+        for(const auto& i: allItems)
+        {
+            if(search.isEmpty() || i.displayString.toLowerCase().contains(search))
+            {
+                items.add(i);
+            }
+        }
+        
+        sb.setRangeLimits(0.0, (double)items.size());
+        sb.setCurrentRange(0.0, (double)itemsToShow);
+        setSelectedIndex(0);
+        
+        if(items.isEmpty())
+            dismiss();
+    }
+    
+    Array<Item> allItems;
+    Array<Item> items;
+    
+    WeakReference<TextEditorWithAutocompleteComponent> parent;
+};
+
+void TextEditorWithAutocompleteComponent::LookAndFeelMethods::drawAutocompleteBackground(Graphics& g, TextEditor& te,
+	Rectangle<float> b, const StringArray& itemToShow, int selectedIndex)
+{
+	b = b.reduced(10.0f);
+	        
+	DropShadow sh;
+	sh.colour = Colours::black.withAlpha(0.7f);
+	sh.radius = 10;
+	sh.drawForRectangle(g, b.toNearestInt());
+	            
+	b.reduced(2.0f);
+	g.setColour(Colour(0xFF222222));
+	g.fillRoundedRectangle(b, 5.0f);
+	g.setColour(Colours::white.withAlpha(0.3f));
+	g.drawRoundedRectangle(b, 5.0f, 2.0f);
+	        
+	b.reduced(5.0f);
+	b.removeFromLeft(10.0f);
+	b.removeFromTop(2.5f);
+	        
+	g.setFont(te.getFont());
+	        
+	if(itemToShow.isEmpty())
+	{
+		g.setColour(Colours::white.withAlpha(0.1f));
+		g.drawText("No items found", b, Justification::centred);
+	}
+	else
+	{
+		for(int i = 0; i < itemToShow.size(); i++)
+		{
+			g.setColour(Colours::white.withAlpha(0.6f));
+			auto tb = b.removeFromTop(ItemHeight);
+
+			if(i == selectedIndex)
+			{
+				g.fillRoundedRectangle(tb.withX(10.0f).reduced(3.0f, 1.0f), 3.0f);
+				g.setColour(Colours::black.withAlpha(0.8f));
+			}
+	                    
+			g.drawText(itemToShow[i], tb, Justification::left);
+		}
+	}
+}
+
+void TextEditorWithAutocompleteComponent::textEditorReturnKeyPressed(TextEditor& e)
+{
+	if(auto ac = getCurrentAutocomplete())
+		ac->setAndDismiss();
+}
+
+void TextEditorWithAutocompleteComponent::textEditorEscapeKeyPressed(TextEditor& e)
+{
+	if(currentAutocomplete != nullptr)
+		dismissAutocomplete();
+	else
+		currentAutocomplete = new Autocomplete(*this, itemsToShow);
+}
+
+bool TextEditorWithAutocompleteComponent::AutocompleteNavigator::keyPressed(const KeyPress& k, Component* originatingComponent)
+{
+    if(k == KeyPress::tabKey)
+    {
+        if(parent.currentAutocomplete != nullptr)
+			parent.dismissAutocomplete();
+
+	    parent.getTextEditor()->moveKeyboardFocusToSibling(true);
+        return true;
+    }
+
+    if(parent.currentAutocomplete == nullptr)
+		return false;
+
+	if(auto ac = parent.getCurrentAutocomplete())
+	{
+		if(k == KeyPress::upKey)
+			return ac->inc(false);
+		if(k == KeyPress::downKey)
+			return ac->inc(true);
+	}
+        
+	return false;
+}
+
+TextEditorWithAutocompleteComponent::Autocomplete* TextEditorWithAutocompleteComponent::getCurrentAutocomplete()
+{
+	return dynamic_cast<Autocomplete*>(currentAutocomplete.get());
+}
+
+void TextEditorWithAutocompleteComponent::showAutocomplete(const String& currentText)
+{
+    if(useDynamicAutocomplete)
+    {
+        if(auto hd = dynamic_cast<Component*>(this)->findParentComponentOfClass<Parent>())
+            autocompleteItems = hd->getAutocompleteItems(getIdForAutocomplete());
+        else
+            autocompleteItems = {};
+    }
+    
+	if(!autocompleteItems.isEmpty() && currentAutocomplete == nullptr)
+	{
+		currentAutocomplete = new Autocomplete(*this, itemsToShow);
+	}
+	else
+	{
+		if(currentText.isEmpty())
+			currentAutocomplete = nullptr;
+		else if (auto ac = getCurrentAutocomplete())
+			ac->update(currentText);
+	}
+}
+
+void TextEditorWithAutocompleteComponent::dismissAutocomplete()
+{
+	stopTimer();
+#if JUCE_DEBUG
+    if(currentAutocomplete != nullptr)
+		currentAutocomplete->setVisible(false);
+#else
+    if(currentAutocomplete != nullptr)
+		Desktop::getInstance().getAnimator().fadeOut(currentAutocomplete, 150);
+#endif
+	currentAutocomplete = nullptr;
 }
 
 }

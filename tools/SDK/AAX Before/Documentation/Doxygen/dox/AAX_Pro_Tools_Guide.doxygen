@@ -1,0 +1,962 @@
+﻿/*===================================================================================================
+AAX_Pro_Tools_Guide.doxygen
+
+Copyright 2016-2019, 2021, 2023-2024 Avid Technology, Inc.
+All rights reserved.
+
+This file is part of the Avid AAX SDK.
+
+The AAX SDK is subject to commercial or open-source licensing.
+
+By using the AAX SDK, you agree to the terms of both the Avid AAX SDK License
+Agreement and Avid Privacy Policy.
+
+AAX SDK License: https://developer.avid.com/aax
+Privacy Policy: https://www.avid.com/legal/privacy-policy-statement
+
+Or: You may also use this code under the terms of the GPL v3 (see
+www.gnu.org/licenses).
+
+THE AAX SDK IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
+EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
+DISCLAIMED.
+
+===================================================================================================*/
+
+/** @defgroup AAX_Pro_Tools_Guide Pro Tools Guide
+	@ingroup CompatibleEnvironmentsDocs
+
+	@brief Details about using %AAX plug-ins in Pro Tools
+
+	@section aax_pro_tools_guide_contents Contents
+		\li \ref aax_pro_tools_guide__about_this_document
+		\li \ref aax_pro_tools_guide__processing_modes
+		\li \ref aax_pro_tools_guide__requirements_for_aax_plugin_compatibility_with_pro_tools
+		\li \ref aax_pro_tools_guide__audio_engine_behavior
+		\li \ref aax_pro_tools_guide__basic_plugin_operation
+		\li \ref aax_pro_tools_guide__optional_plugin_features
+		\li \ref aax_pro_tools_guide__scripting_sdk
+		\li \ref aax_pro_tools_guide__midi_effects
+		\li \ref aax_pro_tools_guide__debugging_aax_plugins
+		\li \ref aax_pro_tools_guide__troubleshooting_aax_plugin_failures
+		\li \ref aax_pro_tools_guide__digioptions
+		\li \ref aax_pro_tools_guide__compatibility_notes
+
+<DIV CLASS="section">
+	@section aax_pro_tools_guide__about_this_document About this document
+This guide discusses specific details related to using %AAX plug-ins with Pro Tools, such as loading and initialization procedures, GUI hosting, and other application-specific features. This guide is not intended to provide complete documentation for the Pro Tools application. For more information about the features, functionality, and use of Pro Tools see the Pro Tools Reference Guide, available for download from the Avid web site.
+
+<EM CLASS="Italic">This guide is a work in progress, and is extended as needed to describe different aspects of and caveats to the Pro Tools implementation of the %AAX host spec.</EM>
+</DIV>
+
+
+<DIV CLASS="section">
+	@section aax_pro_tools_guide__processing_modes Processing modes
+Pro Tools supports three %AAX processing modes: AudioSuite, %AAX Native, and %AAX DSP.
+<UL>
+<LI CLASS="Bullet">
+AudioSuite plug-ins perform non-real-time, random-access, file-based processing entirely on the host CPU. </LI>
+<LI CLASS="Bullet">
+%AAX Native plug-ins perform real-time, linear, non-destructive processing entirely on the host CPU. Native plug-ins are also used by Pro Tools to perform offline rendering. </LI>
+<LI CLASS="Bullet">
+DSP plug-ins perform real-time, linear, non-destructive processing on DSP-accelerated hardware, with non-real-time tasks performed on the host CPU. </LI>
+</UL>
+
+Each of these processing modes offers specific advantages and trade-offs in functionality, power, and development effort, and plug-in developers may choose to develop only for specific processing modes if the features provided by those modes are required by the plug-in.
+
+		@subsection subsection__realtime_processing Real-time processing
+
+Real-time processing allows users to operate plug-ins in live signal paths or in complicated audio routing schemes when the future input data is not known.
+
+Plug-ins operating in real-time are clients of the Pro Tools automation system, meaning that control movements can be dynamically recorded and played back with the audio track, written by hand onto the Pro Tools timeline for future playback, and/or edited by and broadcast to attached control surfaces.
+
+To instantiate a plug-in for real-time processing in Pro Tools, click on an insert slot in the desired track and select the plug-in from the menu that appears
+
+			@subsubsection subsubsection__native_realtime_processing_ Native real-time processing
+
+When an %AAX plug-in is run natively, all of its components and processing elements are loaded into the host environment. The host CPU handles the plug-in's real-time audio processing as well as its data model, GUI, and other tasks.
+
+			@subsubsection subsubsection__realtime_processing_vis_and_midi_effects_ Virtual Instruments and MIDI effects
+
+Virtual Instruments and MIDI effects are special categories of real-time processing effects. Instead of processing audio data, these types of effects convert incoming MIDI data into output audio or MIDI data. Although a user interacts with these kinds of effects differently than with pure audio processing effects, the %AAX API does not generally distinguish between them. See @ref aax_pro_tools_guide__midi_effects for more information.
+
+			@subsubsection subsubsection__dsp_realtime_processing_ DSP real-time processing
+
+When an %AAX plug-in is run with Avid's DSP-enabled hardware, the plug-in's real-time processing code is loaded onto the external DSP device, while the remaining plug-in modules continue to be run by the host CPU. Each DSP in this system provides dedicated processing capacity that is not shared with an OS or other processes, and therefore this architecture allows users to achieve highly reliable and deterministic low-latency processing even when many DSP plug-ins are instantiated.
+
+&nbsp;
+
+&nbsp;
+\nodox Image files must be copied to the /output/html directory \endnodox
+<IMG width="50%" alt="Real-time insert slots in the Pro Tools Edit and Mix windows" src="InsertSlots.png" />
+<DIV CLASS="imagecaption">
+Figure 1: Real-time insert slots in the Pro Tools Edit and Mix windows.</DIV>
+
+			@subsubsection subsubsection__cpu_reporting_ CPU reporting
+
+To guarantee absolute reliability, %AAX DSP plug-ins are required to report their worst-case performance metrics to Pro Tools. Pro Tools uses this information to ensure that each DSP in the system will be loaded with only the number of plug-ins that it can support given a worst-case processing load.
+
+		@subsection subsection__non-real-time_processing_audiosuite Non-real-time processing (AudioSuite)
+
+The non-real-time AudioSuite processing mode is file-based, meaning that the results of AudioSuite processing are applied destructively to audio files (generally to new, empty files provided by Pro Tools.) AudioSuite processing can only be performed on preexisting blocks of audio.
+
+There are two primary ways to apply AudioSuite processing in Pro Tools. The first way is to selectively apply the processing algorithm to the audio tracks and clips that are selected on the Pro Tools timeline. This is known as "destructive" processing, because the original audio track is replaced by the new processed audio track. There are no limitations governing the amount of time required to process a track in this manner.
+
+Audio Suite plug-ins also have a second optional mode in which they can run. This is referred to as Preview mode. The Preview feature allows you to monitor the audio processing applied to a track in semi-real-time. Because this is a real-time process, it is not applicable to all types of file based processing. You may elect not to support this mode in your plug-in if its algorithm does not lend itself to real-time, linear processing. Preview mode is implemented in a non- destructive manner, as Preview mode exists for auditioning only with no actual replacement of audio data on the Pro Tools timeline.
+
+To instantiate an AudioSuite plug-in in Pro Tools, select the plug-in from the "AudioSuite" menu in the Pro Tools application menu bar
+
+		@subsection subsection__multichannel_and_multimono Multichannel and Multi-Mono
+
+Pro Tools supports various surround stem formats throughout the entire signal chain, including multi-channel processing through %AAX plug-ins.
+
+Pro Tools also allows a plug-in to function in multi-mono mode if the plug-in does not explicitly support certain channel formats. In multi-mono mode, Pro Tools instantiates a separate instance of a plug-in for every channel in the track. In this mode, plug-in controls across all channel-instances in a multi-mono collection are linked by default, though channels can be unlinked by toggling the blue link button in the plug-in header and selecting the channel whose controls you wish to modify.
+
+For more information about multi-mono mode, please refer to the Pro Tools Reference Guide.
+
+</DIV>
+
+
+<DIV CLASS="section">
+	@section aax_pro_tools_guide__requirements_for_aax_plugin_compatibility_with_pro_tools Requirements for AAX plug-in compatibility with Pro Tools
+
+In addition to implementing the client-side %AAX API, all Pro Tools plug-ins must:
+<OL>
+<LI CLASS="List">
+Be installed to the %AAX plug-ins directory </LI>
+<LI CLASS="List">
+Use a valid file name</LI>
+<LI CLASS="List">
+Be signed with a valid digital signature</LI>
+</OL>
+Note that digital signatures for plug-ins are not required in Pro Tools Developer builds. However, you will need a Pro Tools Developer Build licence in order to run Pro Tools Developer. To obtain your licence, contact devauth@avid.com.
+
+		@subsection subsection__install_directories_ Install directories
+
+%AAX plug-ins must be installed in the system's %AAX Plug-Ins directory. See \ref aax_distributing_installer for more information about creating a plug-in installer.
+
+Plug-ins that are uninstalled but still present on the system are placed into the "Plug-Ins (Unused)" directory, which is located next to the Plug-Ins directory.
+
+Pro Tools will also search for a Plug-Ins directory next to the actual Pro Tools application, and this directory will be used if present. This debug feature can be useful for testing specific plug-ins.
+
+		@subsection subsection__file_name_ Plug-in name and file structure
+
+In order to be recognized by AAE, all %AAX plug-in bundles must use the ".aaxplugin" file name suffix. On macOS, the plug-in bundle must use this suffix while the binary itself does not require a suffix. On Windows, the plug-in binary (DLL) must use this suffix.
+
+The directory structure of an %AAX plug-in bundle is also important. See \ref commoninterface_formatspecification__aaxplugin_directory_structure in the \ref CommonInterface_FormatSpecification document for more information.
+
+		@subsection subsection__digital_signature_ Digital signature
+
+As an added security measure against digital piracy, all %AAX plug-in binaries must be digitally signed in order to run in Pro Tools. This signature step does not interfere with your existing copy protection and licensing solutions - it is simply a build step that you incorporate into your plug-in before releasing the binary.
+
+Digital signatures are generated based on the plug-in binary and act as a guarantee against binary modification. Therefore, any build steps that modify the binary, such as symbol stripping, must be performed prior to signature generation. Digital signatures apply to the full .aaxplugin bundle, so any operation that modifies the contents of the bundle will invalidate its digital signature even if the operation does not affect the plug-in binary itself. Therefore, the generation and application of a digital signature should be the last step in any release plug-in build process. The digital signature requirement applies to Beta and Release software. This requirement does not apply to Development builds of Pro Tools or to other developer tools which can load unsigned binaries.
+
+\note
+You will need a Pro Tools Developer Build licence in order to run the Pro Tools developer builds. To obtain your licence, see the Obtain a Pro Tools Developer iLok license (and an iLok) section in the Getting Started with %AAX guide.
+
+If you are having problems with digitally signing your plug-ins see the @ref troubleshooting_loading section in the @ref AAX_Troubleshooting guide.
+
+<DIV CLASS="SectionHead">
+Requesting the digital signing toolkit</DIV>
+
+The %AAX digital signatures required by Pro Tools are generated using digital signing tools licensed from PACE Anti-Piracy, Inc., which acts as the certificate authority for all %AAX digital signatures. To request access to these tools, send an e-mail to <a href="mailto:audiosdk@avid.com?subject=Pace Tools Request">audiosdk@avid.com</a> with "Pace Tools Request" in the subject. Include the following information in your request:
+
+- Company name
+- Admin full name
+- Email
+- Telephone number
+- iLok username
+
+Once your request has been approved you will be contacted by PACE with further instructions for acquiring and using the digital signature toolkit.
+
+<DIV CLASS="SectionHead">
+What you will need</DIV>
+
+The digital signing toolkit which you will receive as an %AAX developer will require a physical iLok USB key. You will also need a registered iLok user account which will be used when applying the digital signature. If your build toolchain requires hardware-free signing then you can contact PACE regarding their current offerings.
+
+In order to successfully use the signing tools you should be familiar with the latest Gatekeeper and @c codesign (for Mac) and Authenticode (for Windows) digital signature schemes.
+
+Although it is possible to use self-signed certificates for %AAX digital signatures, before making your %AAX plug-ins commercially available it is recommended that you acquire an Apple-issued Application Developer ID for Gatekeeper and an "Extended Verification" (EV) Authenticode certificate from a Microsoft approved certificate authority.
+
+See the Getting Started Guide in the PACE digital signing toolkit for more information about using these tools.
+
+<DIV CLASS="SectionHead">
+Signature requirements in Pro Tools</DIV>
+
+\compatibility Pro Tools requires PACE Eden digital signatures for %AAX plug-ins.
+
+Pro Tools and higher use the Eden toolset. This toolset integrates fully with platform-specific signatures, so you only need to do one post-build step using the Eden digital signing tools to sign your plug-in with both the Eden signature and the relevant Apple GateKeeper or Microsoft Authenticode signature. For more information, see the Eden digital signature toolkit documentation.
+
+Pro Tools and higher will only accept the Eden signature; %AAX plug-ins signed by earlier generations of PACE digital signing tools will not load in Pro Tools.
+
+<DIV CLASS="SectionHead">
+Optional Signature for Pro Tools %AAX DSP binaries</DIV>
+
+Binary-level encryption can be added to %AAX DSP algorithms. Please note that this is <EM CLASS="Bold">NOT</EM> a requirement of %AAX DSP plug-ins, and serves only as an additional security measure to protect an algorithm's DLL.
+
+For more information about signing %AAX plug-ins for use with Pro Tools, please contact PACE.
+
+<DIV CLASS="SectionHead">
+Automatic signature application by PACE tools</DIV>
+
+If you already protect your plug-ins using one of the anti-piracy technologies available from PACE then you may not need to perform any additional action:
+
+<UL>
+<LI CLASS="Bullet">
+you are wrapping using PACE InterLok MasterMaker, your binaries will be automatically signed. </LI>
+<LI CLASS="Bullet">
+If you are using Fusion Hybrid without wrapping with MasterMaker, please carefully review the "Adding digital signature checks" section of the Fusion Hybrid manual. </LI>
+<LI CLASS="Bullet">
+If you are using PACE APIs (like PACE Interface or CDRM) without InterLok wrapping, please see either the latest PACEDSigTool read me or the Fusion Hybrid manual for additional details regarding digital signing. </LI>
+</UL>
+
+</DIV>
+
+
+<DIV CLASS="section">
+	@section aax_pro_tools_guide__audio_engine_behavior Audio Engine Behavior and Features
+
+Pro Tools hosts %AAX plug-ins using the <EM CLASS="Italic">
+Avid Audio Engine</EM>
+ (AAE). AAE implements all host-side %AAX interfaces such as \ref AAX_IController and the \ref AAX_ICollection.
+
+		@subsection subsection__plugin_loading_and_aae_initialization Plug-in loading and AAE initialization
+
+When Pro Tools launches, it immediately begins loading AAE. AAE searches the system for valid %AAX plug-ins, checks each plug-in's digital signature, and loads, initializes and catalogs any valid plug-in modules that it happens to find.
+
+This initialization is performed via the plug-in's Describe implementation; once AAE loads a plug-in binary, it calls the plug-in's Describe method to retrieve (and cache) the basic configuration of the plug-in. AAE then hands this information back to Pro Tools so that Pro Tools knows what plug-ins are available and what their basic properties are. Once a complete list of plug-in descriptions has been generated, AAE can construct any plug-in's individual modules and manage its algorithm.
+
+			@subsubsection subsubsection__plugin_configuration_cacheing_ Plug-in configuration cacheing
+
+AAE is pretty smart, and it knows during initialization if anything has changed within the AAE Plug-Ins folder since the last time it was run. If nothing has changed, AAE relies on plug-in descriptions that it cached during the previous launch to speed through the plug-in loading process. If, however, any plug-ins have been added, removed, or updated since the last launch, AAE loads and re-caches the description for every installed plug-in.
+
+\note We recommend that you always enable the <TT>AlwaysRebuildCache</TT> DigiOption during plug-in development. See \ref aax_pro_tools_guide__digioptions for more information.
+
+		@subsection subsection__plugin_initialization Plug-in initialization
+
+When a new plug-in instance is created in Pro Tools, AAE performs the following steps:
+<OL>
+<LI CLASS="List">
+The plug-in's data model component is loaded </LI>
+<LI CLASS="List">
+The default state of the plug-in is set (see \ref subsubsection__default_plugin_settings_) </LI>
+<LI CLASS="List">
+The plug-in's GUI and other host modules are loaded </LI>
+<LI CLASS="List">
+The plug-in's algorithm private data state is initialized </LI>
+<LI CLASS="List">
+The plug-in's algorithm is loaded and initialized </LI>
+<LI CLASS="List">
+The plug-in's algorithm processing is initiated</LI>
+</OL>
+
+		@subsection subsection__runtime_processing_behavior Run-time processing behavior
+
+The audio engine in Pro Tools includes some advanced real-time processing features that are not present in earlier versions of Pro Tools:
+
+<UL>
+<LI CLASS="Bullet">
+When certain tracks with plug-ins have been silent for a period of time or Pro Tools is not in playback, those plug-in instances are automatically deactivated to reduce processing load on the host processor </LI>
+<LI CLASS="Bullet">
+In certain situations such as playback or offline bounce where low latency is not required, Pro Tools may call %AAX Native plug-ins with a larger buffer than normal.</LI>
+</UL>
+
+This latter behavior is possible due to the fact that AAE uses two latency domains for plug-ins: a high-latency domain that operates over large block sizes and a low-latency domain that operates over small block sizes. Since processing at higher block sizes is generally more efficient, plug-in instances that are running in the high-latency domain generally consume less CPU cycles for their processing than instances that are running in the low-latency domain.
+
+Pro Tools may swap plug-in instances back and forth between these two domains at run-time and uses a set of rules designed to optimize the system's CPU resources while at the same time providing the best and most responsive user experience in every situation. These rules are different depending on whether the system is using an HDX card as its playback engine.
+
+Here are some of the specific rules that are followed by the current versions of Pro Tools at the time of this writing. These rules are subject to change from release to release:
+
+<UL>
+<LI CLASS="Bullet">
+<EM CLASS="Bold">(HDX classic and Native)</EM> If there is any live audio or MIDI feeding into the plug-in's track and if the track is sending audio to an active output then all plug-in instances on the track will be run at low latency.
+<LI CLASS="Bullet">
+<EM CLASS="Bold">(HDX classic only)</EM> If any %AAX DSP plug-in instances are present in the signal path that feeds an %AAX Native plug-in instance then the %AAX Native plug-in will be run at low latency.
+<LI CLASS="Bullet">
+<EM CLASS="Bold">(HDX classic only)</EM> Any %AAX Native plug-in instance on an AUX track will be run at low latency.
+</UL>
+
+For a full list of compatibility and feature differences between different %AAX plug-in hosts, see \ref HostSupport.
+
+@subsubsection subsubsection__deterministic_plug-in_automation Deterministic Plug-in Automation
+
+Native and DSP plug-ins will receive automation changes in a deterministic manner. Each time the transport is played, automation events will be delivered to the plug-in for processing at the same moment on the timeline. Note that this does not mean automation is sample-accurate with respect to where the automation breakpoints are placed in the timeline, but rather that the timing will be the same between transport runs.
+
+@subsubsection subsubsection__offline_bounce Offline Bounce
+
+Pro Tools supports faster-than-real-time offline bounce for all sessions. All plug-ins with %AAX Native types are supported. For %AAX DSP plugins, the offline bounce process will temporarily convert those to their corresponding %AAX Native types to complete the bounce. Because offline bounce is faster-than-real-time, audio processing callbacks will occur as fast as the algorithm will allow for. For this and other reasons, your algorithms should never depend on wall-clock time for features such as LFO, delay time, etc. Instead, all algorithms should always base time calculations on sample time so that the output will still be correct even if the algorithm is being called from an offline bounce.
+
+@subsubsection subsubsection__hybrid_engine_and_aax_dsp The Hybrid Engine and AAX DSP
+
+Pro Tools HDX and Pro Tools Carbon systems support the Hybrid Engine, which optimizes system latency by splitting the Pro Tools mix topology between native and DSP processors. When the Hybrid Engine is in use, Pro Tools tracks are configured as either DSP Mode or Native Mode. All AAX effect instances on a DSP Mode track are switched to their AAX DSP type. Plug-ins that do not support AAX DSP are de-activated while the track is in DSP Mode.Pro Tools HDX also supports a Classic mode. In this mode, the user chooses whether each plug-in instance will be AAX Native or AAX DSP.
+
+@subsubsection subsubsection__aax-hybrid_plug-ins AAX Hybrid Plug-ins
+
+Pro Tools also supports \ref additionalFeatures_Hybrid "AAX Hybrid" plug-ins, which can have both a Native and a DSP algorithm processing component. Audio-rate data can also be shared between the two processing components, which allows you to split your algorithm up into low-latency and high-latency contexts for better efficiency and to enable plug-ins such as convolution reverbs, spectrum analyzers, and other similar architectures.
+
+\note %AAX Hybrid is only supported by Pro Tools HDX when running in Classic mode. See \ref PT-257213 for more information.
+
+</DIV>
+
+
+<DIV CLASS="section">
+	@section aax_pro_tools_guide__basic_plugin_operation Basic plug-in operation
+		@subsection subsection__configuration_management Configuration management
+Each Effect in an %AAX plug-in may contain multiple configurations. Pro Tools automatically determines the appropriate plug-in configuration for each Effect insert at run time based on the insert's required sample rate, channel width, and processing mode (Native of DSP.) Under some circumstances, the configuration requirements for an Effect insert may change at run-time. Here are some examples:
+<UL>
+<LI CLASS="Bullet">
+When a width-changing plug-in (e.g. mono-to-stereo) is instantiated on a track then all of the following inserts must be converted to the new stem format </LI>
+<LI CLASS="Bullet">
+When a user imports session data between sessions at different sample rates then all of the imported plug-ins must be converted from the old sample rate to the new sample rate </LI>
+<LI CLASS="Bullet">
+When a user opens a session that contains deprecated effects, they must be replaced by the corresponding installed effects </LI>
+</UL>
+
+Whenever a new configuration is required, Pro Tools automatically determines whether one is available that meets the new requirements and, if it is, swaps in a new plug-in instance using a copy of the previous configuration's settings.
+
+In order for Pro Tools to deterministically select the appropriate Effect configuration to load in any given scenario, each of the configurations that are registered in the Effect must be described with distinct and mutually exclusive compatibility requirements.
+
+		@subsection subsection__plugin_activation_and_deactivation Plug-in activation and deactivation
+
+In Pro Tools, real-time plug-in inserts can be either active or inactive. Inactive plug-ins are not instantiated and are entirely removed from the processing chain, though they are still saved with the session and maintain a placeholder in their track's insert list for easy activation at a later point.
+
+Active plug-ins may be de-activated manually by the user or automatically by Pro Tools. Plug-ins may be loaded as inactive when a plug-in that has been saved in a session has been uninstalled and is no longer available, when a required plug-in configuration is not available, or at any other time when a particular plug-in instance cannot be loaded.
+
+		@subsection subsection__plugin_bypass Plug-in bypass
+
+%AAX plug-ins must implement a Master Bypass parameter, which is controlled via the "Bypass" button in the Pro Tools plug-in window header. While bypassed, the plug-in must not apply any processing to the audio that is passed to it (except delay, see below.) The plug-in may choose to smoothly transition into and out of bypass however it chooses.
+
+Any algorithmic delay that a plug-in incurs during normal operation must be maintained by the plug-in during bypass. For more information about this requirement, see \ref subsubsection__automatic_delay_compensation_.
+
+		@subsection subsection__presets_and_settings_management Presets and settings management
+Pro Tools includes a plug-in preset management system that can be accessed from the plug-in window header. With this system, users can save plug-in settings to disk and load the settings later to restore the plug-in's configuration.
+
+Preset files can be bundled with an %AAX plug-in to demonstrate a variety of uses for the plug-in or as recommended settings for different situations, and, as a plug-in developer, you are encouraged to provide a large selection of pre-configured presets along with your %AAX plug-ins. See \ref aax_distributing_finishing_factorypresets for more information about bundling presets with your plug-in.
+
+Aside from user preset management, there are many cases when the state of a plug-in must be captured or restored by AAE. For example, AAE must restore plug-in settings when a session is loaded and when converting a plug-in between different configurations.
+
+			@subsubsection subsubsection__plugin_preset_menu_ The plug-in preset menu
+
+Plug-in presets are available to the user via the Plug-In Settings menu in the Pro Tools plug-in window header. This menu supports nesting presets into sub-folders, which provides a convenient way to categorize and organize large sets of presets. In addition, users may save custom presets and add these custom presets to the menu.
+
+\nodox Image files must be copied to the /output/html directory \endnodox
+<IMG width="40%" alt="The Plug-In Settings menu in the Pro Tools plug-in window header" src="PlugInSettingsMenu.png" />
+<DIV CLASS="imagecaption">
+Figure 2: The Plug-In Settings menu in the Pro Tools plug-in window header</DIV>
+
+The preset menu in the Pro Tools plug-in header is built from the following two directories:
+
+<UL CLASS="paragraphs">
+<LI><EM CLASS="Italics">Session file</EM>/../Plug-In Settings </LI>
+<LI><EM CLASS="Italics">User Library root</EM>/Plug-In Settings </LI>
+</UL>
+
+The default setting for the User Library root directory is ~/Documents/Pro Tools on macOS, but the user can change this setting in the Pro Tools preferences.
+
+			@subsubsection subsubsection__plugin_presets_ Factory presets
+
+Pro Tools supports automatic installation of plug-in presets. %AAX plug-ins should include a set of presets in the following directory within the .aaxplugin:
+
+<UL CLASS="paragraphs">
+<LI><EM>MyPlugIn</EM>.aaxplugin/Contents/Factory Presets/<EM>MyPlugInPackage</EM>/ </LI>
+</UL>
+
+Where <EM>MyPlugInPackage</EM> is the plug-in's longest \ref  AAX_ICollection::AddPackageName() "Package Name" with 16 characters or fewer.
+
+On Pro Tools launch, all installed %AAX plug-in settings are copied from the .aaxplugin bundles' "Factory Presets" folders into the User Library directory (see \ref subsubsection__plugin_preset_menu_ "above".)
+
+\note Since the User Library root directory is a customizable setting, you should never install presets directly onto a user's system. If you require a central repository of settings on the system that is under control of your installer then you should handle these settings as external resources. You can use custom settings chunks in the plug-in's "Factory Presets" .tfx files to redirect your plug-in to read the appropriate installed resources.
+
+			@subsubsection subsubsection__default_plugin_settings_ Default plug-in settings
+
+When the first instance of an effect is made active in a session, Pro Tools queries the instance's state and stores this data as the effect's "factory default" preset. This preset is cached by Pro Tools and will be set on each subsequent instance of the plug-in with the same configuration
+
+The plug-in's factory default settings are stored on disk in a temporary file location that is specific to the user. Pro Tools looks for the factory default settings file for a plug-in each time an instance of the plug-in goes from an inactive state to an active state, including when the instance is first created. If there is no factory default settings file on disk then Pro Tools will create it using the plug-in's current settings.
+
+All factory default settings files are deleted during the Pro Tools shutdown procedure. Therefore, under normal operation, these files will be refreshed with each launch of Pro Tools.
+
+\note If the Pro Tools shutdown procedure is not completing, for example if you regularly terminate Pro Tools from a debugger, then the plug-in factory default settings files will not be deleted automatically.
+
+When a session is loaded Pro Tools will perform the following steps on each plug-in instance:
+<OL>
+<LI CLASS="List">Instantiate the plug-in and create a \ref AAX_IEffectParameters object </LI>
+<LI CLASS="List">Look for the cached factory default settings file in the file system </LI>
+<LI CLASS="List">If the factory default settings file is not found, query the plug-in for its current settings and create the factory default settings file using these settings </LI>
+<LI CLASS="List">Set the instance's default settings based on the settings stored in the cached factory default file </LI>
+<LI CLASS="List">Send the instance a \ref AAX_eNotificationEvent_SessionBeingOpened notification </LI>
+<LI CLASS="List">Set the saved settings from the session </LI>
+</OL>
+
+			@subsubsection subsubsection__the_compare_light_ The Compare Light
+
+The plug-in window header in Pro Tools includes a "Compare" button, the Compare Light control. This control allows the user to compare the current state of the plug-in with the last preset that was loaded, or the plug-in's default settings if no other preset has yet been loaded.
+
+Pro Tools polls each displayed plug-in periodically to determine whether or not its state matches the currently loaded preset. While the state matches, the Compare Light is inactive and unlit. As soon as the plug-in's state differs from the preset, the Compare Light becomes active and is highlighted.
+
+When the Compare Light is active, the user may click on it to cache the current plug-in settings and temporarily swap in the last preset that was loaded. Clicking on the Compare Light a second time will restore the cached plug-in settings.
+
+The specific operation of the Compare Light is determined by the plug-in's implementation of \ref AAX_IEffectParameters. To determine the correct state for a plug-in's compare light, Pro Tools makes regular calls to \ref AAX_IEffectParameters::GetNumberOfChanges() from a callback timer. If this method's <TT>aValueP</TT> parameter has changed since the last time the plug-in was queried then Pro Tools proceeds to call \ref AAX_IACFEffectParameters::CompareActiveChunk() "CompareActiveChunk()". If \ref AAX_IACFEffectParameters::CompareActiveChunk() "CompareActiveChunk()" returns with <TT>isEqual==false</TT> then the Compare Light will be lit, otherwise the light will be dimmed.
+
+			@subsubsection subsubsection__basic_chunk_handling_ Basic chunk handling
+
+All of these situations use the same basic settings management infrastructure in Pro Tools, which uses the "chunk" API of \ref AAX_IEffectParameters to retrieve arbitrary blocks of data from the plug-in (to retrieve a preset) and send the same block back to the plug-in (to set a preset.)
+
+When retrieving a preset from a plug-in, Pro Tools first asks for the size of the plug-in's settings chunk(s). Pro Tools then provides the plug-in with a pre-allocated buffer of memory into which the plug-in may store its settings information using any format that it chooses.
+
+When Pro Tools needs to restore the plug-in to this preset state, it sends a copy of this data back to the plug-in. The plug-in must interpret this data and set its internal state to match the preset.
+
+		@subsection subsection__modifier_key_behavior_ Modifier key behavior
+
+In order for users to have a consistent experience, all %AAX plug-ins should provide standard modifier key behaviors as described in this section. These operations are demonstrated by all Avid plug-ins in Pro Tools, and you can experiment with Avid's %AAX plug-ins to demonstrate the correct plug-in modifier key behavior.
+
+The following modifier key combinations must be handled explicitly by the plug-in:
+
+<table CLASS="doxtable" width="60%">
+<tr>
+  <th width="27%">macOS Keys</th>
+  <th width="27%">Windows Keys</th>
+  <th width="46%">Expected Behavior</th>
+</tr>
+<tr>
+  <td class="bordered">Command-click</td>
+  <td class="bordered">Control-click</td>
+  <td class="bordered">Adjust the parameter's value with fine control, for continuous controller widgets</td>
+</tr>
+<tr>
+  <td class="bordered">Option-click</td>
+  <td class="bordered">Alt-click</td>
+  <td class="bordered">Return the parameter's value to default<sup>*</sup></td>
+</tr>
+<tr>
+  <td class="bordered">Shift-click</td>
+  <td class="bordered">Shift-click</td>
+  <td class="bordered">\ref advancedTopics_linkedParameters "Link parameters" across all channels, if applicable</td>
+</tr>
+<tr>
+  <td colspan="3" class="unbordered"><small><sup>*</sup>Set-to-default may also be handled directly by the host, depending on the host version (see below).</small></td>
+</tr>
+</table>
+
+In addition to these events, there are also specific behaviors which Pro Tools and other %AAX hosts provide for certain key combinations in plug-in GUIs. For example, Pro Tools provides the following modifier key behavior overrides:
+
+<table CLASS="doxtable" width="60%">
+<tr>
+  <th width="27%">macOS Keys</th>
+  <th width="27%">Windows Keys</th>
+  <th width="46%">Expected Behavior</th>
+</tr>
+<tr>
+  <td class="bordered">Command-Control-click<br>Command-Right click</td>
+  <td class="bordered">Control-Start-click<br>Control-Right click</td>
+  <td class="bordered">Show parameter automation lane in the Pro Tools Edit Window, if automation is enabled for the parameter</td>
+</tr>
+<tr>
+  <td class="bordered">Command-Option-Control-click<br>Command-Option-Right click</td>
+  <td class="bordered">Control-Alt-Start-click<br>Control-Alt-Right click</td>
+  <td class="bordered">Activate pop-up menu for automation</td>
+</tr>
+</table>
+
+Other %AAX plug-in hosts implement different host-managed behavior for modifier key combinations, and additional host-managed key combinations may be added to any %AAX host in the future. For example, Pro Tools adds host-managed support for setting plug-in parameters to their default values.
+
+In order to allow the %AAX host to handle these operations, a plug-in must always call the handler methods in \ref AAX_IViewContainer before handling any mouse events in its own GUI. It is important to call these methods for <em>all</em> mouse events, in case additional handlers are added to future versions of the host or the plug-in is run in a new %AAX host with a different set of handled modifier key combinations.
+
+See the \ref AAX_IViewContainer class documentation for more information about passing mouse events to the %AAX host.
+
+</DIV>
+
+
+<DIV CLASS="section">
+	@section aax_pro_tools_guide__optional_plugin_features Optional plug-in features
+Pro Tools plug-ins offer users a rich set of integrated features. To make sure your plug-ins integrate into users' expected Pro Tools workflows, where applicable you should implement all of the features presented in this chapter.
+
+For more information about any of these features in Pro Tools, see the latest Pro Tools Reference Guide.
+
+		@subsection subsection__audio_management_features Audio management features
+			@subsubsection subsubsection__sidechain_input_ Sidechain input
+If applicable, plug-ins may choose to enable \ref additionalFeatures_Sidechain "sidechain inputs". If a sidechain is enabled, a menu is added to the plug-in's header that allows the user to choose an interface or bus as the sidechain, or "key input". For AudioSuite, the user can only use an existing audio track as the sidechain input. Once enabled, the plug-in will be able to access sidechain input just like any other input signal.
+
+			@subsubsection subsubsection__auxiliary_output_stems_ Auxiliary Output Stems
+Pro Tools has the capability to show and route multiple "auxiliary" outputs from a plug-in to other tracks. These are known as \ref additionalFeatures_AOS "Auxiliary Output Stems" (AOS), a stem referring to one set of outputs. A stereo stem contains two outputs, left and right, and a mono stem contains one output. The outputs will appear in the input assignment pop-up menu of each track under the category "plug-in".
+
+Some notes regarding this feature:
+<UL>
+<LI CLASS="Bullet">
+Only mono and stereo stems are available as auxiliary outputs. </LI>
+<LI CLASS="Bullet">
+The aux outputs cannot be added and removed from the system dynamically though they can be made inactive by the user. The total number of aux outputs, stem types, names, paths, and ordering are defined only once by the plug-in. </LI>
+<LI CLASS="Bullet">
+Plug-in aux outputs are not available from the sidechain input popup menu in other plug-ins. Users will not see the "plug-in" submenu when clicking on a plug-in sidechain popup. </LI>
+<LI CLASS="Bullet">
+There cannot be any multi-mono multi-output plug-ins. If a mono plug-in instance offers multiple outputs it cannot support multi-mono. </LI>
+</UL>
+
+If a plug-in is going to utilize the AOS feature, it will be responsible for a few details that are summarized below:
+<UL CLASS="paragraphs">
+<LI>
+<DIV CLASS="SectionHead">
+Aux Output Paths</DIV>
+
+The plug-in is responsible for the definition of valid aux output paths. This definition includes the total number of outputs, the desired order of stereo and mono paths. Pro Tools will query each plug-in for available valid paths and populate its track input selector popup menus accordingly.</LI>
+
+<LI>
+<DIV CLASS="SectionHead">
+Aux Output Path Order</DIV>
+
+The plug-in is responsible for specifying the type and name of each of its aux output paths. A plug-in decides whether the aux outputs are all stereo, all mono, "X" stereo outputs followed by "Y" mono outputs, or some other combination. Pro Tools lists each output in the order given by the plug-in. If mono and stereo paths are interleaved the input popup menu of the mono tracks keeps that order and breaks the stereo paths into their respective left and right sides using ".L" and ".R" suffixes.</LI>
+
+<LI>
+<DIV CLASS="SectionHead">
+Aux Output Names</DIV>
+
+A plug-in is responsible for giving meaningful names to aux outputs. Names are only defined once, so they will stick. At the very least, individual outputs should be labeled "Output xx", where "xx" is the aux output number as it is defined in the plug-in. The output name should also include the words "mono" and "stereo" to support when users are looking for an output with a specific stem format.</LI>
+
+<LI>
+<DIV CLASS="SectionHead">
+Aux Output Numbering</DIV>
+
+The plug-in is responsible for defining the lowest available aux output number. Plug-ins should base this number on the width of the plug-in's main outputs. For example, when using a stereo instance of a sampler the first aux output should be #3, when using a 5.1 instance of the sampler the first aux output should be #7, etc. This is to keep the numbering scheme inside of the plug-in and in Pro Tools consistent. From the perspective of Pro Tools, plug-ins typically enumerate all available outputs and do not differentiate between main and aux outputs. The first "N" outputs are used for the main outputs, and all the remaining outputs are available for aux output paths.</LI>
+
+<LI>
+<DIV CLASS="SectionHead">
+Separate Multi-Output Plug-in Process Type</DIV>
+
+Plug-in developers are encouraged to offer both "regular" and "multi-output" versions/types of any multi-output capable plug-in. We strongly suggest this to conserve resources and to keep the user's workspace as uncluttered as possible. Users can choose to use the regular version/type for plug-ins they don't need aux outputs for. Multi-output versions can be created as separate process types so that there need not be separate binaries. Such additional process types will be listed in the plug-in menu next to their regular version siblings. They should be nominally distinguished by appending phrases like "multi-output" to the plug-in name, for example.
+
+\note
+When moving sessions between different PT systems, multi-output process types will NOT be automatically converted to regular process types if multi-output types are not available.
+
+</LI>
+
+<LI>
+<DIV CLASS="SectionHead">
+No Multi-Mono Implementations</DIV>
+
+A plug-in is responsible for not having multi-mono enabled if it utilizes auxiliary outputs stems. Auxiliary output stems will not work in multi-mono enabled plug-ins. Multi-mono is automatically disabled for AOS in the Effect Layer.</LI>
+</UL>
+
+			@subsubsection subsubsection__external_metering_and_internal_clip_ External metering and internal clip
+
+Pro Tools may use the meter values reported by a plug-in for display on attached control surfaces and other external plug-in views. In general, the behavior of a plug-in meter on these devices will depend on the meter's properties as registered in Describe. The meter behavior may also depend on the plug-in's registered category. See \ref AdditionalFeatures_Meters for more information about how to register your plug-in's meters.
+
+<UL CLASS="paragraphs">
+<LI>
+<DIV CLASS="SectionHead">Gain reduction metering </DIV>
+
+Pro Tools supports gain reduction metering and will display an inverted gain reduction meter next to each plug-in insert and also next to the track's main meter in the Pro Tools Mix and Edit windows.
+
+All registered plug-in gain reduction meters are used by the Pro Tools gain-reduction metering UI. The plug-in gain reduction meters in the Pro Tools Mix and Edit windows will combine metering data for all gain-reduction meters of the same type (\ref AAX_eMeterType_CLGain "Compressor/Limiter" or \ref AAX_eMeterType_EGGain "Expander/Gate") in the plug-in:
+
+<UL>
+<LI>For plug-ins with multiple gain-reduction meters of the same type, the minimum (most gain-reduced) meter value for the current buffer will be used </LI>
+<LI>For multi-mono plug-ins, the minimum meter value across all of the per-channel mono instances will be used </LI>
+</UL>
+
+Pro Tools can be set up to display \ref AAX_eMeterType_CLGain "Compressor/Limiter", \ref AAX_eMeterType_EGGain "Expander/Gate", or both types of metering data in these displays via Preferences > Metering > Display > Gain Reduction Meter Type. If both types are used, the displayed meter level is simply the sum of the selected values for each type.
+
+The track gain-reduction meter displays the sum of all the track's inserts' gain reductions, using the same rules as above.
+
+</LI>
+
+<LI>
+<DIV CLASS="SectionHead">Plug-in internal clipping </DIV>
+
+The plug-in header has a clip light that indicates that the plug-in has reported that is has clipped somewhere internally. It is up to the plug-in itself to set and clear its clip indicators as needed. Additionally, plug-ins that have clipped internally will appear in red on the insert, even if the plug-in window is not open. This allows users to see at a glance where clipping has occurred in their mix.
+
+</LI>
+
+</UL>
+
+			@subsubsection subsubsection__automatic_delay_compensation_ Automatic Delay Compensation
+
+Automatic Delay Compensation maintains time-alignment between tracks that have plug-ins with differing algorithmic delays, tracks with different mixing paths, tracks that are split off and recombined within the mixer, and tracks with hardware inserts. To maintain time alignment, Pro Tools adds the exact amount of delay to each track necessary to make that particular track's delay equal to the delay of the track that has the longest delay.
+
+In order to be compensated correctly, %AAX plug-ins must report any algorithmic delay that they incur. This delay may be reported in the plug-in's description, and may also be changed at run-time.
+
+Automatic Delay Compensation Notes
+<UL>
+<LI CLASS="Bullet">
+Currently, Pro Tools will not update its delay compensation settings while Pro Tools is in playback, so a plug-in that dynamically changes its delay settings at run-time should either prevent any algorithmic delay updates during playback or give a visual indication to the user when the delay that it applies and the delay that Pro Tools is compensating for different delay settings.</LI>
+<LI CLASS="Bullet">
+Pro Tools does not update delay compensation settings when plug-ins go into and out of bypass, and does not automatically maintain bypass audio buffers for delayed plug-ins. It is therefore required that all plug-ins incur the same amount of delay when bypassed as during normal operation. </LI>
+<LI CLASS="Bullet">
+Automatic Delay Compensation is not applied during offline (AudioSuite) processing for plug-ins which use the \ref AAX_IHostProcessor "Host Processor" interface. If your Host Processor plug-in incurs algorithmic delay then you must incorporate audio lookahead via the Host Processor interface's random timeline access API. </LI>
+<LI CLASS="Bullet">
+Given the many routing possibilities in Pro Tools, the Automatic Delay Compensation feature involves some subtleties that may not be immediately apparent or intuitive. For more information about this feature, we strongly recommend that you review the relevant chapters in the Pro Tools Reference Guide. </LI>
+</UL>
+
+		@subsection subsection__plugin_categories Plug-in categories
+
+The plug-in menus in Pro Tools are hierarchical and by default are organized by category. These general categories represent common plug-in functions like EQ, dynamics, reverb, etc. Plug-ins may report one or more of these categories in order to be placed into the proper menu. For a complete list of plug-in categories available, refer to the \ref AAX_EPlugInCategory enum.
+
+Some features, such as control surface center-section mappings, are only available to plug-ins that report a particular category, so it is important for plug-ins to report the correct set of categories.
+
+		@subsection subsection__advanced_non-real-time_processing Advanced non-real-time processing
+
+AudioSuite processing allows %AAX plug-in to operate on audio in a non-real-time manner. AudioSuite plug-ins will appear in the AudioSuite menu in Pro Tools. By default, any AAX-Native plug-in will appear in the menu as long as an \ref AAX_eProperty_PlugInID_AudioSuite property is defined alongside the corresponding \ref AAX_eProperty_PlugInID_Native ID. However, to make use of extended AudioSuite features such as non-real-time sample access, the Analysis pass, a separate entry method subclassed from the \ref AAX_CHostProcessor implementation in the SDK should be used.
+
+			@subsubsection subsubsection__audiosuite_processing_modes_ AudioSuite processing modes
+
+Pro Tools includes a number of different AudioSuite processing modes, each of which changes the precise behavior of an AudioSuite processing event.
+
+<EM CLASS="Bold">Output modes </EM>
+<UL CLASS="paragraphs">
+<LI>
+<EM CLASS="Bold">
+Overwrite files</EM>
+ Output audio destructively overwrites the selected audio files on disk </LI>
+<LI>
+<EM CLASS="Bold">
+Create individual files</EM>
+ Individual new files are created for each processed clip </LI>
+<LI>
+<EM CLASS="Bold">
+Create continuous file</EM>
+ A single new file is created with data from the full processing pass </LI>
+</UL>
+
+<EM CLASS="Bold">Input modes </EM>
+<UL CLASS="paragraphs">
+<LI>
+<EM CLASS="Bold">
+Clip by clip</EM>
+ </LI>
+<LI>
+<EM CLASS="Bold">
+Entire selection</EM>
+ </LI>
+</UL>
+
+The plug-in may optionally disable the "clip by clip" processing mode if continuous input data is required, by using the property \ref AAX_eProperty_ContinuousOnly.
+
+<EM CLASS="Bold">Channel modes </EM>
+<UL CLASS="paragraphs">
+<LI>
+<EM CLASS="Bold">
+Mono mode</EM>
+ Each selected channel is processed as an individual mono audio stream </LI>
+<LI>
+<EM CLASS="Bold">
+Multi-input mode</EM>
+ Selected channels are sent to the plug-in in multi-channel streams </LI>
+</UL>
+
+Multi-input mode is only valid with the "entire selection" input mode, since the "clip by clip" input mode requires that each clip be processed individually as a standalone audio channel.
+
+The plug-in may optionally disable "mono mode" processing if its algorithm is only valid for multi-channel input, by defining the \ref AAX_eProperty_MultiInputModeOnly property.
+
+			@subsubsection subsubsection__analysis_ Analysis
+
+AudioSuite plug-ins support and optional Analysis pass, which allows a plug-in to access the incoming audio before the actual Render pass starts. When Analysis is defined with either \ref AAX_eProperty_OptionalAnalysis or \ref AAX_eProperty_RequiresAnalysis, an Analyze button will appear in the plug-in footer in the GUI.
+
+An analysis pass is useful for collecting pitch, spectrum, loudness, noise threshold, or other data that will help the user set up parameters based on the audio content being processed.
+
+			@subsubsection subsubsection__reverse_ Reverse
+
+A "reverse" feature is available for \ref AAX_ePlugInCategory_Reverb "Reverb" and \ref AAX_ePlugInCategory_Delay "Delay" AudioSuite plug-ins. This effect will reverse the source audio, apply the AudioSuite plug-in processing, and re-reverse the source audio back to its original orientation, thereby applying the AudioSuite effect in reverse.
+
+Reverse replaces the Analysis pass in the Pro Tools UI, so AudioSuite plug-ins in these categories do not receive a user-triggered analysis pass.
+
+
+			@subsubsection subsubsection__random-access_and_non-linear_processing_ Random-access and non-linear processing
+
+The generation of output samples by an AudioSuite Process must occur linearly and incrementally; however, the source of input samples may optionally be randomly accessed from the entire selected track. This enables many advanced processing capabilities such as whole-file analysis, audio reverse effects, and timeline-level modifications such as expanding, contracting, or shifting the processed region.
+
+In order to prevent invalid data from being randomly accessed, the "overwrite files" processing mode is disabled for plug-ins that use random-access processing.
+
+			@subsubsection subsubsection__audiosuite_handles_ AudioSuite Handles
+
+By default, when processing audio segments with an AudioSuite plug-in, Pro Tools will also process an extra region before and after the selected audio. These extra regions will be trimmed out of the selected.</P>
+
+The reason for this feature is so that the user has some room to expand the resulting audio clip (for fades or other reasons). However, certain AudioSuite plug-ins will operate more intuitively if these handles are not processed (such as delay, reverb, loudness normalization, and other plug-in types). To disable extended handle processing, set the \ref AAX_eProperty_DisableHandles property to true.</P>
+
+			@subsubsection subsubsection_extended_features Extended features
+
+AAX-AudioSuite plug-ins also have several other optional features including custom progress dialogs, reverse mode, and side-chains. For a complete reference of supported AudioSuite-related properties, refer to the properties between \ref AAX_eProperty_AudiosuitePropsBase and \ref AAX_eProperty_MaxASProp found in Interfaces\AAX_Properties.h.
+
+</DIV>
+
+
+<DIV CLASS="section">
+	@section aax_pro_tools_guide__scripting_sdk Using the Pro Tools Scripting SDK with AAX
+
+The Pro Tools Scripting SDK provides a way to control various aspects of Pro Tools. %AAX plug-ins may incorporate the Pro Tools Scripting SDK in order to control Pro Tools in ways that are not possible through %AAX alone.
+
+The Pro Tools Scripting SDK requires a PTSL connection to be established with Pro Tools. When establishing a PTSL connection from within an %AAX plug-in, the connection request must be made using a non-main application thread. Spawn a new thread from within your %AAX plug-in to perform all PTSL connection requests and Pro Tools Scripting SDK commands.
+
+
+
+</DIV>
+
+
+<DIV CLASS="section">
+	@section aax_pro_tools_guide__midi_effects Plugins with MIDI support
+
+In most cases, users are able to route MIDI arbitrarily in Pro Tools. Plugin MIDI outputs and inputs are available as MIDI sources and destinations and are available at other routing points such as MIDI track input selectors. %AAX plugins with MIDI inputs and outputs can be instantiated just like other real-time effects. %AAX MIDI processing and audio processing are not mutually exclusive.
+
+For more information about MIDI in %AAX, see \ref additionalFeatures_MIDI
+
+Pro Tools includes special handling for two common categories of plugins that process MIDI data: Virtual Instruments and MIDI effects
+- Virtual Instruments convert MIDI data into audio data. To define a Virtual Instrument, include \ref AAX_ePlugInCategory_SWGenerators in the effect's category property.
+- MIDI effects manipulate MIDI data in real time. To define an %AAX MIDI effect, include \ref AAX_EPlugInCategory_MIDIEffect in the effect's category property. See below for more information about MIDI effects.
+
+Pro Tools supports MIDI processing in real time effects only. Virtual Instruments and MIDI effects should not register as AudioSuite plugins.
+
+		@subsection subsection__instrument_tracks Instrument tracks
+
+Pro Tools Instrument tracks apply some special rules for MIDI connections. An Instrument track's MIDI input and MIDI playlist are connected to the first MIDI input node of the first Virtual Instrument insert on the track. Instrument tracks also connect chains of MIDI effects together, and include special features for managing inputs and outputs of these chains.
+
+Because inserts on Instrument tracks process both audio and MIDI, the audio format of Virtual Instrument and other effects on Instrument tracks will determine whether the effect is shown in the track's insert lists. Virtual Instruments should register component descriptions for all supported multichannel formats. This will ensure that the instrument shows in the MIDI plug-ins menu on all Instrument tracks regardless of the track's audio format.
+
+For more information about Pro Tools Instrument tracks, Virtual Instruments, and MIDI effect chaining, see the Pro Tools Reference Guide.
+
+		@subsection subsection__midi_effects_and_midi_chaining MIDI effects and MIDI insert chains
+
+By manipulating MIDI data in real time as it flows through a processing chain, MIDI Effects allow users to apply insert effects to MIDI data just like adding effects to audio data.
+
+To function as a MIDI effect, an effect should define both a MIDI input port and a MIDI output port. When chaining MIDI effects on an Instrument track, Pro Tools will connect incoming MIDI to the first channel of the plugin's first MIDI input node and will connect the first channel of the plugin's first MIDI output node to the next effect in the chain.
+ 
+MIDI effects that use the \ref AAX_EPlugInCategory_MIDIEffect category will appear in a MIDI plug-ins menu that is separate from the other real-time insert lists on Instrument tracks. This category can also trigger other special handling of the effect in Pro Tools, such as disabling dynamic plugin processing.
+ 
+Because MIDI effects are also standard %AAX inserts, it is possible to process both audio and MIDI. Multi-mono processing is not allowed for MIDI effects since there is only one MIDI channel to process even on multi-channel Instrument tracks. Therefore, even if a MIDI effect's audio processing is only a pass-through, the effect should register component descriptions for all multichannel formats. This will ensure that the product shows in the MIDI plug-ins menu on all Instrument tracks regardless of the track's audio format.
+
+</DIV>
+
+
+<DIV CLASS="section">
+	@section aax_pro_tools_guide__debugging_aax_plugins Debugging AAX plug-ins
+
+		@subsection subsection__debugging_within_pro_tools Debugging within Pro Tools
+
+Shipping versions of Pro Tools do not support attaching a debugger. This is to prevent malicious users from compromising Pro Tools security as well as the security of third-party plug-ins.
+
+As an %AAX plug-in developer, you are granted access to debuggable "developer build" versions of Pro Tools to help your development efforts. Some Pro Tools developer builds are feature-limited; for example, developer builds of Pro Tools do not allow saving or exporting sessions.
+
+The easiest way to debug plug-ins within Pro Tools is to start up Pro Tools, open a session, attach your debugger, and then instantiate your plug-in. This order seems to work the best for most users. If you need to debug the initial host query of your plug-in at Pro Tools start, it is possible to launch Pro Tools from within your debugger. However, this method is sometimes known to cause problems with certain debuggers.
+
+%AAX plug-in developers are also able to download pre-release and beta versions of upcoming Pro Tools releases. For now, these pre-release versions are not debuggable, but that is expected to change in the future as we work to make a unified debuggable pre-release installer available for upcoming Pro Tools versions.
+
+Both debuggable and pre-release versions are available for download as part of the %AAX SDK Toolkit on the <a href="https://my.avid.com/products/cppsdk" target="_top">My Toolkits and Downloads</a> page at avid.com. In order to use developer and pre-release builds, you will need special licences which you must request from devauth@avid.com.
+
+		@subsection subsection__digishell DigiShell
+
+DigiShell is a software tool that provides a general framework for running tests on Avid audio hardware. As a command-line application, DigiShell may be driven as part of a standard, automated test suite for maximum test coverage. The latest DigiShell tools may be downloaded as part of the %AAX SDK Toolkit on the <a href="https://my.avid.com/products/cppsdk" target="_top">My Toolkits and Downloads</a> page at avid.com.
+
+More information about DSH in general and about loading and testing plug-ins in DSH can be found in \ref DSH_Guide.
+
+		@subsection subsection__digitrace DigiTrace
+
+All Avid %AAX hosts provide tracing functionality based on Avid's DigiTrace tool. DigiTrace is a library that provides high-performance logging and tracing capabilities to Pro Tools and its components, including plug-ins. More information about DigiTrace can be found on Avid's audio developer website.
+
+To enable trace logging for %AAX plug-ins, use the <TT>AAX_TRACE</TT> macro defined in <TT>AAX_Assert.h</TT>. A separate macro, <TT>AAX_ASSERT</TT>, is also available to signal run-time errors. These macros are both cross-platform and will function whether the algorithm is running on the TI or on the host.
+
+For more information about DigiTrace, see \ref AAX_DigiTrace_Guide.
+
+			@subsubsection subsubsection__tracing_requirements Tracing requirements
+
+The \ref AAX_ASSERT and \ref AAX_TRACE macros are debug-only and will not provide tracing output from release builds of your plug-in. \ref AAX_TRACE_RELEASE may be used for tracing in both debug and release configurations. These macros require that the <TT>DTF_AAXPLUGINS</TT> facility to your DigiTrace configuration file. You can toggle this facility to enable or disable %AAX algorithm-level tracing. For details on setting up tracing on %AAX TI plug-ins, please refer to the \ref AAX_TI_Guide.
+
+</DIV>
+
+
+<DIV CLASS="section">
+	@section aax_pro_tools_guide__troubleshooting_aax_plugin_failures Troubleshooting common AAX plug-in failures
+
+<DIV CLASS="SectionHead">Pro Tools presents a "Move Unauthorized Plug-ins" dialog after attempting to launch with my plug-ins installed, and the plug-ins do not appear in the Pro Tools insert menus </DIV>
+
+<UL CLASS="paragraphs">
+	<LI>
+This error indicates that Pro Tools was not able to load the plug-in binary for some reason. The error indicates a copy protection failure since that is by far the most common reason for users to encounter this kind of error in released plug-ins, but any other error that prevents the plug-in DLL from loading in Pro Tools may also cause this error message.
+
+This error does <EM CLASS="Italics">not</EM> indicate a failure when checking the plug-in's digital signature. A digital signature failure would generate a different error message that would specifically mention the plug-in's signature.
+
+The <TT>DTF_AAXHOST</TT> \ref AAX_DigiTrace_Guide "DigiTrace" facility provides additional information about %AAX plug-in load errors.
+
+One common cause of DLL loading failures is a failure to dynamically link to other required libraries. In this case, the <TT>DTF_AAXHOST</TT> tracing will indicate something like the following:
+		<UL CLASS="paragraphs">
+			<LI>
+@verbatim
+AAXH_CEffectFactory::ParseDLL – exception thrown(The specified module could not be found. (126) while loading "MyPlugIn.aaxplugin")
+@endverbatim
+			</LI>
+		</UL>
+
+This exception indicates that some DLL upon which the plug-in depends is not present in the system. This is most commonly due to dynamic linking to CRT libs, but it could also be caused by any other DLL dependency.
+	</LI>
+</UL>
+
+</DIV>
+
+
+<DIV CLASS="section">
+	@section aax_pro_tools_guide__digioptions Using DigiOptions
+DigiOptions provide a way to override the standard Pro Tools configuration. These options are designed to assist with testing and development of Pro Tools, and they are often useful during plug-in development as well.
+
+To configure DigiOptions, place a plain-text file named DigiOptionsFile.txt next to the Pro Tools application. On macOS, place this file next to the Pro Tools.app bundle and on Windows place it next to the Pro Tools executable.
+
+A red notice will appear in the Pro Tools splash screen and in the application About Box indicating when DigiOptions are enabled in the build.
+
+\nodox Image files must be copied to the /output/html directory \endnodox
+<IMG alt="DigiOption activation notice in the Pro Tools splash screen" src="pro_tools_splash_digioption.png" />
+<DIV CLASS="imagecaption">
+Figure 3: DigiOption activation notice in the Pro Tools splash screen.</DIV>
+
+	@note If suffixes are hidden on your OS then be careful that you do not accidentally give the file an incorrect name such as DigiOptionsFile.txt.txt.
+
+		@subsection subsection__useful_digioptions Useful DigiOptions
+
+		@note Support for these options may vary from release to release
+
+<UL CLASS="paragraphs">
+	<LI>
+	<DIV CLASS="SectionHead">
+	<TT>AlwaysRebuildCache 1</TT></DIV>
+
+	This option forces Pro Tools to re-load all installed plug-ins each time the application is launched. This can be very useful during development, since some plug-in updates during development will not result in an updated plug-in binary or an updated modification date for the top-level .aaxplugin bundle.
+
+	\note If you have changed your plug-in's ID values during development and if you encounter AAE error -20038 when your plug-in is loaded then Pro Tools may be using a cache of the outdated plug-in ID. Use the AlwaysRebuildCache DigiOption or launch Pro Tools once without your plug-in installed to clear this state.</LI>
+
+	<LI>
+	<DIV CLASS="SectionHead">
+	<TT>NeverUnloadPlugInBundles &lt;int&gt;</TT></DIV>
+
+	Enable plug-in bundle unloading. The default value for this option is 0. In order to test your plug-ins and make sure that they operate correctly this option must be set to 0.
+
+	</LI>
+
+	<LI>
+	<DIV CLASS="SectionHead">
+	<TT>LogInterruptDataEveryNSeconds &lt;int&gt; </TT><BR>
+	<TT>LogInterruptDataEveryNSeconds_HL &lt;int&gt;</TT></DIV>
+
+	These options enable regular DigiTrace performance logging from the low-latency and high-latency real-time audio render threads in the Avid Audio Engine. For example, <TT>LogInterruptDataEveryNSeconds_HL 2</TT> would trigger a performance log for the high-latency render thread every two seconds. For more information about performance logging in AAE see \ref digitrace__performancelogging.</LI>
+
+
+	<LI>
+	<DIV CLASS="SectionHead">
+	<TT>PauseDuringLaunchToAttachDebugger 1</TT><BR></DIV>
+
+	<LI>
+	<DIV CLASS="SectionHead">
+	<TT>DisplayHostPlugInLatency 1</TT></DIV>
+
+	Display information about the plug-in's processing domain and dynamic processing status in the Pro Tools plug-in window header.
+
+	\nodox Image files must be copied to the /output/html directory \endnodox
+<IMG alt="DisplayHostPlugInLatency info in plug-in header" src="Pro_Tools_Guide_DigiOption_DisplayHostPlugInLatency.png" />
+<DIV CLASS="imagecaption">
+Figure 4: DisplayHostPlugInLatency info in plug-in header.</DIV></LI>
+
+	<LI>
+	<DIV CLASS="SectionHead">
+	<TT>TestGetCurveData &lt;0, 1, 2&gt;</TT></DIV>
+
+	Display the plug-in's curve data as a plot in the Pro Tools plug-in window header. Possible values are:
+		<OL start="0">
+			<LI>Off</LI>
+			<LI>@ref AAX_eCurveType_EQ "EQ curve"</LI>
+			<LI>@ref AAX_eCurveType_Reduction "Gain reduction curve"</LI>
+		</OL>
+	\warning The implementations of this test curve and the actual curve data shown on Avid control surfaces are different. In particular, the display in Pro Tools is updated regularly at idle time, whereas the curve on a control surface is only updated when certain parameter changes occur (see \ref PTSW-195316). The graph point interpolation, range, and sample points are also not exactly equivalent to the values used on an actual control surface, so you should not expect the curve shown in the debug view in Pro Tools to exactly match what would appear to users. After performing early prototyping of your curve data using the TestGetCurveData DigiOption you are strongly encouraged to use either the S6 Surfulator software or the \ref subsubsection__avid_ptcontrol "Pro Tools | Control" app to test and refine the plug-in's curve data in a real-world environment.
+
+	For more information about graph curves see \ref AdditionalFeatures_CurveDisplays .
+
+	\nodox Image files must be copied to the /output/html directory \endnodox
+<IMG alt="TestGetCurveData EQ graph in plug-in header" src="Pro_Tools_Guide_DigiOption_TestGetCurveData.png" />
+<DIV CLASS="imagecaption">
+Figure 5: TestGetCurveData EQ graph in plug-in header.</DIV></LI>
+
+	<LI>
+	<DIV CLASS="SectionHead">
+	<TT>RenderMissingFilesAsBlank 1</TT></DIV>
+
+	This option may be used to automatically render test tones into audio clips with missing source media. The test tones are rendered with different frequencies and magnitudes. This option can be useful when troubleshooting using a session file provided by an end user, since session-specific issues are rarely dependent on the source media, but may depend on there being some signal present in the session. This option requires that the Avid Signal Generator plug-in is installed.</LI>
+
+	<LI>
+	<DIV CLASS="SectionHead">
+	<TT>44100_Rate &lt;int&gt;</TT><BR>
+	<TT>48000_Rate &lt;int&gt;</TT></DIV>
+
+	Set the new base sample rate for each set of sample rate multiples. Can be useful for simulating sample rate pull-up by up to +5% (e.g. <TT>44100_Rate 45000</TT> in DigiOptions.txt.) The <TT>44100_Rate</TT> option affects 44100, 88200, and 176400 Hz rates, while the <TT>48000_Rate</TT> option affects 48000, 96000, and 192000 Hz rates.</LI>
+
+	<LI>
+	<DIV CLASS="SectionHead">
+	<TT>EnablePlugInHotSwap 1</TT></DIV>
+
+	\note This option is currently non-functional for %AAX plug-ins Pro Tools. See \ref PTSW-188653
+
+	This option will allow Pro Tools to recognize changes to your plug-in during run-time. This allows you to re-compile and load your updated plug-in without re-launching Pro Tools. The following conditions must be true in order to enable hot-swapping between versions of your plug-in:
+	<UL>
+		<LI>There cannot be any instances of the plug-in currently in Pro Tools.
+		<LI>Both <TT>EnablePlugInHotSwap 1</TT> and <TT>AlwaysRebuildCache 1</TT> must be set.
+	</UL>
+	</LI>
+
+	<LI>
+	<DIV CLASS="SectionHead">
+	<TT>WinDLLErrorMode &lt;int&gt;</TT></DIV>
+
+	Set the Windows error mode during DLL loading and unloading. The value of this option will be set as the <TT>uMode</TT> for a call to the <TT>SetErrorMode</TT> Windows API during DLL loading and unloading.
+
+	This option can be useful when debugging plug-in load errors on Windows, for example errors that cause a "The following Plug-Ins failed to load because no valid authorization could be found” dialog to appear during Pro Tools launch.
+
+	</LI>
+
+	<LI>
+	<DIV CLASS="SectionHead">
+	<TT>DisableCMNAssert 1</TT></DIV>
+
+	Disable assert dialogs in Pro Tools. Use this option if your Pro Tools debugging sessions are being interrupted or terminated due to assert failures in the app.
+
+	Note that Pro Tools asserts may be triggered by your plug-ins; you should always investigate any assert that you see to determine whether it is being caused by a plug-in. If you need information about any Pro Tools asserts, post a question here on the %AAX developer forums or write to us at <a href="mailto:avid.developer.services@avid.com">avid.developer.services@avid.com</a> and we will be happy to help.
+	</LI>
+
+	<LI>
+	<DIV CLASS="SectionHead">
+	<TT>TestPlugInDescriptions 0</TT></DIV>
+
+	Use this DigiOption to toggle the plug-in description validation check in Pro Tools developer builds. Developer builds will check plug-in description information when the plug-in is loaded and will present a warning dialog if the check fails. See \ref describe_validation section in the \ref CommonInterface_Describe page for more information.
+
+	</LI>
+
+	<LI>
+	<DIV CLASS="SectionHead">
+	<TT>RealTimeDenormalsAreZero &lt;int&gt;</TT></DIV>
+
+	Use this DigiOption to toggle the default denormal handling policy of the AAE real-time processing threads. A value of 1 means that DAZ+FZ will be enabled for all %AAX real-time processing threads unless explicitly changed using thread-specific primitives, while a value of 0 means that DAZ+FZ will be disabled unless explicitly changed.
+
+	The default state of the DAZ+FZ flags for AAE real-time processing threads is turned on by default.
+
+	</LI>
+
+	<LI>
+	<DIV CLASS="SectionHead">
+	<TT>DigiTraceWindow 1</TT></DIV>
+
+	Enable the Console window in Pro Tools which displays the application's \ref AAX_DigiTrace_Guide "DigiTrace" output in a live stream.
+
+	\compatibility Supported in Pro Tools 2019.XX and higher. Also supported (and enabled by default) in Pro Tools developer builds beginning with Pro Tools 2019.6.
+
+	</LI>
+
+</UL>
+
+</DIV>
+
+
+<DIV CLASS="section">
+	@section aax_pro_tools_guide__compatibility_notes Compatibility Notes
+<EM>See \ref HostSupport and \ref knownissues_ptsw for additional details regarding Pro Tools compatibility </EM>
+
+</DIV>
+
+
+@internal
+
+SCRATCH PAD
+
+Other supported CS units use MIDI or EUCON protocols to communicate with the host CPU, whether they might be connected via MIDI cables, Ethernet, USB, or FireWire (IEEE-1394). Each of the currently supported surfaces has been given its own "Controller Personality File," which resides in the AAE:Controllers folder. When a user enables a given MIDI Controller Personality file in the Pro ToolsPeripherals menu, the controller can access and edit plug-ins via defined pages for parameter editing. ProTools will support up to four control surfaces at one time, but only the first enabled peripheral can be used for plug-in editing. For example, you could have a DC16 and a CS-10 work in tandem, but only the first enabled unit could be used for plug-in editing.
+
+@endinternal
+
+*/

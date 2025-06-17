@@ -227,7 +227,22 @@ public:
             if(rootDialog.additionalChangeCallback)
             {
 	            if(cf)
-	                cf(this, getValueFromGlobalState());
+	            {
+		            auto r = cf(this, getValueFromGlobalState());
+
+                    
+
+                    if(!r.wasOk())
+                    {
+	                    setModalHelp(r.getErrorMessage());
+                        rootDialog.setCurrentErrorPage(this);
+                    }
+                    else
+                    {
+	                    rootDialog.setCurrentErrorPage(nullptr);
+                    }
+	            }
+	                
 
 	            rootDialog.callAdditionalChangeCallback();
             }
@@ -692,6 +707,7 @@ public:
     void showModalPopup(bool addButtons, PageInfo::Ptr p);
     Result checkCurrentPage();
     void setCurrentErrorPage(PageBase* b);
+    void clearIfCurrentErrorPage(PageBase* b);
     bool keyPressed(const KeyPress& k) override;
     var exportAsJSON() const;
     void scrollBarMoved (ScrollBar*, double) override { repaint(); }
@@ -764,6 +780,11 @@ public:
 
     PlaceholderContentBase* createDynamicPlaceholder(const var& infoObject);
 
+    void setAdditionalChangeCallback(const std::function<void()>& acf)
+    {
+	    additionalChangeCallback = acf;
+    }
+
 private:
 
     std::function<void()> additionalChangeCallback;
@@ -801,6 +822,7 @@ private:
     ScopedPointer<PageBase> currentPage;
     Rectangle<int> top, bottom, center;
     std::function<void()> finishCallback;
+    bool pendingClose = false;
     
     WeakReference<PageBase> currentErrorElement;
     //ErrorComponent errorComponent;

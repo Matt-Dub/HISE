@@ -36,7 +36,7 @@ BEGIN_JUCE_MODULE_DECLARATION
 
   ID:               hi_dsp_library
   vendor:           Hart Instruments
-  version:          1.5.0
+  version:          4.1.0
   name:             HISE DSP Library module
   description:      The module for building DSP modules
   website:          http://hise.audio
@@ -71,6 +71,18 @@ Set this to 0 if you want to load libraries created with this module.
 */
 #ifndef HI_EXPORT_DSP_LIBRARY
 #define HI_EXPORT_DSP_LIBRARY 1
+#endif
+
+/** Config: HISE_UPDATE_CONVOLUTION_DAMPING_ASYNC
+ *
+ *  If enabled, it will update the convolution damping asynchronously.
+ *	This allows a knob / slider to continously update the damping while dragging
+ *	so it won't clog the UI thread. However there are a few cases where this changes
+ *	the execution order when switching the IR / setting the sample range (which is always
+ *	synchronously executed) so if you group these actions together disable this.
+ */
+#ifndef HISE_UPDATE_CONVOLUTION_DAMPING_ASYNC
+#define HISE_UPDATE_CONVOLUTION_DAMPING_ASYNC 1
 #endif
 
 /** Config: IS_STATIC_DSP_LIBRARY

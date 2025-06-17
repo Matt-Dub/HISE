@@ -1134,7 +1134,12 @@ void SliderPack::rebuildSliders()
 		{
 			sliders.removeLast();
 		}
-			
+
+#if !HISE_NO_GUI_TOOLS
+		auto addClassSelector = dynamic_cast<simple_css::StyleSheetLookAndFeel*>(&getLookAndFeel()) != nullptr;
+		Array<simple_css::Selector> selectors = { simple_css::Selector(simple_css::SelectorType::Class, ".packslider") };
+#endif
+
 		for (int i = 0; i < numToAdd; i++)
 		{
 			Slider *s = new Slider();
@@ -1142,6 +1147,14 @@ void SliderPack::rebuildSliders()
 			sliders.add(s);
 			s->setComponentID(String(i));
 			//s->setLookAndFeel(getSpecialLookAndFeel<LookAndFeel>());
+
+#if !HISE_NO_GUI_TOOLS
+			if(addClassSelector)
+			{
+				simple_css::FlexboxComponent::Helpers::writeClassSelectors(*s, selectors, true);
+			}
+#endif
+
 			s->setInterceptsMouseClicks(false, false);
 			s->addListener(this);
 			s->setSliderStyle(Slider::SliderStyle::LinearBarVertical);
@@ -1388,6 +1401,7 @@ int SliderPack::getHoverStateForSlider(Slider* s) const
 {
 	auto idx = sliders.indexOf(s);
 
+	ignoreUnused(idx);
 	int state = 0;
 
 #if !HISE_NO_GUI_TOOLS

@@ -169,7 +169,7 @@ syncVoiceHandler(false)
 	sampleStartChain->setColour(JUCE_LIVE_CONSTANT_OFF(Colour(0xff5e8127)));
 	crossFadeChain->setColour(JUCE_LIVE_CONSTANT_OFF(Colour(0xff884b29)));
 
-	for (int i = 0; i < 127; i++) 
+	for (int i = 0; i < 128; i++) 
 		samplerDisplayValues.currentNotes[i] = 0;
 
 	setVoiceAmount(numVoices);
@@ -342,6 +342,116 @@ void ModulatorSampler::setNumChannels(int numNewChannels)
 
 }
 
+bool ModulatorSampler::setAllowReleaseStart(int eventId, bool shouldAllow)
+{
+#if HISE_SAMPLER_ALLOW_RELEASE_START
+	if(eventId == -1)
+	{
+		for(auto v: voices)
+		{
+			auto s = shouldAllow ? ModulatorSamplerVoice::ReleaseStartState::Enabled :
+								   ModulatorSamplerVoice::ReleaseStartState::AlwaysDisabled;
+
+			static_cast<ModulatorSamplerVoice*>(v)->setAllowReleaseStart(s);
+		}
+
+		return true;
+	}
+
+	for(auto av: activeVoices)
+	{
+		if(av->getCurrentHiseEvent().getEventId() == eventId)
+		{
+			auto s = shouldAllow ? ModulatorSamplerVoice::ReleaseStartState::Enabled :
+								   ModulatorSamplerVoice::ReleaseStartState::DisabledOnce;
+
+			static_cast<ModulatorSamplerVoice*>(av)->setAllowReleaseStart(s);
+			return true;
+		}
+	}
+#endif
+
+	return false;
+}
+
+void ModulatorSampler::handleSustainPedal(int midiChannel, bool isDown)
+{
+	ModulatorSynth::handleSustainPedal(midiChannel, isDown);
+
+#if HISE_SAMPLER_ALLOW_RELEASE_START
+	if(!isDown)
+	{
+		if(soundsHaveReleaseStart)
+		{
+			for (auto v : activeVoices)
+			{
+				if (!v->isPlayingChannel (midiChannel))
+					continue;
+
+                if ((v->isKeyDown() || v->isSostenutoPedalDown()))
+					continue;
+
+                auto s = static_cast<ModulatorSamplerSound*>(v->getCurrentlyPlayingSound().get());
+
+				if(s->getReferenceToSound()->isReleaseStartEnabled())
+					static_cast<ModulatorSamplerVoice*>(v)->jumpToRelease();
+			}
+		}
+	}
+#endif
+}
+
+void ModulatorSampler::setUseComplexGroupManager(bool shouldUseComplexGroupManager)
+{
+	auto usesComplexGroup = getComplexGroupManager() != nullptr;
+
+	if(usesComplexGroup != shouldUseComplexGroupManager)
+	{
+		LockHelpers::SafeLock sl(getMainController(), LockHelpers::Type::AudioLock);
+
+		if(shouldUseComplexGroupManager)
+			soundCollector = new ComplexGroupManager(&sounds, getMainController()->getGlobalUIUpdater());
+		else
+			soundCollector = nullptr;
+
+		if(auto gm = getComplexGroupManager())
+			gm->setSampler(this);
+
+#if USE_BACKEND || HI_ENABLE_EXPANSION_EDITING
+		auto enabled = (getComplexGroupManager() != nullptr) ? SampleEditHandler::ComplexGroupEvent::ComplexManagerEnabled :
+															   SampleEditHandler::ComplexGroupEvent::ComplexManagerDisabled;	
+		auto n = sendNotificationAsync;
+		
+		getSampleEditHandler()->complexGroupEventBroadcaster.sendMessage(n, enabled);
+#endif
+	}
+}
+
+const ModulatorSampler::ChannelData& ModulatorSampler::getChannelData(int index) const
+{
+	if (index >= 0 && index < getNumMicPositions())
+	{
+		return channelData[index];
+	}
+	else
+	{
+		jassertfalse;
+		return channelData[0];
+	}
+		
+}
+
+void ModulatorSampler::setMicEnabled(int channelIndex, bool channelIsEnabled) noexcept
+{
+	if (channelIndex >= NUM_MIC_POSITIONS || channelIndex < 0) return;
+
+	if(channelData[channelIndex].enabled != channelIsEnabled)
+	{
+		channelData[channelIndex].enabled = channelIsEnabled;
+		asyncPurger.triggerAsyncUpdate(); // will call refreshChannelsForSound asynchronously
+	}
+}
+
 int ModulatorSampler::getNumActiveGroups() const
 {
 	if (crossfadeGroups)
@@ -445,6 +555,20 @@ void ModulatorSampler::restoreFromValueTree(const ValueTree &v)
     loadAttribute(CrossfadeGroups, "CrossfadeGroups");
     loadAttribute(RRGroupAmount, "RRGroupAmount");
 
+	auto groupData = v.getChildWithName(groupIds::Layers);
+
+	setUseComplexGroupManager(groupData.isValid());
+
+	if(auto gm = getComplexGroupManager())
+	{
+		auto t = gm->getDataTree();
+
+		ComplexGroupManager::ScopedUpdateDelayer sds(*gm);
+
+		for(auto c: groupData)
+			t.addChild(c.createCopy(), -1, nullptr);
+	}
+
 	TimestretchOptions newOptions;
 	newOptions.restoreFromValueTree(v.getChildWithName(TimestretchOptions::getStaticId()));
 
@@ -490,6 +614,11 @@ ValueTree ModulatorSampler::exportAsValueTree() const
 	for (int i = 0; i < 8; i++)
 	{
 		saveTable(getTableUnchecked(i), "Group" + String(i) + "Table");
+	}
+
+	if(auto gm = getComplexGroupManager())
+	{
+		v.addChild(gm->getDataTree().createCopy(), -1, nullptr);
 	}
 
 	if (sampleMap->isUsingUnsavedValueTree())
@@ -635,6 +764,16 @@ void ModulatorSampler::prepareToPlay(double newSampleRate, int samplesPerBlock)
 
 		if (envelopeFilter != nullptr)
 			setEnableEnvelopeFilter();
+
+		if(auto gm = getComplexGroupManager())
+		{
+			PrepareSpecs ps;
+			ps.blockSize = samplesPerBlock;
+			ps.sampleRate = newSampleRate;
+			ps.numChannels = getMatrix().getNumSourceChannels();
+			ps.voiceIndex = nullptr;
+			gm->prepare(ps);
+		}
 	}
 }
 
@@ -953,7 +1092,9 @@ void ModulatorSampler::setDisplayedGroup(int index, bool shouldBeVisible, Modifi
 
 void ModulatorSampler::setSortByGroup(bool shouldSortByGroup)
 {
-	if (shouldSortByGroup != (soundCollector != nullptr))
+	auto sortByGroup = dynamic_cast<GroupedRoundRobinCollector*>(soundCollector.get()) != nullptr;
+
+	if (shouldSortByGroup != sortByGroup)
 	{
 		LockHelpers::SafeLock sl(getMainController(), LockHelpers::Type::AudioLock);
 
@@ -1242,9 +1383,10 @@ bool ModulatorSampler::soundCanBePlayed(ModulatorSynthSound *sound, int midiChan
 	const bool messageFits = ModulatorSynth::soundCanBePlayed(sound, midiChannel, midiNoteNumber, velocity);
 
 	if (!messageFits) return false;
+
+	jassert(getComplexGroupManager() == nullptr);
 	
-	
-	auto soundGroup = static_cast<ModulatorSamplerSound*>(sound)->getRRGroup();
+	auto soundGroup = (int)static_cast<ModulatorSamplerSound*>(sound)->getBitmask();
 
 	const bool rrGroupApplies = (!multiRRGroupState && (crossfadeGroups || multiRRGroupState.getSingleGroupIndex() == soundGroup)) ||
 								multiRRGroupState[soundGroup];
@@ -1300,6 +1442,9 @@ void ModulatorSampler::noteOff(const HiseEvent &m)
 			{
 				if(v->getCurrentHiseEvent().getEventId() == m.getEventId())
 				{
+					if(v->isSostenutoPedalDown() || v->isSustainPedalDown())
+						continue;
+
 					auto s = static_cast<ModulatorSamplerSound*>(v->getCurrentlyPlayingSound().get());
 
 					if(s->getReferenceToSound()->isReleaseStartEnabled())
@@ -1319,49 +1464,59 @@ void ModulatorSampler::preHiseEventCallback(HiseEvent &m)
 {
 	if (m.isNoteOnOrOff())
 	{
+		if(soundCollector != nullptr)
+			soundCollector->preHiseEventCallback(m);
+
 		if (m.isNoteOn())
 		{
-			if (useRoundRobinCycleLogic)
-			{
-				multiRRGroupState.bumpRoundRobin(rrGroupAmount);
-			}
-			else if (!eventIdsForGroupIndexes.isEmpty())
-			{
-				for(const auto& pending: eventIdsForGroupIndexes)
-				{
-					if(pending.first == m.getEventId())
-					{
-						memcpy(&multiRRGroupState, &pending.second, sizeof(MultiGroupState));
-						break;
-					}
-				}
-			}
-
 #if USE_BACKEND
-
-			getSampleEditHandler()->noteBroadcaster.sendMessage(sendNotificationAsync, m.getNoteNumber(), m.getVelocity());
-
-			if (lockRRGroup != -1)
-				multiRRGroupState.setSingleGroupIndex(lockRRGroup);
-
 			if (lockVelocity > 0)
 				m.setVelocity(lockVelocity);
 
-			auto rrIndex = multiRRGroupState.getSingleGroupIndex();
-
-			jassert(rrIndex == getCurrentRRGroup());
-
-			if(isDisplayGroupFollowingRRGroup())
-			{
-				getSamplerDisplayValues().visibleGroups.clear();
-				getSamplerDisplayValues().visibleGroups.setBit(rrIndex-1);
-			}
-				
-
-			getSampleEditHandler()->groupBroadcaster.sendMessage(sendNotificationAsync, rrIndex, &getSamplerDisplayValues().visibleGroups);
+			getSampleEditHandler()->noteBroadcaster.sendMessage(sendNotificationAsync, m.getNoteNumber(), m.getVelocity());
 #endif
-		
-			samplerDisplayValues.currentGroup = multiRRGroupState.getSingleGroupIndex();
+
+			if(soundCollector == nullptr)
+			{
+				if (useRoundRobinCycleLogic)
+				{
+					multiRRGroupState.bumpRoundRobin(rrGroupAmount);
+				}
+				else if (!eventIdsForGroupIndexes.isEmpty())
+				{
+					for(const auto& pending: eventIdsForGroupIndexes)
+					{
+						if(pending.first == m.getEventId())
+						{
+							memcpy(&multiRRGroupState, &pending.second, sizeof(MultiGroupState));
+							break;
+						}
+					}
+				}
+
+	#if USE_BACKEND
+
+				if (lockRRGroup != -1)
+					multiRRGroupState.setSingleGroupIndex(lockRRGroup);
+
+				auto rrIndex = multiRRGroupState.getSingleGroupIndex();
+
+				jassert(rrIndex == getCurrentRRGroup());
+
+				if(isDisplayGroupFollowingRRGroup())
+				{
+					getSamplerDisplayValues().visibleGroups.clear();
+					getSamplerDisplayValues().visibleGroups.setBit(rrIndex-1);
+				}
+					
+
+				getSampleEditHandler()->groupBroadcaster.sendMessage(sendNotificationAsync, rrIndex, &getSamplerDisplayValues().visibleGroups);
+	#endif
+			
+				samplerDisplayValues.currentGroup = multiRRGroupState.getSingleGroupIndex();
+			}
+
+			
 		}
 
 		if (m.isNoteOn())
@@ -1386,14 +1541,32 @@ void ModulatorSampler::preHiseEventCallback(HiseEvent &m)
 	}
 }
 
-float* ModulatorSampler::calculateCrossfadeModulationValuesForVoice(int voiceIndex, int startSample, int numSamples, int groupIndex)
+float* ModulatorSampler::calculateCrossfadeModulationValuesForVoice(int voiceIndex, int startSample, int numSamples, ModulatorSamplerSound::Bitmask group)
 {
-	// If we have set multiple groups to be active manually
-	// we want to use only as much tables as there are active groups...
-	if (multiRRGroupState)
-		groupIndex %= multiRRGroupState.getNumSetBits();
+	int groupIndex = -1;
 
-	if (groupIndex > 8) return nullptr;
+	if(auto gm = getComplexGroupManager())
+	{
+		// The group parameter is zero based for backwards compatibility...
+		group += 1;
+
+		if(auto g = gm->getTableFadeValue(group))
+			groupIndex = g - 1;
+	}
+	else
+	{
+		// already zero based, just take the value and convert it to an int
+		groupIndex = (int)(group);
+
+		// If we have set multiple groups to be active manually
+		// we want to use only as much tables as there are active groups...
+		if (multiRRGroupState)
+			groupIndex %= multiRRGroupState.getNumSetBits();
+
+		if (groupIndex > 8) return nullptr;
+	}
+
+	
 
 	if (auto compressedValues = modChains[Chains::XFade].getWritePointerForManualExpansion(startSample))
 	{
@@ -1747,13 +1920,7 @@ void ModulatorSampler::setRRGroupAmount(int newGroupLimit)
 	rrGroupAmount = jmax(1, newGroupLimit);
 
 	allNotesOff(1, true);
-
-	ModulatorSampler::SoundIterator sIter(this);
-	jassert(sIter.canIterate());
-
-	while (auto sound = sIter.getNextSound())
-		sound->setMaxRRGroupIndex(rrGroupAmount);
-
+	
 	rrGroupGains.ensureStorageAllocated(rrGroupAmount);
 
 	for (int i = rrGroupGains.size(); i < rrGroupAmount; i++)

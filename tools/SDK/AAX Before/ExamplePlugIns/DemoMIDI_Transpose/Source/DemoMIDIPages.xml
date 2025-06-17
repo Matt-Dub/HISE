@@ -1,0 +1,508 @@
+<?xml version='1.0' encoding='US-ASCII' standalone='yes'?>
+<!-- Copyright 2024 Avid Technology, Inc. -->
+<!-- This file is part of the Avid AAX SDK.                                            -->
+<!--                                                                                   -->
+<!-- The AAX SDK is subject to commercial or open-source licensing.                    -->
+<!--                                                                                   -->
+<!-- By using the AAX SDK, you agree to the terms of both the Avid AAX SDK License     -->
+<!-- Agreement and Avid Privacy Policy.                                                -->
+<!--                                                                                   -->
+<!-- AAX SDK License: https://developer.avid.com/aax                                   -->
+<!-- Privacy Policy: https://www.avid.com/legal/privacy-policy-statement               -->
+<!--                                                                                   -->
+<!-- Or: You may also use this code under the terms of the GPL v3 (see                 -->
+<!-- www.gnu.org/licenses).                                                            -->
+<!--                                                                                   -->
+<!-- THE AAX SDK IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER -->
+<!-- EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE      -->
+<!-- DISCLAIMED.                                                                       -->
+<PageTables vers='1.0.0.0'>
+	<PageTableLayouts>
+		<Plugin manID='AVID' prodID='DmTR' plugID='DFOF'>
+			<Desc>Demo MIDI Effect Transpose 5.1.4 Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DFOF'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DFOT'>
+			<Desc>Demo MIDI Effect Transpose 5.1.2 Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DFOT'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DFZF'>
+			<Desc>Demo MIDI Effect Transpose 5.0.4 Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DFZF'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DFZT'>
+			<Desc>Demo MIDI Effect Transpose 5.0.2 Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DFZT'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DNOF'>
+			<Desc>Demo MIDI Effect Transpose 9.1.4 Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DNOF'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DNOS'>
+			<Desc>Demo MIDI Effect Transpose 9.1.6 Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DNOS'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DNZF'>
+			<Desc>Demo MIDI Effect Transpose 9.0.4 Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DNZF'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DNZS'>
+			<Desc>Demo MIDI Effect Transpose 9.0.6 Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DNZS'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DRQU'>
+			<Desc>Demo MIDI Effect Transpose Quad Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DRQU'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DTAF'>
+			<Desc>Demo MIDI Effect Transpose Ambisonics (5th Order) Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DTAF'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DTAH'>
+			<Desc>Demo MIDI Effect Transpose Ambisonics (3rd Order) Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DTAH'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DTAO'>
+			<Desc>Demo MIDI Effect Transpose Ambisonics (1st Order) Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DTAO'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DTAS'>
+			<Desc>Demo MIDI Effect Transpose Ambisonics (7th Order) Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DTAS'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DTAT'>
+			<Desc>Demo MIDI Effect Transpose Ambisonics (2nd Order) Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DTAT'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DTAf'>
+			<Desc>Demo MIDI Effect Transpose Ambisonics (4th Order) Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DTAf'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DTAs'>
+			<Desc>Demo MIDI Effect Transpose Ambisonics (6th Order) Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DTAs'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DTEO'>
+			<Desc>Demo MIDI Effect Transpose 7.1 Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DTEO'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DTEZ'>
+			<Desc>Demo MIDI Effect Transpose 7.0 Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DTEZ'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DTFO'>
+			<Desc>Demo MIDI Effect Transpose 5.1 Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DTFO'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DTFZ'>
+			<Desc>Demo MIDI Effect Transpose 5.0 Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DTFZ'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DTLC'>
+			<Desc>Demo MIDI Effect Transpose LCR Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DTLC'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DTLS'>
+			<Desc>Demo MIDI Effect Transpose LCRS Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DTLS'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DTMO'>
+			<Desc>Demo MIDI Effect Transpose Mono Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DTMO'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DTSO'>
+			<Desc>Demo MIDI Effect Transpose 6.1 Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DTSO'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DTST'>
+			<Desc>Demo MIDI Effect Transpose Stereo Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DTST'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DTSZ'>
+			<Desc>Demo MIDI Effect Transpose 6.0 Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DTSZ'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DTVO'>
+			<Desc>Demo MIDI Effect Transpose 7.1 SDDS Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DTVO'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DTVZ'>
+			<Desc>Demo MIDI Effect Transpose 7.0 SDDS Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DTVZ'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DVOF'>
+			<Desc>Demo MIDI Effect Transpose 7.1.4 Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DVOF'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DVOS'>
+			<Desc>Demo MIDI Effect Transpose unknown stem format Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DVOS'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DVOT'>
+			<Desc>Demo MIDI Effect Transpose 7.1.2 Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DVOT'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DVZF'>
+			<Desc>Demo MIDI Effect Transpose 7.0.4 Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DVZF'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DVZS'>
+			<Desc>Demo MIDI Effect Transpose unknown stem format Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DVZS'-->
+		<Plugin manID='AVID' prodID='DmTR' plugID='DVZT'>
+			<Desc>Demo MIDI Effect Transpose 7.0.2 Native</Desc>
+			<Layout>DemoMIDI Layout</Layout>
+		</Plugin><!--manID='AVID' prodID='DmTR' plugID='DVZT'-->
+		<PTLayout name='DemoMIDI Layout'>
+			<PageTable type='Av46' pgsz='72'>
+				<Page num='1'>
+					<Cell row='1' col='1' knobID="Transpose" inOutButtonID="MasterBypassID" selectButtonID="Passthrough"/>
+					<Cell row='2' col='1' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='3' col='1' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='4' col='1' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='1' col='2' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='2' col='2' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='3' col='2' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='4' col='2' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='1' col='3' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='2' col='3' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='3' col='3' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='4' col='3' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='1' col='4' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='2' col='4' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='3' col='4' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='4' col='4' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='1' col='5' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='2' col='5' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='3' col='5' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='4' col='5' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='1' col='6' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='2' col='6' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='3' col='6' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='4' col='6' knobID="" inOutButtonID="" selectButtonID=""/>
+				</Page><!--num='1'-->
+			</PageTable><!--type='Av46' pgsz='72'-->
+			<PageTable type='Av48' pgsz='96'>
+				<Page num='1'>
+					<Cell row='1' col='1' knobID="Transpose" inOutButtonID="MasterBypassID" selectButtonID="Passthrough"/>
+					<Cell row='2' col='1' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='3' col='1' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='4' col='1' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='1' col='2' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='2' col='2' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='3' col='2' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='4' col='2' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='1' col='3' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='2' col='3' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='3' col='3' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='4' col='3' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='1' col='4' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='2' col='4' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='3' col='4' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='4' col='4' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='1' col='5' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='2' col='5' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='3' col='5' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='4' col='5' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='1' col='6' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='2' col='6' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='3' col='6' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='4' col='6' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='1' col='7' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='2' col='7' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='3' col='7' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='4' col='7' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='1' col='8' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='2' col='8' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='3' col='8' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='4' col='8' knobID="" inOutButtonID="" selectButtonID=""/>
+				</Page><!--num='1'-->
+			</PageTable><!--type='Av48' pgsz='96'-->
+			<PageTable type='Av81' pgsz='24'>
+				<Page num='1'>
+					<Cell row='1' col='1' knobID="Transpose" inOutButtonID="MasterBypassID" selectButtonID="Passthrough"/>
+					<Cell row='2' col='1' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='3' col='1' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='4' col='1' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='5' col='1' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='6' col='1' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='7' col='1' knobID="" inOutButtonID="" selectButtonID=""/>
+					<Cell row='8' col='1' knobID="" inOutButtonID="" selectButtonID=""/>
+				</Page><!--num='1'-->
+			</PageTable><!--type='Av81' pgsz='24'-->
+			<PageTable type='BkCS' pgsz='12'>
+				<Page num='1'>
+					<ID>Transpose</ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID>Passthrough</ID>
+					<ID>MasterBypassID</ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+				</Page><!--num='1'-->
+			</PageTable><!--type='BkCS' pgsz='12'-->
+			<PageTable type='BkSF' pgsz='16'>
+				<Page num='1'>
+					<ID>Transpose</ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID>Passthrough</ID>
+					<ID>MasterBypassID</ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+				</Page><!--num='1'-->
+			</PageTable><!--type='BkSF' pgsz='16'-->
+			<PageTable type='FrTL' pgsz='24'>
+				<Page num='1'>
+					<ID>MasterBypassID</ID>
+					<ID>Passthrough</ID>
+					<ID>Transpose</ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+				</Page><!--num='1'-->
+			</PageTable><!--type='FrTL' pgsz='24'-->
+			<PageTable type='HgTL' pgsz='8'>
+				<Page num='1'>
+					<ID>MasterBypassID</ID>
+					<ID>Passthrough</ID>
+					<ID>Transpose</ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+				</Page><!--num='1'-->
+			</PageTable><!--type='HgTL' pgsz='8'-->
+			<PageTable type='MkTL' pgsz='8'>
+				<Page num='1'>
+					<ID>Passthrough</ID>
+					<ID>MasterBypassID</ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID>Transpose</ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+				</Page><!--num='1'-->
+			</PageTable><!--type='MkTL' pgsz='8'-->
+			<PageTable type='PcTL' pgsz='16'>
+				<Page num='1'>
+					<ID>Transpose</ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID>Passthrough</ID>
+					<ID>MasterBypassID</ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+					<ID> </ID>
+				</Page><!--num='1'-->
+			</PageTable><!--type='PcTL' pgsz='16'-->
+			<PageTable type='PgTL' pgsz='1'>
+				<Page num='1'>
+					<ID>MasterBypassID</ID>
+				</Page><!--num='1'-->
+				<Page num='2'>
+					<ID>Passthrough</ID>
+				</Page><!--num='2'-->
+				<Page num='3'>
+					<ID>Transpose</ID>
+				</Page><!--num='3'-->
+			</PageTable><!--type='PgTL' pgsz='1'-->
+		</PTLayout><!--name='DemoMIDI Layout'-->
+	</PageTableLayouts>
+	<ControlNamesVariations>
+		<Ctrl ID='MasterBypassID'>
+			<name typ='PgTL' sz='1'>M</name>
+			<name typ='PgTL' sz='2'>Ma</name>
+			<name typ='PgTL' sz='3'>Mas</name>
+			<name typ='PgTL' sz='4'>Mast</name>
+			<name typ='PgTL' sz='5'>Maste</name>
+			<name typ='PgTL' sz='6'>Master</name>
+			<name typ='PgTL' sz='7'>Master </name>
+			<name typ='PgTL' sz='8'>Master B</name>
+			<name typ='PgTL' sz='9'>Master By</name>
+			<name typ='PgTL' sz='10'>Master Byp</name>
+			<name typ='PgTL' sz='11'>Master Bypa</name>
+			<name typ='PgTL' sz='12'>Master Bypas</name>
+			<name typ='PgTL' sz='13'>Master Bypass</name>
+		</Ctrl><!--ID='MasterBypassID'-->
+		<Ctrl ID='Passthrough'>
+			<name typ='PgTL' sz='1'>P</name>
+			<name typ='PgTL' sz='2'>Pa</name>
+			<name typ='PgTL' sz='3'>Pas</name>
+			<name typ='PgTL' sz='4'>Pass</name>
+			<name typ='PgTL' sz='5'>Passt</name>
+			<name typ='PgTL' sz='6'>Passth</name>
+			<name typ='PgTL' sz='7'>Passthr</name>
+			<name typ='PgTL' sz='8'>Passthro</name>
+			<name typ='PgTL' sz='9'>Passthrou</name>
+			<name typ='PgTL' sz='10'>Passthroug</name>
+		</Ctrl><!--ID='Passthrough'-->
+		<Ctrl ID='Transpose'>
+			<name typ='PgTL' sz='1'>T</name>
+			<name typ='PgTL' sz='2'>Tr</name>
+			<name typ='PgTL' sz='3'>Tra</name>
+			<name typ='PgTL' sz='4'>Tran</name>
+			<name typ='PgTL' sz='5'>Trans</name>
+			<name typ='PgTL' sz='6'>Transp</name>
+			<name typ='PgTL' sz='7'>Transpo</name>
+			<name typ='PgTL' sz='8'>Transpos</name>
+		</Ctrl><!--ID='Transpose'-->
+	</ControlNamesVariations>
+	<Editor vers='1.3.7.1'>
+		<PluginList>
+			<TDM>
+			</TDM>
+			<RTAS>
+				<PluginID manID='AVID' prodID='DmTR' plugID='DTAS'>
+					<MenuStr>AAX Native: DemoMIDIFX 64ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DTAS'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DTAs'>
+					<MenuStr>AAX Native: DemoMIDIFX 49ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DTAs'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DTAF'>
+					<MenuStr>AAX Native: DemoMIDIFX 36ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DTAF'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DTAf'>
+					<MenuStr>AAX Native: DemoMIDIFX 25ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DTAf'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DTAH'>
+					<MenuStr>AAX Native: DemoMIDIFX 16ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DTAH'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DTAT'>
+					<MenuStr>AAX Native: DemoMIDIFX 9ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DTAT'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DTAO'>
+					<MenuStr>AAX Native: DemoMIDIFX 4ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DTAO'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DNOS'>
+					<MenuStr>AAX Native: DemoMIDIFX 16ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DNOS'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DNZS'>
+					<MenuStr>AAX Native: DemoMIDIFX 15ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DNZS'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DNOF'>
+					<MenuStr>AAX Native: DemoMIDIFX 14ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DNOF'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DNZF'>
+					<MenuStr>AAX Native: DemoMIDIFX 13ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DNZF'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DVOS'>
+					<MenuStr>AAX Native: DemoMIDIFX 14ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DVOS'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DVZS'>
+					<MenuStr>AAX Native: DemoMIDIFX 13ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DVZS'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DVOF'>
+					<MenuStr>AAX Native: DemoMIDIFX 12ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DVOF'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DVZF'>
+					<MenuStr>AAX Native: DemoMIDIFX 11ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DVZF'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DFOF'>
+					<MenuStr>AAX Native: DemoMIDIFX 10ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DFOF'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DFZF'>
+					<MenuStr>AAX Native: DemoMIDIFX 9ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DFZF'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DFOT'>
+					<MenuStr>AAX Native: DemoMIDIFX 8ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DFOT'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DFZT'>
+					<MenuStr>AAX Native: DemoMIDIFX 7ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DFZT'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DVOT'>
+					<MenuStr>AAX Native: DemoMIDIFX 10ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DVOT'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DVZT'>
+					<MenuStr>AAX Native: DemoMIDIFX 9ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DVZT'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DTEO'>
+					<MenuStr>AAX Native: DemoMIDIFX 8ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DTEO'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DTEZ'>
+					<MenuStr>AAX Native: DemoMIDIFX 7ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DTEZ'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DTVO'>
+					<MenuStr>AAX Native: DemoMIDIFX 8ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DTVO'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DTVZ'>
+					<MenuStr>AAX Native: DemoMIDIFX 7ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DTVZ'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DTSO'>
+					<MenuStr>AAX Native: DemoMIDIFX 7ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DTSO'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DTSZ'>
+					<MenuStr>AAX Native: DemoMIDIFX 6ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DTSZ'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DTFO'>
+					<MenuStr>AAX Native: DemoMIDIFX 6ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DTFO'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DTFZ'>
+					<MenuStr>AAX Native: DemoMIDIFX 5ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DTFZ'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DRQU'>
+					<MenuStr>AAX Native: DemoMIDIFX 4ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DRQU'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DTLS'>
+					<MenuStr>AAX Native: DemoMIDIFX 4ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DTLS'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DTLC'>
+					<MenuStr>AAX Native: DemoMIDIFX 3ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DTLC'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DTST'>
+					<MenuStr>AAX Native: DemoMIDIFX 2ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DTST'-->
+				<PluginID manID='AVID' prodID='DmTR' plugID='DTMO'>
+					<MenuStr>AAX Native: DemoMIDIFX 1ch</MenuStr>
+				</PluginID><!--manID='AVID' prodID='DmTR' plugID='DTMO'-->
+			</RTAS>
+		</PluginList>
+		<DiscCtrls>
+			<CtrlID>MasterBypassID</CtrlID>
+			<CtrlID>Passthrough</CtrlID>
+		</DiscCtrls>
+	</Editor><!--vers='1.3.7.1'-->
+</PageTables><!--vers='1.0.0.0'-->
