@@ -1982,8 +1982,8 @@ namespace ScriptingObjects
         /** Returns the ID of the attribute with the given index. */
         String getAttributeId(int index);
 				
-				/** Returns the index of the attribute with the given ID. */
-				int getAttributeIndex(String id);
+		/** Returns the index of the attribute with the given ID. */
+		int getAttributeIndex(String id);
         
 		/** Returns the number of attributes. */
 		int getNumAttributes() const;
@@ -2024,6 +2024,12 @@ namespace ScriptingObjects
 		/** Adds and connects a receiving static time variant modulator for the given global modulator. */
 		var addStaticGlobalModulator(var chainIndex, var timeVariantMod, String modName);
 
+		/** Sets the draggable filter data object (if applicable). */
+		void setDraggableFilterData(var filterData);
+
+		/** Returns the draggable filter data object (if applicable). */
+		var getDraggableFilterData();
+
 		// ============================================================================================================
 
 		struct Wrapper;
@@ -2048,7 +2054,7 @@ namespace ScriptingObjects
 
 		// ============================================================================================================
 
-		ScriptingSlotFX(ProcessorWithScriptingContent *p, EffectProcessor *fx);
+		ScriptingSlotFX(ProcessorWithScriptingContent *p, Processor *fx);
 		~ScriptingSlotFX() {};
 
 		static Identifier getClassName() { RETURN_STATIC_IDENTIFIER("SlotFX"); }
@@ -2077,10 +2083,10 @@ namespace ScriptingObjects
 		void clear();
 
 		/** Loads the effect with the given name and returns a reference to it. */
-		ScriptingEffect* setEffect(String effectName);
+		var setEffect(String effectName);
 
 		/** Returns a reference to the currently loaded effect. */
-		ScriptingEffect* getCurrentEffect();
+		var getCurrentEffect();
 
 		/** Swaps the effect with the other slot. */
 		bool swap(var otherSlot);
@@ -2096,11 +2102,13 @@ namespace ScriptingObjects
         
 		// ============================================================================================================
 
+	private:
+
 		struct Wrapper;
 
 		HotswappableProcessor* getSlotFX();
 
-	private:
+		DspNetwork::Holder* getDspNetworkHolder();
 
 		WeakReference<Processor> slotFX;
 
@@ -2259,6 +2267,9 @@ namespace ScriptingObjects
 
 		/** Adds and connects a receiving static time variant modulator for the given global modulator. */
 		var addStaticGlobalModulator(var chainIndex, var timeVariantMod, String modName);
+
+		/** Changes the processing order of the effects of this sound generator. */
+		void setEffectChainOrder(bool doPoly, var slotRange, var chainOrder);
 
 		/** Returns a reference as Sampler or undefined if no Sampler. */
 		var asSampler();

@@ -36,6 +36,12 @@ namespace simple_css
 {
 using namespace juce;
 
+struct ComponentWithAutoTextSize
+{
+	virtual ~ComponentWithAutoTextSize() = default;
+	virtual String getTextToAutofit() const = 0;
+};
+
 struct FlexboxContainer
 {
 	virtual ~FlexboxContainer() {}
@@ -237,18 +243,25 @@ struct FlexboxComponent: public Component,
 		}
 	};
 
-	struct SimpleTextDisplay: public Component
+	
+
+	struct SimpleTextDisplay: public Component,
+							  public ComponentWithAutoTextSize
 	{
 		SimpleTextDisplay(ElementType s_):
+		  Component(),
+		  ComponentWithAutoTextSize(),
 		  s(s_)
 		{};
 
-		const ElementType s;
-		String currentText;
+		String getTextToAutofit() const override { return currentText; }
 
 		void setText(const String& text);
 
 		void paint(Graphics& g) override;
+
+		const ElementType s;
+		String currentText;
 	};
 
 	/** Create a flexbox component with a selector (usually a ID selector or either div or body). */

@@ -2970,7 +2970,12 @@ void ScriptingObjects::ScriptingModulator::setMatrixProperties(var matrixData)
 {
 	if(auto mm = dynamic_cast<MatrixModulator*>(mod.get()))
 	{
-		mm->setMatrixProperties(matrixData);
+		if(auto gc = ProcessorHelpers::getFirstProcessorWithType<GlobalModulatorContainer>(mm->getMainController()->getMainSynthChain()))
+		{
+			auto rd = MatrixIds::Helpers::Properties::RangeData::fromJSON(matrixData);
+			gc->matrixProperties.rangeData[mm->getMatrixTargetId()] = rd;
+			gc->matrixProperties.propertyUpdateBroadcaster.sendMessage(sendNotificationSync, &gc->matrixProperties, mm->getMatrixTargetId());
+		}
 	}
 }
 
@@ -3304,6 +3309,8 @@ struct ScriptingObjects::ScriptingEffect::Wrapper
 	API_METHOD_WRAPPER_1(ScriptingEffect, getModulatorChain);
 	API_METHOD_WRAPPER_3(ScriptingEffect, addStaticGlobalModulator);
 	API_METHOD_WRAPPER_0(ScriptingEffect, getId);
+	API_VOID_METHOD_WRAPPER_1(ScriptingEffect, setDraggableFilterData);
+	API_METHOD_WRAPPER_0(ScriptingEffect, getDraggableFilterData);
 };
 
 ScriptingObjects::ScriptingEffect::ScriptingEffect(ProcessorWithScriptingContent *p, EffectProcessor *fx) :
@@ -3347,6 +3354,9 @@ moduleHandler(fx, dynamic_cast<JavascriptProcessor*>(p))
 	ADD_API_METHOD_1(getModulatorChain);
 	ADD_API_METHOD_3(addGlobalModulator);
 	ADD_API_METHOD_3(addStaticGlobalModulator);
+
+	ADD_API_METHOD_1(setDraggableFilterData);
+	ADD_API_METHOD_0(getDraggableFilterData);
 };
 
 
@@ -3602,6 +3612,22 @@ var ScriptingObjects::ScriptingEffect::addStaticGlobalModulator(var chainIndex, 
 	return var();
 }
 
+void ScriptingObjects::ScriptingEffect::setDraggableFilterData(var filterData)
+{
+	if(auto h = dynamic_cast<ProcessorWithCustomFilterStatistics*>(getEffect()))
+		h->setFilterStatistics(filterData);
+}
+
+var ScriptingObjects::ScriptingEffect::getDraggableFilterData()
+{
+	if(auto h = dynamic_cast<ProcessorWithCustomFilterStatistics*>(getEffect()))
+	{
+		return h->getFilterStatisticsJSON();
+	}
+
+	return var();
+}
+
 ScriptingObjects::ScriptingEffect::FilterModeObject::FilterModeObject(const ProcessorWithScriptingContent* p) :
 	ConstScriptingObject(const_cast<ProcessorWithScriptingContent*>(p), (int)FilterBank::FilterMode::numFilterModes)
 {
@@ -3648,7 +3674,7 @@ struct ScriptingObjects::ScriptingSlotFX::Wrapper
     API_METHOD_WRAPPER_0(ScriptingSlotFX, getCurrentEffectId);
 };
 
-ScriptingObjects::ScriptingSlotFX::ScriptingSlotFX(ProcessorWithScriptingContent *p, EffectProcessor *fx) :
+ScriptingObjects::ScriptingSlotFX::ScriptingSlotFX(ProcessorWithScriptingContent *p, Processor* fx) :
 ConstScriptingObject(p, fx != nullptr ? fx->getNumParameters()+1 : 1),
 slotFX(fx)
 {
@@ -3685,6 +3711,10 @@ void ScriptingObjects::ScriptingSlotFX::clear()
 	{
         slot->clearEffect();
 	}
+	else if (auto holder = getDspNetworkHolder())
+	{
+		holder->clearAllNetworks();
+	}
 	else
 	{
 		reportScriptError("Invalid Slot");
@@ -3692,7 +3722,7 @@ void ScriptingObjects::ScriptingSlotFX::clear()
 }
 
 
-ScriptingObjects::ScriptingEffect* ScriptingObjects::ScriptingSlotFX::setEffect(String effectName)
+var ScriptingObjects::ScriptingSlotFX::setEffect(String effectName)
 {
 	if (effectName == "undefined")
 	{
@@ -3715,6 +3745,19 @@ ScriptingObjects::ScriptingEffect* ScriptingObjects::ScriptingSlotFX::setEffect(
 
 		return new ScriptingEffect(getScriptProcessor(), dynamic_cast<EffectProcessor*>(slot->getCurrentEffect()));
     }
+	else if (auto holder = getDspNetworkHolder())
+	{
+		if(auto an = holder->getActiveNetwork())
+		{
+			if(an->getId() == effectName)
+				return var(an);
+		}
+
+		holder->clearAllNetworks();
+		auto dn = holder->getOrCreate(effectName);
+
+		return var(dn);
+	}
 	else
 	{
 		reportScriptError("Invalid Slot");
@@ -3722,14 +3765,19 @@ ScriptingObjects::ScriptingEffect* ScriptingObjects::ScriptingSlotFX::setEffect(
 	}
 }
 
-ScriptingObjects::ScriptingEffect* ScriptingObjects::ScriptingSlotFX::getCurrentEffect()
+var ScriptingObjects::ScriptingSlotFX::getCurrentEffect()
 {
 	if (auto slot = getSlotFX())
 	{
 		if (auto fx = slot->getCurrentEffect())
 		{
-			return new ScriptingEffect(getScriptProcessor(), dynamic_cast<EffectProcessor*>(fx));
+			return var(new ScriptingEffect(getScriptProcessor(), dynamic_cast<EffectProcessor*>(fx)));
 		}
+	}
+	else if (auto holder = getDspNetworkHolder())
+	{
+		if(auto an = holder->getActiveNetwork())
+			return var(an);
 	}
 
 	return {};
@@ -3774,6 +3822,18 @@ juce::var ScriptingObjects::ScriptingSlotFX::getModuleList()
 		for (const auto& s : sa)
 			list.add(var(s));
 	}
+	else if (auto h = getDspNetworkHolder())
+	{
+#if USE_BACKEND
+		auto files = BackendDllManager::getNetworkFiles(getScriptProcessor()->getMainController_());
+
+		for(auto n: files)
+			list.add(var(n.getFileNameWithoutExtension()));
+#else
+		jassertfalse;
+#endif
+
+	}
 
 	return var(list);
 }
@@ -3784,6 +3844,11 @@ String ScriptingObjects::ScriptingSlotFX::getCurrentEffectId()
     {
         return slot->getCurrentEffectId();
     }
+	else if (auto h = getDspNetworkHolder())
+	{
+		if(auto an = h->getActiveNetwork())
+			return an->getId();
+	}
     
     return "";
 }
@@ -3792,13 +3857,46 @@ var ScriptingObjects::ScriptingSlotFX::getParameterProperties()
 {
     if(auto slot = getSlotFX())
         return slot->getParameterProperties();
+	else if (auto h = getDspNetworkHolder())
+	{
+		if(auto an = h->getActiveNetwork())
+		{
+			auto rn = an->getRootNode();
+
+			Array<var> list;
     
+		    for (int i = 0; i < rn->getNumParameters(); i++)
+			{
+				auto pdata = rn->getParameterFromIndex(i)->data;
+				auto rng = scriptnode::RangeHelpers::getDoubleRange(pdata);
+				auto prop = new DynamicObject();
+
+				var obj(prop);
+
+				scriptnode::RangeHelpers::storeDoubleRange(obj, rng, RangeHelpers::IdSet::ScriptComponents);
+
+				prop->setProperty("text", pdata[PropertyIds::ID]);
+				prop->setProperty("defaultValue", pdata[PropertyIds::DefaultValue]);
+
+				list.add(var(prop));
+			}
+		    
+		    return var(list);
+		}
+		
+	}
+
     return var();
 }
 
 HotswappableProcessor* ScriptingObjects::ScriptingSlotFX::getSlotFX()
 {
 	return dynamic_cast<HotswappableProcessor*>(slotFX.get());
+}
+
+DspNetwork::Holder* ScriptingObjects::ScriptingSlotFX::getDspNetworkHolder()
+{
+	return dynamic_cast<DspNetwork::Holder*>(slotFX.get());
 }
 
 struct ScriptingObjects::ScriptRoutingMatrix::Wrapper
@@ -4057,6 +4155,7 @@ struct ScriptingObjects::ScriptingSynth::Wrapper
 	API_METHOD_WRAPPER_0(ScriptingSynth, getRoutingMatrix);
 	API_METHOD_WRAPPER_0(ScriptingSynth, getId);
 	API_VOID_METHOD_WRAPPER_2(ScriptingSynth, setModulationInitialValue);
+	API_VOID_METHOD_WRAPPER_3(ScriptingSynth, setEffectChainOrder);
 };
 
 ScriptingObjects::ScriptingSynth::ScriptingSynth(ProcessorWithScriptingContent *p, ModulatorSynth *synth_) :
@@ -4099,6 +4198,7 @@ ScriptingObjects::ScriptingSynth::ScriptingSynth(ProcessorWithScriptingContent *
 	ADD_API_METHOD_0(asSampler);
 	ADD_API_METHOD_0(getRoutingMatrix);
 	ADD_API_METHOD_2(setModulationInitialValue);
+	ADD_API_METHOD_3(setEffectChainOrder);
 };
 
 
@@ -4338,6 +4438,23 @@ var ScriptingObjects::ScriptingSynth::addStaticGlobalModulator(var chainIndex, v
 	}
 
 	return var();
+}
+
+void ScriptingObjects::ScriptingSynth::setEffectChainOrder(bool doPoly, var slotRange, var chainOrder)
+{
+	if(checkValidObject())
+	{
+		auto r = Result::ok();
+		auto p = ApiHelpers::getPointFromVar(slotRange, &r).toInt();
+
+		if(!r.wasOk())
+			reportScriptError(r.getErrorMessage());
+
+		if(auto fx = dynamic_cast<EffectProcessorChain*>(synth->getChildProcessor(ModulatorSynth::EffectChain)))
+		{
+			fx->setFXOrder(false, { p.x, p.y }, chainOrder);
+		}
+	}
 }
 
 var ScriptingObjects::ScriptingSynth::asSampler()

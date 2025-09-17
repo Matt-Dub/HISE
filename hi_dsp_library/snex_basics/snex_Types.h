@@ -404,10 +404,7 @@ struct VoiceResetter
 
 struct DllBoundaryTempoSyncer: public hise::TempoListener
 {
-	DllBoundaryTempoSyncer()
-	{
-		
-	}
+	DllBoundaryTempoSyncer() = default;
 	~DllBoundaryTempoSyncer() = default;
 	
 	/** Register an item that has a tempoChangedStatic class. */
@@ -491,7 +488,17 @@ struct DllBoundaryTempoSyncer: public hise::TempoListener
 	double bpm = 120.0;
     bool isPlaying = false;
     double ppqPosition = 0.0;
-	
+
+	double getCurrentPPQPosition(int timestamp) const
+	{
+		if(ppqFunction)
+			return ppqFunction(timestamp);
+
+		return ppqPosition;
+	}
+
+	std::function<double(int)> ppqFunction;
+
 	hise::SimpleReadWriteLock listenerLock;
 
 	hise::UnorderedStack<WeakReference<hise::TempoListener>, 256> tempoListeners;
@@ -1133,6 +1140,11 @@ template <typename T, int NumVoices> struct PolyData
 	const T& getWithIndex(int index) const
 	{
 		return *(data + getVoiceIndex(index));
+	}
+
+	bool isPolyHandlerEnabled() const
+	{
+		return NumVoices > 1 && voicePtr != nullptr && voicePtr->isEnabled();
 	}
 
 	bool isVoiceRenderingActive() const

@@ -269,7 +269,7 @@ void MacroControlledObject::enableMidiLearnWithPopup()
 
 	if (modulationData != nullptr)
 	{
-		modulationData->addToPopupMenu(m);
+		modulationData->addToPopupMenu(this, m);
 	}
 
 	NormalisableRange<double> rangeWithSkew = getRange();
@@ -281,7 +281,7 @@ void MacroControlledObject::enableMidiLearnWithPopup()
 
     auto result = PopupLookAndFeel::showAtComponent(m, dynamic_cast<Component*>(this), false);
 
-	if(modulationData != nullptr && modulationData->onPopupMenuResult(result))
+	if(modulationData != nullptr && modulationData->onPopupMenuResult(this, result))
 	{
 		return;
 	}
@@ -360,7 +360,7 @@ void MacroControlledObject::setAttributeWithUndo(float newValue, bool useCustomO
 	}
 	else
 	{
-		getProcessor()->setAttribute(parameter, newValue, dontSendNotification);
+		getProcessor()->setAttribute(parameter, newValue, sendNotificationAsync);
 	}
 }
 
@@ -1063,12 +1063,40 @@ void HiSlider::ModUpdater::setUpdateFunction(const ModulationDisplayValue::Query
 bool HiSlider::ModUpdater::canBeDropped(const var& info) const
 {
 	auto typeMatches = info["Type"] == "ModulationDrag";
-	return typeMatches;
+
+	if(typeMatches)
+	{
+		auto sourceIndex = (int)info[MatrixIds::SourceIndex];
+		auto chain = parent.getProcessor()->getMainController()->getMainSynthChain();
+
+		if(auto gc = ProcessorHelpers::getFirstProcessorWithType<GlobalModulatorContainer>(chain))
+		{
+			auto md = gc->getMatrixModulatorData();
+			auto targetId = parent.getProcessor()->getModulationTargetId(parent.getParameter());
+			auto con = MatrixIds::Helpers::getConnection(md, sourceIndex, targetId);
+
+			auto a = !con.isValid() ? GlobalModulatorContainer::DragAction::Hover :
+								      GlobalModulatorContainer::DragAction::DisabledHover;
+
+			gc->sendDragMessage(sourceIndex, targetId, a);
+			return !con.isValid();
+		}
+	}
+
+	return false;
 }
 
 void HiSlider::ModUpdater::onDrop(const var& info)
 {
 	auto sourceIndex = (int)info["SourceIndex"];
+	auto chain = parent.getProcessor()->getMainController()->getMainSynthChain();
+
+	if(auto gc = ProcessorHelpers::getFirstProcessorWithType<GlobalModulatorContainer>(chain))
+	{
+		auto targetId = parent.getProcessor()->getModulationTargetId(parent.getParameter());
+		gc->sendDragMessage(sourceIndex, targetId, GlobalModulatorContainer::DragAction::Drop);
+	}
+
 	parent.getProcessor()->onModulationDrop(parent.getParameter(), sourceIndex);
 }
 
@@ -1133,6 +1161,9 @@ HiSlider::HiSlider(const String &name) :
 	setColour(HiseColourScheme::ComponentOutlineColourId, Colours::white.withAlpha(0.3f));
 	setColour(TextEditor::highlightColourId, Colour(SIGNAL_COLOUR).withAlpha(0.5f));
 	setColour(TextEditor::ColourIds::focusedOutlineColourId, Colour(SIGNAL_COLOUR));
+
+	// init the modulationDragState property so that it's not undefined before the first drag...
+	getProperties().set("modulationDragState", 0);
 }
 
 HiSlider::~HiSlider()
@@ -1206,12 +1237,30 @@ struct HiSlider::HoverPopup: public Component,
 
 		start();
 
+		gc = ProcessorHelpers::getFirstProcessorWithType<GlobalModulatorContainer>(slider.getProcessor()->getMainController()->getMainSynthChain());
+
+		if(gc != nullptr)
+		{
+			gc->currentMatrixSourceBroadcaster.addListener(*this, [](HoverPopup& hp, int)
+			{
+				hp.keepAlive = false;
+				hp.clear();
+			}, false);
+		}
+
 		rebuild();
 	}
 
+	WeakReference<GlobalModulatorContainer> gc;
+
 	~HoverPopup()
 	{
-		jassert(!keepAlive);
+		if(gc != nullptr)
+		{
+			gc->currentMatrixSourceBroadcaster.removeListener(*this);
+		}
+
+		//jassert(!keepAlive);
 	}
 
 	bool hitTest(int x, int y) override
@@ -1244,7 +1293,23 @@ struct HiSlider::HoverPopup: public Component,
 			if(auto pwsc = dynamic_cast<ProcessorWithScriptingContent*>(parent->getProcessor()))
 			{
 				if(auto sc = pwsc->getScriptingContent()->getComponent(parent->getParameter()))
+				{
 					mod = dynamic_cast<MatrixModulator*>(sc->getConnectedProcessor());
+				}
+
+				if(mod == nullptr)
+				{
+					Processor::Iterator<MatrixModulator> iter(parent->getProcessor()->getMainController()->getMainSynthChain());
+
+					while(auto n = iter.getNextProcessor())
+					{
+						if(n->getMatrixTargetId() == targetId)
+						{
+							mod = n;
+							break;
+						}
+					}
+				}
 			}
 
 			if(mod != nullptr)
@@ -1622,6 +1687,8 @@ struct HiSlider::HoverPopup: public Component,
 
 	float sensitivity;
 	SliderStyle sliderStyle;
+
+	JUCE_DECLARE_WEAK_REFERENCEABLE(HoverPopup);
 };
 
 void HiSlider::showModHoverPopup(bool shouldShow, bool closeOnExit)
@@ -1897,17 +1964,6 @@ void HiToggleButton::mouseDown(const MouseEvent &e)
 {
 	checkMouseClickProfiler(true);
 
-	if(auto pp = getConnectedPluginParameter())
-	{
-		if(getTriggeredOnMouseDown())
-		{
-			dynamic_cast<HisePluginParameterBase*>(pp)->setIgnoreNextHostUpdate(true);
-		}
-
-		pp->beginChangeGesture();
-	}
-		
-
 	CHECK_MIDDLE_MOUSE_DOWN(e);
 
     if(e.mods.isLeftButtonDown())
@@ -1963,17 +2019,6 @@ void HiToggleButton::mouseUp(const MouseEvent& e)
 
     abortTouch();
     MomentaryToggleButton::mouseUp(e);
-
-	if(auto pp = getConnectedPluginParameter())
-	{
-		if(!getTriggeredOnMouseDown())
-		{
-			dynamic_cast<HisePluginParameterBase*>(pp)->setIgnoreNextHostUpdate(true);
-		}
-
-		pp->endChangeGesture();
-	}
-		
 }
 
 HiComboBox::HiComboBox(const String& name):

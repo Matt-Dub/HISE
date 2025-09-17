@@ -99,7 +99,7 @@ public:
 		if(e.isNoteOn())
 		{
 			auto& s = state.get();
-			s.startVoice(e, signal, index);
+			s.startVoice(e, signal, index, state.isPolyHandlerEnabled());
 			modValue.setModValue(s.lastRampValue);
 		}
 	}
@@ -277,6 +277,25 @@ public:
 
 	template <typename PD> void process(PD& data)
 	{
+		if constexpr (PD::hasCompileTimeSize())
+		{
+			if(data.getNumSamples() == 1)
+			{
+				constexpr static int NumChannels = PD::getNumFixedChannels();
+
+				span<float, NumChannels> frameData;
+
+				if(config.shouldProcessSignal())
+				{
+					for(int i = 0; i < NumChannels; i++)
+						frameData[i] = data.getRawChannelPointers()[i][0];
+				}
+
+				this->processFrame(frameData);
+				return;
+			}
+		}
+
 		if(ok)
 		{
 			jassert(signal);
@@ -364,7 +383,7 @@ public:
 					if(sr == SignalRatio::ControlRate)
 						uptimeDelta = data.getNumSamples();
 					else // sr == SignalRatio::AudioRate
-						uptimeDelta = data.getNumSamples() / HISE_CONTROL_RATE_DOWNSAMPLING_FACTOR;
+						uptimeDelta = jmax(1, data.getNumSamples() / HISE_CONTROL_RATE_DOWNSAMPLING_FACTOR);
 
 					v = signal[s.uptime];
 
@@ -397,10 +416,10 @@ public:
 
 	void reset()
 	{
+		auto wantsPoly = state.isPolyHandlerEnabled();
+
 		for(auto& s: state)
-		{
-			s.reset(signal, index);
-		}
+			s.reset(signal, index, wantsPoly);
 	}
 
 	void setProcessSignal(double newValue)
@@ -441,10 +460,12 @@ public:
 
 	struct Data
 	{
-		void startVoice(const HiseEvent& e, const SignalSource& signal, int slotIndex)
+		void startVoice(const HiseEvent& e, const SignalSource& signal, int slotIndex, bool wantsPolyphonicSignal)
 		{
-			eventData = signal.getEventData(slotIndex, e);
-			uptime = e.getTimeStamp() / HISE_CONTROL_RATE_DOWNSAMPLING_FACTOR;
+			eventData = signal.getEventData(slotIndex, e, wantsPolyphonicSignal);
+
+			if(wantsPolyphonicSignal)
+				uptime = e.getTimeStamp() / HISE_CONTROL_RATE_DOWNSAMPLING_FACTOR;
 
 			if(isPolyphonic())
 			{
@@ -478,9 +499,9 @@ public:
 			intensity.prepare(sr, smoothingTime);
 		}
 
-		void reset(const SignalSource& signal, int slotIndex)
+		void reset(const SignalSource& signal, int slotIndex, bool wantsPolyphonicSignal)
 		{
-			eventData = signal.getEventData(slotIndex, {});
+			eventData = signal.getEventData(slotIndex, {}, wantsPolyphonicSignal);
 			baseValue.reset();
 			intensity.reset();
 			lastRampValue = baseValue.get();

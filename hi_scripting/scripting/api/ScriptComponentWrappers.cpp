@@ -140,6 +140,18 @@ struct ScriptCreatedComponentWrapper::AdditionalMouseCallback: public MouseListe
 				{
 					alignToBottom = sp->getScriptObjectProperty(ScriptingApi::Content::ScriptPanel::popupMenuAlign);
 				}
+				if(auto dc = dynamic_cast<ScriptingApi::Content::ScriptDynamicContainer*>(safeThis->scriptComponent.get()))
+				{
+					alignToBottom = false;
+
+					auto b = dynamic_cast<dyncomp::Base*>(event.eventComponent);
+
+					if(b == nullptr)
+						b = event.eventComponent->findParentComponentOfClass<dyncomp::Base>();
+
+					if(b != nullptr)
+						alignToBottom = b->getPropertyOrDefault(dyncomp::dcid::popupMenuAlign);
+				}
 
 				if (auto r = PopupLookAndFeel::showAtComponent(m, event.eventComponent, alignToBottom))
 				{
@@ -233,17 +245,15 @@ struct ScriptCreatedComponentWrapper::AdditionalMouseCallback: public MouseListe
 	{
         auto mc = scriptComponent->getScriptProcessor()->getMainController_();
 
-        SimpleReadWriteLock::ScopedTryReadLock  sl(mc->getJavascriptThreadPool().getLookAndFeelRenderLock());
-        
-        if(sl)
-        {
-            LockHelpers::SafeLock sl(mc, LockHelpers::Type::ScriptLock);
+        if(auto sl = SimpleReadWriteLock::ScopedTryReadLock(mc->getJavascriptThreadPool().getLookAndFeelRenderLock()))
+		{
+            LockHelpers::SafeLock sl2(mc, LockHelpers::Type::ScriptLock);
 
             if (data.listener != nullptr)
             {
                 var arguments[2];
 
-                arguments[0] = var(scriptComponent.get());
+                arguments[0] = scriptComponent->getPopupMenuTarget(event);
 
                 if (data.mouseCallbackLevel != MouseCallbackComponent::CallbackLevel::PopupMenuOnly)
                 {
@@ -617,7 +627,7 @@ void ScriptCreatedComponentWrappers::SliderWrapper::updateSliderRange(ScriptingA
         min = jmax(min, 0.0);
         max = jmin(max, (double)((int)TempoSyncer::Tempo::numTempos-1));
         
-		s->setMode(HiSlider::Mode::TempoSync, NormalisableRange<double>((double)min, (double)max, 2.0));
+		s->setMode(HiSlider::Mode::TempoSync, NormalisableRange<double>((double)min, (double)max, 1.0));
 		return;
 	}
 
@@ -630,7 +640,7 @@ void ScriptCreatedComponentWrappers::SliderWrapper::updateSliderRange(ScriptingA
 		debugError(dynamic_cast<Processor*>(sc->getScriptProcessor()), "Slider min/max value exceeds upper limit!");
 	}
 
-	if (min >= max || stepsize <= 0.0 || min < -MaxValue || max > MaxValue)
+	if (min >= max || stepsize < 0.0 || min < -MaxValue || max > MaxValue)
 	{
 		s->setMode(HiSlider::Mode::Linear, {0.0, 1.0});
 		s->setEnabled(false);
@@ -3146,7 +3156,7 @@ float ScriptedControlAudioParameter::getValue() const
 
 void ScriptedControlAudioParameter::setValue(float newValue)
 {
-	if(recursive || shouldSkipHostUpdate())
+	if(recursive)
 		return;
 
 	ScopedValueSetter<bool> svs(sendToHost, false);

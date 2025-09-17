@@ -38,6 +38,7 @@ using namespace juce;
 
 class HardcodedSwappableEffect : public HotswappableProcessor,
 							     public ProcessorWithExternalData,
+								 public ProcessorWithCustomFilterStatistics,
 								 public RuntimeTargetHolder
 {
 public:
@@ -73,6 +74,8 @@ public:
 	bool setEffect(const String& factoryId, bool /*unused*/) override;
 	bool swap(HotswappableProcessor* other) override;
 	bool isPolyphonic() const { return polyHandler.isEnabled(); }
+
+	virtual StringArray getIllegalParameterIds() const;
 
 	virtual int getParameterOffset() const { return 0; }
 
@@ -120,6 +123,11 @@ public:
 	virtual void renderData(ProcessDataDyn& data);
 	bool hasHardcodedTail() const;
     var getParameterProperties() const override;
+
+	virtual int getExtraModulationIndex(int modulationSlotIndexWithoutOffset) const
+	{
+		return modulationSlotIndexWithoutOffset;
+	}
 
 	void setupChannelData(float** data, AudioSampleBuffer& b, int startSample)
 	{

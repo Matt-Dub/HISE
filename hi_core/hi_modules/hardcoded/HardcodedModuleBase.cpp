@@ -300,6 +300,7 @@ HardcodedSwappableEffect::HardcodedSwappableEffect(MainController* mc, bool isPo
 	polyHandler(isPolyphonic),
 	mc_(mc)
 {
+	tempoSyncer.ppqFunction = [mc](int ts){ return mc->getMasterClock().getPPQPos(ts); };
 	tempoSyncer.publicModValue = &modValue;
 	polyHandler.setTempoSyncer(&tempoSyncer);
 	mc->addTempoListener(&tempoSyncer);
@@ -322,6 +323,8 @@ ModulatorChain::ModChainWithBuffer* HardcodedSwappableEffect::getModulationChain
 	{
 		if(auto mc = getModulationChains())
 		{
+			modIndex = getExtraModulationIndex(modIndex);
+
 			if(isPositiveAndBelow(modIndex, mc->size()))
 				return mc->begin() + modIndex;
 		}
@@ -447,7 +450,9 @@ bool HardcodedSwappableEffect::setEffect(const String& factoryId, bool /*unused*
 			newNode = nullptr;
 
         asProcessor().connectToRuntimeTargets(*newNode, true);
-        
+
+		ExternalDataHolder::garbageCollectFilterCoefficients();
+
 		bool somethingChanged = false;
 
 		// Create all complex data types we need...
@@ -493,26 +498,38 @@ bool HardcodedSwappableEffect::setEffect(const String& factoryId, bool /*unused*
             channelCountMatches = checkHardcodedChannelCount();
 		}		
 
-		if(getParameterOffset() == 0)
-		{
-			asProcessor().parameterNames.clear();
-		}
-		else
-		{
-			asProcessor().parameterNames.removeRange(getParameterOffset(), INT_MAX);
-		}
-		
+        Array<Identifier> offsetParameters;
+        
+        for(int i = 0; i < getParameterOffset(); i++)
+        {
+            offsetParameters.add(asProcessor().parameterNames[i]);
+        }
+        
+        asProcessor().parameterNames.clear();
+        
+        if(!offsetParameters.isEmpty())
+            asProcessor().parameterNames.addArray(offsetParameters);
+
+		auto illegalIds = getIllegalParameterIds();
 
 		for (const auto& p : OpaqueNode::ParameterIterator(*opaqueNode))
 		{
 			parameterRanges.set(p.info.index, p.info.toRange());
-			asProcessor().parameterNames.add(p.info.getId());
+
+			auto nid = p.info.getId();
+
+			if(illegalIds.contains(nid))
+			{
+				String em;
+				em << "Reserved parameter ID in network: " << nid;
+				errorBroadcaster.sendMessage(sendNotificationAsync, em);
+				channelCountMatches = false;
+			}
+
+			asProcessor().parameterNames.add(nid);
 		}
 
 		asProcessor().updateParameterSlots();
-
-		
-		
 		
 		effectUpdater.sendMessage(sendNotificationAsync, currentEffect, somethingChanged, opaqueNode->numParameters);
 
@@ -606,6 +623,11 @@ bool HardcodedSwappableEffect::swap(HotswappableProcessor* other)
 	return false;
 }
 
+StringArray HardcodedSwappableEffect::getIllegalParameterIds() const
+{
+	return { "Type", "Bypassed", "ID", "Network" };
+}
+
 juce::Result HardcodedSwappableEffect::sanityCheck()
 {
 #if USE_BACKEND
@@ -654,6 +676,8 @@ void HardcodedSwappableEffect::setHardcodedAttribute(int parameterIndex, float n
 			p->callback.call((double)newValue);
 		}
 	}
+
+	handleFilterStatisticUpdate();
 }
 
 float HardcodedSwappableEffect::getHardcodedAttribute(int index) const
@@ -993,7 +1017,7 @@ int HardcodedSwappableEffect::getNumDataObjects(ExternalData::DataType t) const
 	case ExternalData::DataType::SliderPack: return sliderPacks.size();
 	case ExternalData::DataType::AudioFile: return audioFiles.size();
 	case ExternalData::DataType::DisplayBuffer: return displayBuffers.size();
-	case ExternalData::DataType::FilterCoefficients: return 0;
+	case ExternalData::DataType::FilterCoefficients: return filterData.size();
 	default: jassertfalse; return 0;
 	}
 }

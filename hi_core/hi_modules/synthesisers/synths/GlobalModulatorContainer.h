@@ -84,6 +84,13 @@ public:
 		return static_cast<ModulatorType*>(mod.get());
 	}
 
+	int getBlockSizeForCurrentBlock() const
+	{
+		auto bf = mod->getMainController()->getBufferSizeForCurrentBlock();
+		jassert(bf % HISE_CONTROL_RATE_DOWNSAMPLING_FACTOR == 0);
+		return bf / HISE_CONTROL_RATE_DOWNSAMPLING_FACTOR;
+	}
+
 private:
 
 	WeakReference<Modulator> mod;
@@ -111,7 +118,7 @@ public:
 		}
 	}
 
-	static RuntimeData getModulationSignalStatic(Host* obj, const HiseEvent& e)
+	static RuntimeData getModulationSignalStatic(Host* obj, const HiseEvent& e, bool)
 	{
 		if(e.isEmpty())
 			return {};
@@ -161,7 +168,7 @@ public:
 		ProcessorHelpers::increaseBufferIfNeeded(savedValuesForBlock, samplesPerBlock);
 	}
 
-	static RuntimeData getModulationSignalStatic(Host* obj, const HiseEvent&)
+	static RuntimeData getModulationSignalStatic(Host* obj, const HiseEvent&, bool)
 	{
 		auto typed = static_cast<TimeVariantData*>(obj);
 
@@ -231,14 +238,14 @@ public:
 	EnvelopeData(Modulator* mod, int samplesPerBlock) :
 		GlobalModulatorDataBase(mod),
 		savedValuesForBlock(NUM_POLYPHONIC_VOICES, 0),
-	    emptyBlock(1, 0)
+	    emptyBlock(1, 0),
+		monophonicallyReducedSignal(1, 0)
 	{
 		for(int i = 0; i < NUM_POLYPHONIC_VOICES; i++)
 		{
 			isClear[i] = ClearState::Reset;
 			thisBlockSize[i] = 0;
 		}
-			
 
 		prepareToPlay(samplesPerBlock);
 	}
@@ -247,6 +254,8 @@ public:
 	{
 		ProcessorHelpers::increaseBufferIfNeeded(savedValuesForBlock, samplesPerBlock);
 		ProcessorHelpers::increaseBufferIfNeeded(emptyBlock, samplesPerBlock);
+		ProcessorHelpers::increaseBufferIfNeeded(monophonicallyReducedSignal, samplesPerBlock);
+		monoBlockSize = monophonicallyReducedSignal.getNumSamples() / HISE_CONTROL_RATE_DOWNSAMPLING_FACTOR;
 	}
 
 	bool isPlaying(const HiseEvent& voiceEvent) const
@@ -269,12 +278,30 @@ public:
 		return savedValuesForBlock.getReadPointer(voiceIndex, startSample);
 	}
 
+	const float* getMonoReadBuffer() const
+	{
+		if(useMonoBufferAsSource)
+			return savedValuesForBlock.getReadPointer(0);
+		else
+			return monophonicallyReducedSignal.getReadPointer(0);
+	}
+
+	void updateThisBufferSize()
+	{
+		monoBlockSize = getBlockSizeForCurrentBlock();
+	}
+
 	float* initialiseMonophonicBuffer(int startSample, int numSamples)
 	{
+		useMonoBufferAsSource = true;
 		auto wp = savedValuesForBlock.getWritePointer(0, 0);
 		FloatVectorOperations::fill(wp + startSample, 1.0f, numSamples);
 		isClear[0] = ClearState::Playing;
-		thisBlockSize[0] = startSample + numSamples;
+
+		
+		auto tp = getBlockSizeForCurrentBlock();
+		thisBlockSize[0] = tp;//startSample + numSamples;
+		monoBlockSize = tp;
 		return wp;
 	}
 
@@ -289,7 +316,7 @@ public:
 		return { thisBlockSize + voiceIndex, savedValuesForBlock.getReadPointer(voiceIndex, startSample) };
 	}
 
-	static RuntimeData getModulationSignalStatic(Host* obj, const HiseEvent& e)
+	static RuntimeData getModulationSignalStatic(Host* obj, const HiseEvent& e, bool wantsPolyphonicSignal)
 	{
 		auto typed = static_cast<EnvelopeData*>(obj);
 
@@ -297,10 +324,17 @@ public:
 		d.type = scriptnode::modulation::SourceType::Envelope;
 		d.constantValue = 0.0f;
 
-		auto rt = typed->getRuntimePointer(e, 0);
-
-		d.thisBlockSize = rt.first;
-		d.signal = rt.second;
+		if(wantsPolyphonicSignal)
+		{
+			auto rt = typed->getRuntimePointer(e, 0);
+			d.thisBlockSize = rt.first;
+			d.signal = rt.second;
+		}
+		else
+		{
+			d.signal = typed->getMonoReadBuffer();
+			d.thisBlockSize = &typed->monoBlockSize;
+		}
 	
 		return d;
 	}
@@ -319,6 +353,12 @@ public:
 			thisBlockSize[voiceIndex] = startSample + numSamples;
 			auto dest = savedValuesForBlock.getWritePointer(voiceIndex, startSample);
 			FloatVectorOperations::copy(dest, data + startSample, numSamples);
+
+			useMonoBufferAsSource = false;
+			
+			auto mdest = monophonicallyReducedSignal.getWritePointer(0, startSample);
+
+			FloatVectorOperations::copy(mdest, data + startSample, numSamples);
 		}
 	}
 
@@ -389,8 +429,13 @@ private:
 		return voiceEvent.getEventId() % NUM_POLYPHONIC_VOICES;
 	}
 
+	AudioSampleBuffer monophonicallyReducedSignal;
+	int monoBlockSize = -1;
+	bool useMonoBufferAsSource = false;
+
 	AudioSampleBuffer savedValuesForBlock;
 	AudioSampleBuffer emptyBlock;
+
 	int thisBlockSize[NUM_POLYPHONIC_VOICES];
 
 	ClearState isClear[NUM_POLYPHONIC_VOICES];
@@ -596,6 +641,11 @@ public:
     void sendVoiceStartCableValue(Modulator* m, const HiseEvent& e);
 
 	ValueTree getMatrixModulatorData() const { return runtimeSource.matrixData; }
+
+	MatrixIds::Helpers::Properties matrixProperties;
+
+	var getMatrixModulationProperties() const { return matrixProperties.toJSON(getMainController()); }
+
 	runtime_target::connection getMatrixModulatorConnection() const { return runtimeSource.createConnection(); }
 
 	void handleRetriggeredNote(ModulatorSynthVoice *voice) override
@@ -615,6 +665,25 @@ public:
 	StringArray customEditCallbacks;
 	LambdaBroadcaster<int, String> editCallbackHandler;
 
+	LambdaBroadcaster<int> currentMatrixSourceBroadcaster;
+
+	enum class DragAction
+	{
+		DragEnd,
+		DragStart,
+		Drop,
+		Hover,
+		DisabledHover,
+		numDragActions
+	};
+
+	void sendDragMessage(int sourceIndex, const String& targetId, DragAction eventType)
+	{
+		dragBroadcaster.sendMessage(sendNotificationAsync, sourceIndex, targetId, eventType);
+	}
+
+	LambdaBroadcaster<int, String, DragAction> dragBroadcaster;
+
 private:
 
 	int lastBlockSize = 0;
@@ -631,9 +700,9 @@ private:
 		  matrixData(MatrixIds::MatrixData)
 		{
 			deleter.setCallback(matrixData, 
-								{ MatrixIds::SourceIndex, MatrixIds::TargetId }, 
+								{ MatrixIds::SourceIndex, MatrixIds::TargetId, MatrixIds::AuxIndex }, 
 								valuetree::AsyncMode::Synchronously,
-								BIND_MEMBER_FUNCTION_2(RuntimeSource::onMatrixDisconnect));
+								VT_BIND_RECURSIVE_PROPERTY_LISTENER(onMatrixDisconnect));
 		};
 
 		~RuntimeSource()
@@ -647,9 +716,11 @@ private:
 			return 1;
 		}
 
-		void onMatrixDisconnect(const ValueTree& v, const Identifier& id)
+		void onMatrixDisconnect(ValueTree v, const Identifier& id)
 		{
 			bool shouldDelete = false;
+
+			auto um = parent.getMainController()->getControlUndoManager();
 
 			if(id == MatrixIds::SourceIndex)
 				shouldDelete = (int)v[id] == -1;
@@ -658,10 +729,11 @@ private:
 				auto tid = v[id].toString();
 				shouldDelete = tid.isEmpty() || tid == "No connection";
 			}
-				
+			if(id == MatrixIds::AuxIndex && (int)v[id] == -1)
+				v.setProperty(MatrixIds::AuxIntensity, 0.0f, um);
 
 			if(shouldDelete)
-				v.getParent().removeChild(v, parent.getMainController()->getControlUndoManager());
+				v.getParent().removeChild(v, um);
 		}
 
 	    runtime_target::RuntimeTarget getType() const override
