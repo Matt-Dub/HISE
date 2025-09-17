@@ -160,7 +160,7 @@ void TextEditor::setNewTokenCollectionForAllChildren(Component* any, const Ident
 
 	Component::callRecursive<TextEditor>(top, [&](TextEditor* t)
 	{
-		if(t->languageManager->getLanguageId() == languageId && newCollection != nullptr)
+		if(t->languageManager != nullptr && t->languageManager->getLanguageId() == languageId && newCollection != nullptr)
 		{
 			t->tokenCollection = newCollection;
 			newCollection->addListener(t);
@@ -619,7 +619,7 @@ void TextEditor::InplaceDebugValueComponent::updatePosition()
 
 	vf = document.getFont().withHeight(document.getFontHeight() * parent.viewScaleFactor * 0.7f);
 	
-	auto w = vf.getStringWidthFloat(value->value) + 20.0f;
+	auto w = b.getWidth() * value->value.length() + 20.0f;
 
 	if(!p.isEmpty())
 		w += b.getHeight();

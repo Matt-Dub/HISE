@@ -1573,7 +1573,11 @@ public:
 	void initProjectDocsWithURL(const String& projectDocURL);
 
 #if USE_BACKEND
-	void clearExtraDefinitionCache() { cachedPreprocessors.clear(); }
+	void clearExtraDefinitionCache()
+	{
+		cachedPreprocessors.clear();
+		preprocessor = nullptr;
+	}
 	int getExtraDefinitionsValue(const String& extraDefinition, int defaultValue) const;
 #endif
 
@@ -1750,7 +1754,7 @@ public:
 
 	int getPreviewBufferSize() const;
 
-    void connectToRuntimeTargets(scriptnode::OpaqueNode& opaqueNode, bool shouldAdd);
+    void connectToGlobalRuntimeTargets(scriptnode::OpaqueNode& opaqueNode, bool shouldAdd);
     
 	void setKeyboardCoulour(int keyNumber, Colour colour);
 

@@ -45,7 +45,7 @@
 
 #define JUCE_USE_DARK_SPLASH_SCREEN 1
 
-#define JUCE_PROJUCER_VERSION 0x60104
+#define JUCE_PROJUCER_VERSION 0x60103
 
 //==============================================================================
 #define JUCE_MODULE_AVAILABLE_hi_backend                  1
@@ -135,10 +135,6 @@
 
 #ifndef    USE_SCRIPT_COPY_PROTECTION
  //#define USE_SCRIPT_COPY_PROTECTION 0
-#endif
-
-#ifndef    USE_IPP
- //#define USE_IPP 1
 #endif
 
 #ifndef    USE_VDSP_FFT
@@ -266,7 +262,7 @@
 #endif
 
 #ifndef    USE_HARD_CLIPPER
- #define   USE_HARD_CLIPPER 1
+ //#define USE_HARD_CLIPPER 0
 #endif
 
 #ifndef    USE_SPLASH_SCREEN
@@ -372,7 +368,7 @@
 // hi_rlottie flags:
 
 #ifndef    HISE_INCLUDE_RLOTTIE
- //#define HISE_INCLUDE_RLOTTIE 1
+ #define   HISE_INCLUDE_RLOTTIE 1
 #endif
 
 #ifndef    HISE_RLOTTIE_DYNAMIC_LIBRARY
@@ -384,6 +380,10 @@
 
 #ifndef    INCLUDE_BIG_SCRIPTNODE_OBJECT_COMPILATION
  //#define INCLUDE_BIG_SCRIPTNODE_OBJECT_COMPILATION 1
+#endif
+
+#ifndef    HISE_SEND_PANEL_CHANGED_TO_PLUGIN_PARAMETER
+ //#define HISE_SEND_PANEL_CHANGED_TO_PLUGIN_PARAMETER 0
 #endif
 
 #ifndef    HISE_INCLUDE_BX_LICENSER
@@ -456,7 +456,7 @@
 #endif
 
 #ifndef    HISE_USE_EXTENDED_TEMPO_VALUES
- #define   HISE_USE_EXTENDED_TEMPO_VALUES 1
+ //#define HISE_USE_EXTENDED_TEMPO_VALUES 0
 #endif
 
 //==============================================================================

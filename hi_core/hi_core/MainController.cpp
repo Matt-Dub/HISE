@@ -196,6 +196,8 @@ bool MainController::unitTestMode = false;
     
 	startTimer(HISE_UNDO_INTERVAL);
 
+	getGlobalUIUpdater()->setDebugSession(&getDebugSession());
+
 	javascriptThreadPool->startThread(8);
 	getKillStateHandler().setScriptingThreadId(javascriptThreadPool->getThreadId());
 };
@@ -399,7 +401,7 @@ void MainController::clearPreset(NotificationType sendPresetLoadMessage)
 	while (auto p = iter.getNextProcessor())
     {
         if(auto sp = dynamic_cast<RuntimeTargetHolder*>(p))
-            sp->disconnectRuntimeTargets(this);
+            sp->disconnectRuntimeTargets(p);
         
         p->cleanRebuildFlagForThisAndParents();
     }
@@ -657,8 +659,9 @@ void MainController::compileAllScripts()
 
 			while(auto rt = iter.getNextProcessor())
 			{
-				rt->disconnectRuntimeTargets(p->getMainController());
-				rt->connectRuntimeTargets(p->getMainController());
+				auto as_p = dynamic_cast<Processor*>(rt);
+				rt->disconnectRuntimeTargets(as_p);
+				rt->connectRuntimeTargets(as_p);
 			}
 
 			return SafeFunctionCall::OK;
@@ -1084,12 +1087,20 @@ hise::RLottieManager::Ptr MainController::getRLottieManager()
 }
 #endif
 
-void MainController::connectToRuntimeTargets(scriptnode::OpaqueNode& on, bool shouldAdd)
+void MainController::connectToGlobalRuntimeTargets(scriptnode::OpaqueNode& on, bool shouldAdd)
 {
+	if(isBeingDeleted())
+		return;
+
     if(auto rm = dynamic_cast<scriptnode::routing::GlobalRoutingManager*>(getGlobalRoutingManager()))
     {
         rm->connectToRuntimeTargets(on, shouldAdd);
     }
+
+	if(auto gm = ProcessorHelpers::getFirstProcessorWithType<GlobalModulatorContainer>(getMainSynthChain()))
+	{
+		gm->connectToRuntimeTargets(on, shouldAdd);
+	}
 
 #if HISE_INCLUDE_RT_NEURAL
     for(const auto& id: getNeuralNetworks().getIdList())
@@ -1698,7 +1709,19 @@ void MainController::prepareToPlay(double sampleRate_, int samplesPerBlock)
 {
     if(sampleRate_ <= 0.0 || samplesPerBlock <= 0)
         return;
-    
+
+#if 0
+	if(auto ap = dynamic_cast<AudioProcessor*>(this))
+	{
+		juce::PluginHostType hostType;
+
+		if(hostType.isLogic())
+			getMasterClock().setClockTolerance(0.2);
+		else
+			getMasterClock().setClockTolerance(0.0);
+	}
+#endif
+
 	auto oldSampleRate = processingSampleRate;
 	auto oldBlockSize = processingBufferSize.get();
 
@@ -2326,10 +2349,26 @@ void MainController::savePluginState(MemoryBlock& destData, int currentlyLoadedP
 
 	v.setProperty("Program", currentlyLoadedProgram, nullptr);
 
-	auto globalBPM = dynamic_cast<GlobalSettingManager*>(this)->globalBPM;
-	v.setProperty("HostTempo", globalBPM, nullptr);
+	auto storeTempo = HISE_GET_PREPROCESSOR(this, HISE_INCLUDE_TEMPO_IN_PLUGIN_STATE);
 
-	v.setProperty("UserPreset", getUserPresetHandler().getCurrentlyLoadedFile().getFullPathName(), nullptr);
+	if(storeTempo)
+	{
+		auto globalBPM = dynamic_cast<GlobalSettingManager*>(this)->globalBPM;
+		v.setProperty("HostTempo", globalBPM, nullptr);
+	}
+
+	auto up = getActiveFileHandler()->getSubDirectory(FileHandlerBase::UserPresets);
+
+	auto currentUserPreset = getUserPresetHandler().getCurrentlyLoadedFile();
+
+	if(currentUserPreset.isAChildOf(up))
+	{
+		v.setProperty("UserPreset", currentUserPreset.getRelativePathFrom(up).replaceCharacter('\\', '/'), nullptr);
+	}
+	else
+	{
+		v.setProperty("UserPreset", currentUserPreset.getFullPathName(), nullptr);
+	}
 
 #if USE_BACKEND
 	auto version = GET_HISE_SETTING(getMainSynthChain(), HiseSettings::Project::Version).toString();

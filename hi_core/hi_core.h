@@ -165,13 +165,7 @@ If true, then the copy protection will be used
 #define USE_COPY_PROTECTION 1
 #endif
 
-/** Config: USE_IPP
 
-Use the Intel Performance Primitives Library for the convolution reverb.
-*/
-#ifndef USE_IPP
-#define USE_IPP 1
-#endif
 
 /** Config: USE_VDSP_FFT
 *
@@ -346,6 +340,14 @@ If true then the plugin will complain about the buffer size not being a multiple
 */
 #ifndef HISE_COMPLAIN_ABOUT_ILLEGAL_BUFFER_SIZE
 #define HISE_COMPLAIN_ABOUT_ILLEGAL_BUFFER_SIZE 1
+#endif
+
+
+/** If this is true, then HISE will store / restore the current tempo in the DAW project. This allows persistence of a custom tempo value but lead
+ *  to subtle glitches in some use cases, so if you always follow the host's tempo in your plugin you can deactivate this.
+ */  
+#ifndef HISE_INCLUDE_TEMPO_IN_PLUGIN_STATE
+#define HISE_INCLUDE_TEMPO_IN_PLUGIN_STATE 1
 #endif
 
 /** Config: ENABLE_ALL_PEAK_METERS
@@ -552,15 +554,6 @@ For all defined variables:
 *
 *	New files must be added in the specific subfolder header / .cpp file.
 */
-
-
-#if USE_IPP
-#include "ipp.h"
-#endif
-
-
-
-
 
 #include "LibConfig.h"
 #include "Macros.h"

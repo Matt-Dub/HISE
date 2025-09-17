@@ -34,7 +34,7 @@
                postbuildCommand="" extraCompilerFlags="-Wno-reorder -Wno-inconsistent-missing-override -mpopcnt -faligned-allocation"
                customPList="" aaxFolder="/Volumes/Shared/Development/HISE modules/tools/SDK/AAX"
                smallIcon="" bigIcon="" xcodeValidArchs="arm64,arm64e,x86_64"
-               extraDefs="USE_IPP=0&#10;PERFETTO=1" extraLinkerFlags="" iosDevelopmentTeamID="">
+               extraDefs="PERFETTO=1" extraLinkerFlags="" iosDevelopmentTeamID="">
       <CONFIGURATIONS>
         <CONFIGURATION name="Debug" osxCompatibility="10.13 SDK" isDebug="1" optimisation="1"
                        macOSDeploymentTarget="10.13" targetName="HISE Debug" cppLibType="libc++"
@@ -57,8 +57,8 @@
         <CONFIGURATION name="Release MultiChannel" osxCompatibility="10.13 SDK" isDebug="0"
                        optimisation="3" targetName="HISE 16 Out" linkTimeOptimisation="0"
                        cppLibType="libc++" headerPath="../../../../tools/SDK/VST3 SDK"
-                       defines="NUM_MAX_CHANNELS = 48&#10;HISE_NUM_PLUGIN_CHANNELS=48"
-                       xcodeVstBinaryLocation="/Library/Audio/Plug-Ins/VST/" xcodeAudioUnitBinaryLocation="/Library/Audio/Plug-Ins/Components/"
+                       defines="HISE_NUM_PLUGIN_CHANNELS=8" xcodeVstBinaryLocation="/Library/Audio/Plug-Ins/VST/"
+                       xcodeAudioUnitBinaryLocation="/Library/Audio/Plug-Ins/Components/"
                        enablePluginBinaryCopyStep="0" vstBinaryLocation="/Library/Audio/Plug-Ins/VST/"
                        auBinaryLocation="/Library/Audio/Plug-Ins/Components/" macOSDeploymentTarget="10.13"/>
       </CONFIGURATIONS>
@@ -101,7 +101,7 @@
     <VS2022 targetFolder="Builds/VisualStudio2022" vstFolder="c:\SDKs\vstsdk2.4"
             smallIcon="" useIPP="Sequential" aaxFolder="D:\Development\SDKs\AAX"
             IPPLibrary="" extraCompilerFlags="/bigobj /wd&quot;4100&quot; /wd&quot;4661&quot; /wd&quot;4456&quot; /wd&quot;4244&quot; /wd&quot;4457&quot; /wd&quot;4458&quot; /wd&quot;4127&quot;  /Zc:__cplusplus /permissive- /vmg"
-            IPP1ALibrary="true" extraDefs="HISE_USE_VS2022=1&#10;PERFETTO=0&#10;USE_IPP=1&#10;HISE_USE_SVF_FOR_CURVE_EQ=1&#10;HISE_USE_EXTENDED_TEMPO_VALUES=1&#10;NUM_MAX_CHANNELS = 48&#10;HISE_NUM_PLUGIN_CHANNELS=48">
+            IPP1ALibrary="Static_Library" extraDefs="HISE_USE_VS2022=1&#10;PERFETTO=0&#10;">
       <CONFIGURATIONS>
         <CONFIGURATION name="Debug" winWarningLevel="4" generateManifest="1" winArchitecture="x64"
                        isDebug="1" optimisation="1" targetName="HISE x64 Debug" libraryPath=""
@@ -116,15 +116,14 @@
                        linkTimeOptimisation="1" headerPath="../../../../tools/SDK/VST3 SDK"/>
         <CONFIGURATION name="Debug MultiChannel" winWarningLevel="4" generateManifest="1"
                        winArchitecture="x64" isDebug="1" optimisation="1" targetName="HISE x64 Debug 16 Out"
-                       binaryPath="" libraryPath="" useRuntimeLibDLL="0" defines="NUM_MAX_CHANNELS = 48&#10;HISE_NUM_PLUGIN_CHANNELS=48"
+                       binaryPath="" libraryPath="" useRuntimeLibDLL="0" defines="HISE_NUM_PLUGIN_CHANNELS=8"
                        debugInformationFormat="ProgramDatabase" enablePluginBinaryCopyStep="0"
                        headerPath="../../../../tools/SDK/VST3 SDK"/>
         <CONFIGURATION name="Release MultiChannel" winWarningLevel="4" generateManifest="1"
-                       winArchitecture="x64" isDebug="0" optimisation="3" targetName="HISE x64 24  Out"
+                       winArchitecture="x64" isDebug="0" optimisation="3" targetName="HISE x64 16 Out"
                        alwaysGenerateDebugSymbols="0" useRuntimeLibDLL="0" libraryPath=""
-                       defines="USE_IPP=1&#10;HISE_USE_SVF_FOR_CURVE_EQ=1&#10;HISE_USE_EXTENDED_TEMPO_VALUES=1&#10;NUM_MAX_CHANNELS = 48&#10;HISE_NUM_PLUGIN_CHANNELS=48"
-                       debugInformationFormat="ProgramDatabase" enablePluginBinaryCopyStep="0"
-                       linkTimeOptimisation="1" headerPath="../../../../tools/SDK/VST3 SDK"/>
+                       defines="HISE_NUM_PLUGIN_CHANNELS=8" debugInformationFormat="ProgramDatabase"
+                       enablePluginBinaryCopyStep="0" linkTimeOptimisation="1" headerPath="../../../../tools/SDK/VST3 SDK"/>
       </CONFIGURATIONS>
       <MODULEPATHS>
         <MODULEPATH id="juce_gui_extra" path="../../JUCE/modules"/>
@@ -164,9 +163,9 @@
     </VS2022>
     <LINUX_MAKE targetFolder="Builds/LinuxMakefile" extraDefs="PERFETTO=0" linuxExtraPkgConfig="x11 xinerama xext">
       <CONFIGURATIONS>
-        <CONFIGURATION name="Debug" isDebug="1" optimisation="1" targetName="HISE" defines="USE_IPP=0"/>
+        <CONFIGURATION name="Debug" isDebug="1" optimisation="1" targetName="HISE" defines=""/>
         <CONFIGURATION name="Release" isDebug="0" optimisation="3" targetName="HISE"
-                       defines="USE_IPP=0"/>
+                       defines=""/>
       </CONFIGURATIONS>
       <MODULEPATHS>
         <MODULEPATH id="juce_gui_extra" path="../../JUCE/modules"/>
@@ -248,8 +247,7 @@
                HLAC_MEASURE_DECODING_PERFORMANCE="0" HLAC_DEBUG_LOG="0" HLAC_INCLUDE_TEST_SUITE="0"
                HISE_INCLUDE_SNEX="1" USE_RAW_FRONTEND="0" HI_SUPPORT_FULL_DYNAMICS_HLAC="1"
                HISE_ENABLE_MIDI_INPUT_FOR_FX="1" JUCE_LOAD_CURL_SYMBOLS_LAZILY="1"
-               JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_USE_DIRECTWRITE="1" HISE_INCLUDE_LORIS="1"
-               HISE_FAUST_USE_LLVM_JIT="0"/>
+               JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_USE_DIRECTWRITE="1" HISE_INCLUDE_LORIS="1"/>
   <LIVE_SETTINGS>
     <OSX/>
     <WINDOWS/>
