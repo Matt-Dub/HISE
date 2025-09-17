@@ -45,7 +45,7 @@
 
 #define JUCE_USE_DARK_SPLASH_SCREEN 1
 
-#define JUCE_PROJUCER_VERSION 0x60103
+#define JUCE_PROJUCER_VERSION 0x60104
 
 //==============================================================================
 #define JUCE_MODULE_AVAILABLE_hi_backend                  1
@@ -266,7 +266,7 @@
 #endif
 
 #ifndef    USE_HARD_CLIPPER
- //#define USE_HARD_CLIPPER 0
+ #define   USE_HARD_CLIPPER 1
 #endif
 
 #ifndef    USE_SPLASH_SCREEN
@@ -287,6 +287,10 @@
 
 #ifndef    HISE_MACROS_ARE_PLUGIN_PARAMETERS
  //#define HISE_MACROS_ARE_PLUGIN_PARAMETERS 0
+#endif
+
+#ifndef    HISE_USE_MIDI_CHANNELS_FOR_AUTOMATION
+ //#define HISE_USE_MIDI_CHANNELS_FOR_AUTOMATION 0
 #endif
 
 //==============================================================================
