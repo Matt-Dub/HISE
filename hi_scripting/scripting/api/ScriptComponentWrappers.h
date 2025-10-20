@@ -322,6 +322,8 @@ public:
 	/** Don't forget to deregister the listener here. */
 	virtual ~ScriptCreatedComponentWrapper();;
 
+	virtual void postInit() {};
+
 	/** Overwrite this method and update the component. */
 	virtual void updateComponent() = 0;
 
@@ -980,6 +982,8 @@ public:
 
 		WebViewWrapper(ScriptContentComponent *content, ScriptingApi::Content::ScriptWebView *wv, int index);
 
+		void postInit() override;
+
 		~WebViewWrapper();
 
 		void updateComponent() override {}
@@ -1006,6 +1010,43 @@ public:
         void updateLookAndFeel();
         
 		JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FloatingTileWrapper)
+	};
+
+	class DynamicComponentWrapper : public ScriptCreatedComponentWrapper
+	{
+	public:
+
+		DynamicComponentWrapper(ScriptContentComponent* content,
+		                        ScriptingApi::Content::ScriptDynamicContainer* container, int index);
+
+		void updateComponent() override {}
+
+	private:
+
+		struct WrapperComponent: public Component
+		{
+			static void onChange(WrapperComponent& c, dyncomp::Data::Ptr d)
+			{
+				if(d != nullptr)
+					c.addAndMakeVisible(c.root = new dyncomp::Root(d));
+				else
+					c.root = nullptr;
+
+				c.resized();
+				
+			}
+
+			void resized() override
+			{
+				if(root != nullptr)
+					root->setBounds(getLocalBounds());
+			}
+
+			ScopedPointer<dyncomp::Root> root;
+			JUCE_DECLARE_WEAK_REFERENCEABLE(WrapperComponent);
+		};
+
+		JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DynamicComponentWrapper);
 	};
 
 	class MultipageDialogWrapper : public ScriptCreatedComponentWrapper

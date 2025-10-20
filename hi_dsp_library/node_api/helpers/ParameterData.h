@@ -91,6 +91,8 @@ struct InvertableParameterRange
 	juce::NormalisableRange<double> rng;
 	bool inv = false;
 
+	bool isNonDefault() const { return !isIdentity; }
+
 private:
 
 	bool isIdentity = false;
@@ -169,20 +171,24 @@ struct RangeHelpers
 
 	static InvertableParameterRange getDoubleRange(const var& obj, IdSet rangeIdSet = IdSet::scriptnode);
 
+	/** Tries to find the applicable IdSet for the given JSON object. It simply looks for the first match in one of the id lists.
+	 *  If nothing can be found it defaults to IdSet::scriptnode.
+	 *
+	 */
+	static IdSet getIdSetForJSON(const var& obj);
+
+	/** This tries to fetch the default value from a given object.
+	 *
+	 *	It tries to derive the IdSet, then sanitizes and checks that the value is within the range. */
+	static std::pair<bool, double> getDefaultValue(const var& obj);
+
 	static void storeDoubleRange(var& obj, InvertableParameterRange r, IdSet rangeIdSet = IdSet::scriptnode);
 
 	static void storeDoubleRange(ValueTree& d, InvertableParameterRange r, UndoManager* um, IdSet rangeIdSet = IdSet::scriptnode);
 
 	static bool equalsWithError(const InvertableParameterRange& r1, const InvertableParameterRange& r2, double maxError);
 
-	static bool isEqual(const InvertableParameterRange& r1, const InvertableParameterRange& r2)
-	{
-		return  r1.rng.start == r2.rng.start &&
-				r1.rng.end == r2.rng.end &&
-				r1.rng.skew == r2.rng.skew &&
-				r1.rng.interval == r2.rng.interval &&
-				r1.inv == r2.inv;
-	}
+	static bool isEqual(const InvertableParameterRange& r1, const InvertableParameterRange& r2);
 
 	static Array<Identifier> getHiddenIds()
 	{
@@ -280,11 +286,27 @@ private:
 
 struct pod
 {
+	enum TextValueConverters: uint8
+	{
+		Undefined,
+		Frequency,
+		Time,
+		TempoSync,
+		Pan,
+		NormalizedPercentage,
+		Decibel,
+		numTextValueConverters
+	};
+
+	static StringArray getTextValueConverterNames();
+
+	static constexpr int MaxPageNameLength = 16;
 	static constexpr int MaxParameterNameLength = 32;
 
 	pod()
 	{
 		clearParameterName();
+		clearPageInfo();
 	};
 
 	pod(MemoryInputStream& mis);
@@ -295,10 +317,13 @@ struct pod
 
 	String getId() const { return String(parameterName); }
 
-	void clearParameterName()
-	{
-		memset(parameterName, 0, MaxParameterNameLength);
-	}
+	bool setPageName(const String& newPageName);
+
+	bool setGroupName(const String& newGroupName);
+
+	void clearParameterName();
+
+	void clearPageInfo();
 
 	void setRange(const InvertableParameterRange& r);
 
@@ -308,8 +333,12 @@ struct pod
 	int index = -1;
 
 	char parameterName[MaxParameterNameLength];
+	char pageName[MaxPageNameLength];
+	char subGroupName[MaxPageNameLength];
 
 	bool setId(const String& id);
+
+	void setPageGroup(const String& pageName, const String& groupName);
 
 	DataType min = DataType(0);
 	DataType max = DataType(1);
@@ -319,6 +348,7 @@ struct pod
 
 	bool inverted = false;
 	bool ok = false;
+	TextValueConverters textConverter = TextValueConverters::Undefined;
 
 	void writeToStream(MemoryOutputStream& b);
 };
@@ -362,6 +392,8 @@ struct data
 		info.defaultValue = newDefaultValue;
 	}
 
+	hise::ValueToTextConverter getValueToTextConverter() const;
+
 	operator bool() const
 	{
 		return info.ok;
@@ -372,7 +404,6 @@ struct data
 
 	pod info;
 	dynamic callback;
-
 	StringArray parameterNames;
 };
 
@@ -440,7 +471,56 @@ private:
 
 using ParameterDataList = Array<parameter::data>;
 
+struct PageInfo
+{
+	static constexpr char HasPageMarker =  0xF0;
+	static constexpr char HasGroupMarker = 0x0F;
 
+	PageInfo(const parameter::pod& info);
+	PageInfo(InputStream& mis);
+	
+	void writeToStream(OutputStream& mos) const;
+
+	struct Tree
+	{
+		Tree(const ParameterDataList& list);
+
+		int getNumMaxSlidersPerPage() const;
+
+		bool hasPageLayout() const { return hasLayout; }		
+		bool hasMoreThanOnePage() const { return hasLayout && pageTree.size() > 1; }
+		bool hasGroupTags() const { return hasLayout && hasTags; }
+
+		String getGroupIdForParameter(int parameterIndex) const;
+		StringArray getPageNames() const;
+		StringArray getGroups(const String& page) const;
+
+		ParameterDataList getList(const String& page, const String& group) const;
+
+	private:
+
+		bool hasTags = false;
+
+		ParameterDataList& getBucket(const String& page, const String& group);
+
+		bool hasLayout = false;
+		ParameterDataList flatList;
+		std::vector<std::pair<String, std::vector<std::pair<String, ParameterDataList>>>> pageTree;
+
+		JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Tree);
+	};
+
+	static std::unique_ptr<Tree> createPageTree(const ValueTree& parameterTree);
+	static bool hasPageData(const ValueTree& pTree);
+
+	operator bool() const { return isPage() || isGroup(); }
+
+	bool isPage() const { return page.isNotEmpty(); }
+	bool isGroup() const { return group.isNotEmpty(); }
+
+	String page;
+	String group;
+};
 
 
 

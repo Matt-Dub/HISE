@@ -43,7 +43,8 @@ struct PropertyHelpers
 {
 	static Colour getColour(ValueTree data);
 
-	static Colour getColourFromVar(const var& value);;
+	static Colour getColourFromVar(const var& value);
+	static void addMissingIdsForEditor(ValueTree& data, UndoManager* undoManager);;
 
 	static PropertyComponent* createPropertyComponent(ProcessorWithScriptingContent* p, ValueTree& d, const Identifier& id, UndoManager* um);
 };
@@ -68,6 +69,9 @@ static constexpr int NodeMargin = 10;
 static constexpr int ZoomOffset = 60;	
 static constexpr int DuplicateSize = 128;
 static constexpr int PinHeight = 24;
+static constexpr int TabHeight = 20;
+static constexpr int GroupHeight = 20;
+static constexpr int ParameterWidth = 100;
 }
 
 }

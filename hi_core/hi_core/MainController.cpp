@@ -401,8 +401,13 @@ void MainController::clearPreset(NotificationType sendPresetLoadMessage)
 	while (auto p = iter.getNextProcessor())
     {
         if(auto sp = dynamic_cast<RuntimeTargetHolder*>(p))
-            sp->disconnectRuntimeTargets(this);
+            sp->disconnectRuntimeTargets(p);
         
+		if (auto gc = dynamic_cast<GlobalModulatorContainer*>(p))
+		{
+			gc->cleanUpRuntimeSources();
+		}
+
         p->cleanRebuildFlagForThisAndParents();
     }
 
@@ -659,8 +664,9 @@ void MainController::compileAllScripts()
 
 			while(auto rt = iter.getNextProcessor())
 			{
-				rt->disconnectRuntimeTargets(p->getMainController());
-				rt->connectRuntimeTargets(p->getMainController());
+				auto as_p = dynamic_cast<Processor*>(rt);
+				rt->disconnectRuntimeTargets(as_p);
+				rt->connectRuntimeTargets(as_p);
 			}
 
 			return SafeFunctionCall::OK;
@@ -1086,12 +1092,20 @@ hise::RLottieManager::Ptr MainController::getRLottieManager()
 }
 #endif
 
-void MainController::connectToRuntimeTargets(scriptnode::OpaqueNode& on, bool shouldAdd)
+void MainController::connectToGlobalRuntimeTargets(scriptnode::OpaqueNode& on, bool shouldAdd)
 {
+	if(isBeingDeleted())
+		return;
+
     if(auto rm = dynamic_cast<scriptnode::routing::GlobalRoutingManager*>(getGlobalRoutingManager()))
     {
         rm->connectToRuntimeTargets(on, shouldAdd);
     }
+
+	if(auto gm = ProcessorHelpers::getFirstProcessorWithType<GlobalModulatorContainer>(getMainSynthChain()))
+	{
+		gm->connectToRuntimeTargets(on, shouldAdd);
+	}
 
 #if HISE_INCLUDE_RT_NEURAL
     for(const auto& id: getNeuralNetworks().getIdList())

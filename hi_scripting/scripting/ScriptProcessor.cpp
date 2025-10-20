@@ -272,15 +272,6 @@ void ProcessorWithScriptingContent::controlCallback(ScriptingApi::Content::Scrip
 	}
 	else
 	{
-		if (auto modulationData = component->getModulationData())
-		{
-			if (modulationData->valueCallback)
-			{
-				modulationData->valueCallback((float)controllerValue);
-				return;
-			}
-		}
-
 		int callbackIndex = getControlCallbackIndex();
 
 		getMainController_()->getDebugLogger().logParameterChange(thisAsJavascriptProcessor, component, controllerValue);
@@ -722,10 +713,15 @@ ValueTree FileChangeListener::collectAllScriptFiles(ModulatorSynthChain *chainTo
 
 void FileChangeListener::ExternalReloader::timerCallback()
 {
+	auto changed = false;
+
 	for(auto w: parent.watchers)
 	{
-		w->reloadIfChanged();
+		changed |= w->reloadIfChanged();
 	}
+
+	if(changed)
+		parent.fileChanged();
 }
 
 void FileChangeListener::addFileContentToValueTree(JavascriptProcessor* jp, ValueTree externalScriptFiles, File scriptFile, ModulatorSynthChain* chainToExport)
@@ -1321,7 +1317,14 @@ void JavascriptProcessor::addInplaceDebugValue(const Identifier& callback, int l
 
 void JavascriptProcessor::fileChanged()
 {
-	compileScript();
+#if USE_BACKEND
+
+	auto p = dynamic_cast<Processor*>(this);
+	auto shouldRecompile = GET_HISE_SETTING(p, HiseSettings::Scripting::RecompileOnFileChange);
+
+	if(shouldRecompile)
+		compileScript();
+#endif
 }
 
 

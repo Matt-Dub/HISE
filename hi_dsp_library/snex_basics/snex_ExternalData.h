@@ -636,6 +636,16 @@ struct ExternalDataHolder
 		});
 	}
 
+	/** Call this to cleanup dangling filter coefficient data. */
+	void garbageCollectFilterCoefficients()
+	{
+		for(int i = 0; i < getNumDataObjects(ExternalData::DataType::FilterCoefficients); i++)
+		{
+			if(auto fd = getFilterData(i))
+				fd->garbageCollect();
+		}
+	}
+
 	JUCE_DECLARE_WEAK_REFERENCEABLE(ExternalDataHolder);
 };
 
@@ -733,8 +743,6 @@ namespace data
 /** @internal Subclass this when you want to show a UI for the given data. */
 struct base
 {
-	
-
 	virtual ~base() {};
 
 	/** This can be used to connect the UI to the data. */
@@ -744,18 +752,66 @@ struct base
 	{
 		// This function must always be called while the writer lock is active
 		jassert(d.obj == nullptr || d.obj->getDataLock().writeAccessIsLocked() || d.obj->getDataLock().writeAccessIsSkipped());
-
-		
-
 		externalData = d;
-
-		
 	}
 
+	void sendDisplayUpdateMessage(double v, bool forceUpdate=false)
+	{
+		if(deferUpdate.first)
+		{
+			if(forceUpdate)
+				deferUpdate.second.setModValue(v);
+			else
+				deferUpdate.second.setModValueIfChanged(v);
+		}
+		else
+		{
+			if (auto o = this->externalData.obj)
+				o->getUpdater().sendDisplayChangeMessage(v, sendNotificationAsync, forceUpdate);
+		}
+	}
+	
+	std::pair<bool, snex::ModValue> deferUpdate = { false, {false, 0.0} };
 	snex::ExternalData externalData;
 
 	//JUCE_DECLARE_WEAK_REFERENCEABLE(base);
 };
+
+template <typename T> struct updater
+{
+	static constexpr bool active = std::is_base_of<base, T>::value;
+
+	updater(T& obj_) :
+		obj(obj_)
+	{
+		if constexpr (active)
+		{
+			prevValue = obj.deferUpdate.first;
+			obj.deferUpdate.first = true;
+		}
+	}
+
+	~updater()
+	{
+		if constexpr (active)
+		{
+			double v;
+
+			if (auto o = obj.externalData.obj)
+			{
+				if (obj.deferUpdate.second.getChangedValue(v))
+					o->getUpdater().sendDisplayChangeMessage(v, sendNotificationAsync, true);
+			}
+
+			obj.deferUpdate.first = prevValue;
+		}
+	}
+
+	T& obj;
+	bool prevValue = false;
+};
+
+
 
 }
 
@@ -774,6 +830,16 @@ struct DataReadLock
 				holdsLock = lockToUse->enterReadLock();
 			else
 				holdsLock = lockToUse->enterTryReadLock();
+		}
+	}
+
+	static void assertReadLockActive(data::base* d)
+	{
+		if(d->externalData.obj != nullptr)
+		{
+#if JUCE_DEBUG
+			jassert(d->externalData.obj->getDataLock().isReadLocked());
+#endif
 		}
 	}
 
@@ -817,12 +883,12 @@ struct DataReadLock
 
 struct DataTryReadLock : hise::SimpleReadWriteLock::ScopedTryReadLock
 {
-	DataTryReadLock(data::base* d) :
-		SimpleReadWriteLock::ScopedTryReadLock(d->externalData.obj != nullptr ? d->externalData.obj->getDataLock() : dummy)
+	DataTryReadLock(data::base* d, bool useLock=true) :
+		SimpleReadWriteLock::ScopedTryReadLock((useLock && d->externalData.obj != nullptr) ? d->externalData.obj->getDataLock() : dummy)
 	{}
 
-	DataTryReadLock(snex::ExternalData& d) :
-		SimpleReadWriteLock::ScopedTryReadLock(d.obj != nullptr ? d.obj->getDataLock() : dummy)
+	DataTryReadLock(snex::ExternalData& d, bool useLock=true) :
+		SimpleReadWriteLock::ScopedTryReadLock((useLock && d.obj != nullptr) ? d.obj->getDataLock() : dummy)
 	{}
 
 	operator bool() const { return this->ok(); }
@@ -967,6 +1033,25 @@ template <bool EnableBuffer> struct display_buffer_base : public base,
 
 			if(shouldWrite)
 				rb->write(v, numSamples);
+		}
+	}
+
+	void updateBuffer(const float* values, int numSamples)
+	{
+		if constexpr (EnableBuffer)
+		{
+			DataReadLock sl(this);
+
+			auto shouldWrite = rb != nullptr && rb->isActive();
+
+#if !SNEX_THROW_IF_MULTIPLE_WRITERS
+			shouldWrite |= rb != nullptr &&  rb->getCurrentWriter() == this;
+#endif
+
+			const float* v[1] = { values };
+
+			if(shouldWrite)
+				rb->write(v, 1, numSamples);
 		}
 	}
 

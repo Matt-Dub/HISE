@@ -84,6 +84,9 @@ DECLARE_ID(NumParameters);
 DECLARE_ID(Value);
 DECLARE_ID(DefaultValue);	
 DECLARE_ID(ID);
+DECLARE_ID(Page);
+DECLARE_ID(CurrentPageIndex);
+DECLARE_ID(SubGroup);
 DECLARE_ID(Index);
 DECLARE_ID(NodeId);
 DECLARE_ID(NumClones);
@@ -140,6 +143,7 @@ DECLARE_ID(IsCloneCableNode);
 DECLARE_ID(IsRoutingNode);
 DECLARE_ID(IsFixRuntimeTarget);
 DECLARE_ID(IsDynamicRuntimeTarget);
+DECLARE_ID(NeedsModConfig);
 DECLARE_ID(IsPublicMod);
 DECLARE_ID(UseUnnormalisedModulation);
 DECLARE_ID(AllowPolyphonic);
@@ -149,6 +153,9 @@ DECLARE_ID(CompileChannelAmount);
 DECLARE_ID(HasTail);
 DECLARE_ID(SourceId);
 DECLARE_ID(SuspendOnSilence);
+DECLARE_ID(TextToValueConverter);
+DECLARE_ID(ModulationBlockSize);
+DECLARE_ID(ExternalModulation);
 
 struct Helpers
 {
@@ -168,8 +175,13 @@ struct Helpers
 			AllowPolyphonic,
 			AllowCompilation,
 			HasTail,
+			Page,
+			CurrentPageIndex,
+			SubGroup,
 			SuspendOnSilence,
-            CompileChannelAmount
+            CompileChannelAmount,
+			TextToValueConverter,
+			ModulationBlockSize
 		};
 
 		return dIds;
@@ -183,6 +195,9 @@ struct Helpers
 		returnIfDefault(NodeColour, 0x000000);
 		returnIfDefault(Folded, false);
 		returnIfDefault(Expression, "");
+		returnIfDefault(Page, "");
+		returnIfDefault(CurrentPageIndex, 0);
+		returnIfDefault(SubGroup, "");
 		returnIfDefault(SkewFactor, 1.0);
 		returnIfDefault(StepSize, 0.0);
 		returnIfDefault(Inverted, false);
@@ -193,6 +208,9 @@ struct Helpers
 		returnIfDefault(AllowCompilation, false);
 		returnIfDefault(AllowPolyphonic, false);
         returnIfDefault(CompileChannelAmount, 2);
+		returnIfDefault(TextToValueConverter, "Undefined");
+		returnIfDefault(ModulationBlockSize, 0);
+		returnIfDefault(ExternalModulation, "Disabled");
 
         return {};
 	}
@@ -326,6 +344,17 @@ struct CustomNodeProperties
 		else
 			jassertfalse;
 #endif
+	}
+
+	/** Use this to query whether the given node needs a runtime target. */
+	template <typename T> static bool isRuntimeTarget()
+	{
+		String id = T::WrappedObjectType::getStaticId().toString();
+
+		auto d = nodeHasProperty(id, PropertyIds::IsDynamicRuntimeTarget);
+		auto f = nodeHasProperty(id, PropertyIds::IsFixRuntimeTarget);
+
+		return d || f;
 	}
 
 	static StringArray getAllNodesWithProperty(const Identifier& propId)

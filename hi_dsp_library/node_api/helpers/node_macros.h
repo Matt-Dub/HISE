@@ -55,6 +55,23 @@ class NodeBase;
 #define SN_REGISTER_CALLBACK(className) template <int P> void registerCallback(scriptnode::parameter::data& p) { p.template setParameterCallbackWithIndex<className, P>(this); }
 #define SN_PARAMETER_MEMBER_FUNCTION template <int P> void setParameter(double v) { setParameterStatic<P>(this, v); }
 
+#define SN_EMPTY_VOICE_SETTER(className) using VoiceSetter = container::Helpers::DummyVoiceSetter;
+
+#define SN_VOICE_SETTER(className, polyDataMember) struct VoiceSetter { \
+		using FT = decltype(polyDataMember); \
+		template <typename WT> VoiceSetter(WT& obj, bool forceAll) : svs(obj.getWrappedObject().polyDataMember, forceAll), updater(obj.getWrappedObject()) {}; \
+		data::updater<className> updater; \
+		operator bool() const { return true; } \
+		typename FT::ScopedVoiceSetter svs; }
+
+#define SN_VOICE_SETTER_WITH_DATA_LOCK(className, polyDataMember) struct VoiceSetter { \
+		using FT = decltype(polyDataMember); \
+		template <typename WT> VoiceSetter(WT& obj, bool forceAll) : svs(obj.getWrappedObject().polyDataMember, forceAll), sl(&obj.getWrappedObject(), !forceAll), updater(obj.getWrappedObject()) {}; \
+		DataTryReadLock sl; \
+		data::updater<className> updater; \
+		operator bool() const { return (bool)sl; } \
+		typename FT::ScopedVoiceSetter svs; }
+
 /** Object Accessors
 
  Use this macro to define the type that should be returned by calls to getObject(). Normally you pass in the wrapped object (for non-wrapped classes you should use SN_GET_SELF_AS_OBJECT().
@@ -107,6 +124,8 @@ constexpr const auto& getWrappedObject() const { return x; }
 	if constexpr(prototypes::check::initialise<ObjectType>::value) \
 		obj.initialise(n); }
 
+#define SN_DEFAULT_SET_EXTERNAL_DATA void setExternalData(const ExternalData& d, int index) { obj.setExternalData(d, index); }
+#define SN_DEFAULT_CONNECT_TO_RUNTIME_TARGET void connectToRuntimeTarget(bool add, const runtime_target::connection& c){ obj.connectToRuntimeTarget(add, c); };
 #define SN_DEFAULT_HANDLE_EVENT(ObjectType) void handleHiseEvent(HiseEvent& e) { obj.handleHiseEvent(e); }
 #define SN_DEFAULT_PROCESS(ObjectType) template <typename ProcessDataType> void process(ProcessDataType& d) { obj.process(d); }
 #define SN_DEFAULT_PREPARE(ObjectType) void prepare(PrepareSpecs ps) { \
@@ -115,8 +134,10 @@ constexpr const auto& getWrappedObject() const { return x; }
 
 #define SN_DEFAULT_PROCESS_FRAME(ObjectType) template <typename FrameDataType> void processFrame(FrameDataType& data) noexcept { this->obj.processFrame(data); }
 
-
-
+#define SN_DEFAULT_CREATE_MOD_INFO(ObjectType) void createExternalModulationInfo(OpaqueNode::ModulationProperties& info) { \
+	if constexpr(prototypes::check::createExternalModulationInfo<ObjectType>::value) \
+		this->obj.createExternalModulationInfo(info); \
+	}
 
 /** Stack float array macros. 
 
@@ -145,6 +166,7 @@ constexpr const auto& getWrappedObject() const { return x; }
 #define SN_EMPTY_SET_EXTERNAL_DATA void setExternalData(const ExternalData& , int) {};
 
 #define SN_EMPTY_CREATE_PARAM void createParameters(ParameterDataList&){}
+#define SN_EMPTY_CREATE_MOD_INFO void createExternalModulationInfo(OpaqueNode::ModulationProperties& info) {}
 #define SN_EMPTY_SET_PARAMETER template <int P> static void setParameterStatic(void* , double ) {} template <int P> void setParameter(double) {}
 #define SN_NO_PARAMETERS SN_EMPTY_CREATE_PARAM SN_EMPTY_SET_PARAMETER
 
@@ -162,6 +184,8 @@ using polyName = className<NUM_POLYPHONIC_VOICES>;
 #define SNEX_METADATA_ID(x) static Identifier getStaticId() { RETURN_STATIC_IDENTIFIER(#x); }
 #define SNEX_METADATA_NUM_CHANNELS(x) static constexpr int NumChannels = x;
 #define SNEX_METADATA_ENCODED_PARAMETERS(NumElements) const snex::Types::span<unsigned int, NumElements> encodedParameters =
+
+#define SNEX_METADATA_ENCODED_MOD_INFO(NumElements) const snex::Types::span<unsigned int, NumElements> encodedModInfo =
 
 /** Snex JIT Preprocessors */
 

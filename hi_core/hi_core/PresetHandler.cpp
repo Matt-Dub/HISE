@@ -2527,19 +2527,11 @@ void AboutPage::refreshText()
 	infoData.append(JucePlugin_Manufacturer, normal, bright);
 #endif
 
-#if USE_COPY_PROTECTION
-
-	
-
-#endif
-
-
 #endif
 
 #if USE_IPP
 	infoData.append("\n\naccelerated by FFT routines from the IPP library\n", normal, bright);
 #endif
-
 
 	repaint();
 }
@@ -3473,6 +3465,8 @@ void ModuleStateManager::restoreFromValueTree(const ValueTree &v)
 		if (p != nullptr)
 		{
 			auto mcopy = m.createCopy();
+            
+            Processor::ScopedChildSkipper scs(*p);
 			
 			for (auto ms : modules)
 			{

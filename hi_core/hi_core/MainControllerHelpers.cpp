@@ -1051,8 +1051,6 @@ bool MidiControllerAutomationHandler::setParameterInverted(int index, bool value
 		d.inverted = value;
 		return true;
 	});
-
-	return false;
 }
 
 void ConsoleLogger::logMessage(const String &message)
@@ -1065,8 +1063,6 @@ void ConsoleLogger::logMessage(const String &message)
 	{
 		debugToConsole(processor, message);
 	}
-
-	
 }
 
 ControlledObject::ControlledObject(MainController *m, bool notifyOnShutdown) :
@@ -1869,6 +1865,7 @@ String OverlayMessageBroadcaster::getOverlayTextMessage(State s) const
 #endif
 
 		break;
+#if HISE_INCLUDE_UNLOCKER_OVERLAY
 	case LicenseNotFound:
 	{
 #if USE_COPY_PROTECTION
@@ -1910,6 +1907,7 @@ String OverlayMessageBroadcaster::getOverlayTextMessage(State s) const
 		return "";
 #endif
 	}
+#endif
 	case State::CustomErrorMessage:
 	case State::CriticalCustomErrorMessage:
 	case State::CustomInformation:

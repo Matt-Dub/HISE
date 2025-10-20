@@ -166,19 +166,22 @@ void Processor::restoreFromValueTree(const ValueTree &previouslyExportedProcesso
 		if( !c->restoreChain(childProcessors)) return;
 	}
 
-	for(int i = 0; i < getNumChildProcessors(); i++)
-	{
-		Processor *p = getChildProcessor(i);
+    if(!skipRestoreChildProcessors)
+    {
+        for(int i = 0; i < getNumChildProcessors(); i++)
+        {
+            Processor *p = getChildProcessor(i);
 
-		for (int j = 0; j < childProcessors.getNumChildren(); j++)
-		{
-			if (childProcessors.getChild(j).getProperty("ID") == p->getId())
-			{
-				p->restoreFromValueTree(childProcessors.getChild(j));
-				break;
-			}
-		}	
-	}
+            for (int j = 0; j < childProcessors.getNumChildren(); j++)
+            {
+                if (childProcessors.getChild(j).getProperty("ID") == p->getId())
+                {
+                    p->restoreFromValueTree(childProcessors.getChild(j));
+                    break;
+                }
+            }
+        }
+    }
 }
 
 ProcessorDocumentation* Processor::createDocumentation() const
@@ -199,6 +202,9 @@ void Processor::setSymbol(Path newSymbol)
 void Processor::setAttribute(int parameterIndex, float newValue, dispatch::DispatchType notifyEditor)
 {
 	setInternalAttribute(parameterIndex, newValue);
+
+	if(forceDeactivateUpdates)
+		notifyEditor = dispatch::DispatchType::dontSendNotification;
 
 #if HISE_OLD_PROCESSOR_DISPATCH
 	if(notifyEditor == dispatch::DispatchType::sendNotification)
@@ -684,7 +690,7 @@ const hise::Processor* Processor::getParentProcessor(bool getOwnerSynth, bool as
 
 	if (parentProcessor == nullptr)
 	{
-		ASSERT_STRICT_PROCESSOR_STRUCTURE(!assertIfFalse || this == getMainController()->getMainSynthChain());
+		ASSERT_STRICT_PROCESSOR_STRUCTURE(!assertIfFalse || this == getMainController()->getMainSynthChain() || getMainController()->isFlakyThreadingAllowed());
 		return nullptr;
 	}
 		
@@ -873,7 +879,7 @@ Processor * ProcessorHelpers::findParentProcessor(Processor *childProcessor, boo
 	if (childProcessor->getMainController()->getMainSynthChain() == childProcessor)
 		return nullptr;
 
-	if (auto p = childProcessor->getParentProcessor(getParentSynth))
+	if (auto p = childProcessor->getParentProcessor(getParentSynth, false))
 		return p;
 
 	

@@ -328,6 +328,7 @@ struct sdouble : public pimpl::_ramp<double>
 {};
 
 
+
 /** A small helper class for usage within a wrap::mod node.
  \ingroup snex_helpers
 */
@@ -403,10 +404,7 @@ struct VoiceResetter
 
 struct DllBoundaryTempoSyncer: public hise::TempoListener
 {
-	DllBoundaryTempoSyncer()
-	{
-		
-	}
+	DllBoundaryTempoSyncer() = default;
 	~DllBoundaryTempoSyncer() = default;
 	
 	/** Register an item that has a tempoChangedStatic class. */
@@ -490,7 +488,17 @@ struct DllBoundaryTempoSyncer: public hise::TempoListener
 	double bpm = 120.0;
     bool isPlaying = false;
     double ppqPosition = 0.0;
-	
+
+	double getCurrentPPQPosition(int timestamp) const
+	{
+		if(ppqFunction)
+			return ppqFunction(timestamp);
+
+		return ppqPosition;
+	}
+
+	std::function<double(int)> ppqFunction;
+
 	hise::SimpleReadWriteLock listenerLock;
 
 	hise::UnorderedStack<WeakReference<hise::TempoListener>, 256> tempoListeners;
@@ -598,7 +606,6 @@ struct PolyHandler
 
 	private:
 
-		void* previousThread = nullptr;
 		PolyHandler& p;
 	};
 
@@ -635,6 +642,8 @@ struct PolyHandler
 
 		return voiceIndex.load() * enabled;
 	}
+
+	bool isAllThread() const { return enabled && currentAllThread != nullptr && Thread::getCurrentThreadId() == currentAllThread; };
 
 	bool isEnabled() const { return enabled; }
 
@@ -802,6 +811,8 @@ struct VoiceDataStack
 			}
 		}
 	}
+
+	int getNumActiveVoices() const { return voiceNoteOns.size(); }
 
 	template <typename T> void startVoice(T& n, PolyHandler& ph, int voiceIndex, const HiseEvent& e)
 	{
@@ -1041,15 +1052,77 @@ template <typename T, int NumVoices> struct PolyData
 		}
 	}
 
-	
+	struct ScopedVoiceSetter
+	{
+		ScopedVoiceSetter(PolyData& p_, bool forceAll):
+		  p(p_)
+		{
+			if constexpr (PolyData::isPolyphonic())
+			{
+				p.currentRenderVoice = p.begin();
+				prevForceAll = p.forceAll;
+				p.forceAll = forceAll;
+			}
+		};
+
+		~ScopedVoiceSetter()
+		{
+			if constexpr (PolyData::isPolyphonic())
+			{
+				p.currentRenderVoice = nullptr;
+				p.forceAll = prevForceAll;
+			}
+		}
+
+		PolyData& p;
+		bool prevForceAll;
+	};
+
 	/** If you know that you're inside a rendering context, you can
 	    use this function instead of the for-loop syntax. Be aware that
 		the performance will be the same, it's just a bit less to type. 
 	*/
-	T& get() const
+	T& get(bool allowSlowFetch=false) const
 	{
+		if constexpr (isPolyphonic())
+		{
+			if(currentRenderVoice == nullptr)
+			{
+				//jassert(allowSlowFetch);
+				return *begin();
+			}
+
+			return *currentRenderVoice;
+		}
+		else
+		{
+			return *const_cast<T*>(data);
+		}
+		
+#if 0
 		jassert(isMonophonicOrInsideVoiceRendering());
 		return *begin();
+#endif
+	}
+
+	template <typename F> void forEachCurrentVoice(F&& f)
+	{
+		if(!isPolyphonic() || voicePtr == nullptr)
+		{
+			f(data[0]);
+		}
+		else
+		{
+			if(forceAll || voicePtr->isAllThread())
+			{
+				for(int i = 0; i < NumVoices; i++)
+					f(data[i]);
+			}
+			else
+			{
+				f(get());
+			}
+		}
 	}
 
 	/** Allows range-based for loops to work inside the voice context. */
@@ -1097,8 +1170,8 @@ template <typename T, int NumVoices> struct PolyData
 	{
 		if constexpr (!isPolyphonic())
 			return true;
-
-		return begin() == getFirst();
+		else
+			return begin() == &getFirst();
 	}
 
 	/** Returns a reference to the first data. This can be used for UI purposes. */
@@ -1122,19 +1195,32 @@ template <typename T, int NumVoices> struct PolyData
 		return isVoiceRenderingActive();
 	}
 
-private:
+	T& getWithIndex(int index)
+	{
+		return *(data + getVoiceIndex(index));
+	}
 
-	
-	
-	static constexpr bool isPolyphonic() { return NumVoices > 1; }
+	const T& getWithIndex(int index) const
+	{
+		return *(data + getVoiceIndex(index));
+	}
 
-	
+	bool isPolyHandlerEnabled() const
+	{
+		return NumVoices > 1 && voicePtr != nullptr && voicePtr->isEnabled();
+	}
 
 	bool isVoiceRenderingActive() const
 	{
 		return isPolyphonic() &&
 			voicePtr != nullptr && voicePtr->getVoiceIndex() != -1;
 	}
+
+private:
+
+	static constexpr bool isPolyphonic() { return NumVoices > 1; }
+
+	
 
 	int getCurrentVoiceIndex() const
 	{
@@ -1148,25 +1234,18 @@ private:
 		auto rv = index & (NumVoices - 1);
 		return rv;
 	}
-
-
-	T& getWithIndex(int index)
-	{
-		return *(data + getVoiceIndex(index));
-	}
-
-	const T& getWithIndex(int index) const
-	{
-		return *(data + getVoiceIndex(index));
-	}
-
+	
 private:
 
 	PolyHandler* voicePtr = nullptr;
 	mutable int lastVoiceIndex = -1;
 	int unused = 0;
 
+	T* currentRenderVoice = nullptr;
+	bool forceAll = false;
+
 	T data[NumVoices];
+
 };
 
 }

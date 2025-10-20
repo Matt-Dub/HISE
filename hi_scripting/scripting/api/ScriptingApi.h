@@ -319,6 +319,20 @@ public:
 		/** Returns the downsampling factor for the modulation signal (default is 8). */
 		double getControlRateDownsamplingFactor() const;
 
+		/** Uses one of the inbuilt text converters to prettify a numeric value. */
+		String getTextForValue(double value, String converterMode)
+		{
+			auto vtc = ValueToTextConverter::createForMode(converterMode);
+			return vtc.getTextForValue(value);
+		}
+
+		/** Uses one of the inbuilt text converts to parse a text string to a numeric value. */
+		double getValueForText(String text, String convertedMode)
+		{
+			auto vtc = ValueToTextConverter::createForMode(convertedMode);
+			return vtc.getValueForText(text);
+		}
+
 		/** Iterates the given sub-directory of the Samples folder and returns a list with all references to audio files. */
 		var getSampleFilesFromDirectory(const String& relativePathFromSampleFolder, bool recursive);
 
@@ -823,6 +837,9 @@ public:
 		/** Returns enabled state of midi channel (0 = All channels). */
 		bool isMidiChannelEnabled(int index);
 
+		/** Returns true (on Windows) if IPP is enabled or (optionally) if the plugin is running on macOS. */
+		bool isIppEnabled(bool returnTrueIfMacOS);
+
 		/** Returns an array of the form [width, height]. */
 		var getUserDesktopSize();
 
@@ -1277,6 +1294,9 @@ public:
 
 		/** Creates a reference to the routing matrix of the given processor. */
 		ScriptRoutingMatrix* getRoutingMatrix(const String& processorId);
+
+		/** Creates a object to control the wavetable synthesiser features. */
+		ScriptingObjects::ScriptWavetableController* getWavetableController(const String& processorId);
 
 		/** Returns the index of the Modulator in the chain with the supplied chainId */
 		int getModulatorIndex(int chainId, const String &id) const;
@@ -1747,6 +1767,12 @@ private:
 		/** Opens a file browser to choose a directory. */
 		void browseForDirectory(var startFolder, var callback);
 
+		/** Opens a file browser to select multiple directories. */
+		void browseForMultipleDirectories(var startFolder, var callback);
+
+		/** Opens a file browser to select multiple files (to open). */
+		void browseForMultipleFiles(var startFolder, String wildcard, var callback);
+
 		/** Returns a unique machine ID that can be used to identify the computer. */
 		String getSystemId();
 		
@@ -1769,9 +1795,13 @@ private:
 
 		ProcessorWithScriptingContent* p;
 
+		static File getFileFromVar(const var& fileObjectDirectoryConstantOrAbsolutePath, MainController* mc);
+
 	private:
 
-		void browseInternally(File startFolder, bool forSaving, bool isDirectory, String wildcard, var callback);
+		void browseInternally(File startFolder, bool forSaving, bool isDirectory, String wildcard, var callback, bool multiple);
+
+		static File getFileStatic(SpecialLocations l, MainController* mc);
 
 		File getFile(SpecialLocations l);
 
