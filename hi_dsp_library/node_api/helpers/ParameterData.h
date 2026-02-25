@@ -37,66 +37,7 @@ namespace scriptnode
 using namespace juce;
 using namespace hise;
 
-struct InvertableParameterRange
-{
-	InvertableParameterRange(double start, double end) :
-		rng(start, end),
-		inv(false)
-	{};
 
-	InvertableParameterRange() :
-		rng(0.0, 1.0),
-		inv(false)
-	{};
-
-	bool operator==(const InvertableParameterRange& other) const;
-
-	InvertableParameterRange(const ValueTree& v);
-
-	void store(ValueTree& v, UndoManager* um);
-
-	InvertableParameterRange(double start, double end, double interval, double skew=1.0) :
-		rng(start, end, interval, skew),
-		inv(false)
-	{};
-
-	double convertFrom0to1(double input, bool applyInversion) const;
-
-	InvertableParameterRange inverted() const
-	{
-		auto copy = *this;
-		copy.inv = !copy.inv;
-		return copy;
-	}
-
-	double convertTo0to1(double input, bool applyInversion) const;
-
-	Range<double> getRange() const
-	{
-		return rng.getRange();
-	}
-
-	double snapToLegalValue(double v) const
-	{
-		return rng.snapToLegalValue(v);
-	}
-
-	void setSkewForCentre(double value)
-	{
-		rng.setSkewForCentre(value);
-	}
-
-	void checkIfIdentity();
-
-	juce::NormalisableRange<double> rng;
-	bool inv = false;
-
-	bool isNonDefault() const { return !isIdentity; }
-
-private:
-
-	bool isIdentity = false;
-};
 
 struct OSCConnectionData: public ReferenceCountedObject
 {
@@ -194,6 +135,38 @@ struct RangeHelpers
 	{
 		return { PropertyIds::NodeId, PropertyIds::ParameterId, Identifier("Enabled") };
 	}
+
+	struct RangePresets
+	{
+		RangePresets();
+
+		int getPresetIndex(const InvertableParameterRange& r)
+		{
+			for (int i = 0; i < presets.size(); i++)
+			{
+				if (presets[i].nr == r)
+					return i;
+			}
+
+			return -1;
+		}
+
+		~RangePresets();
+
+		struct Preset
+		{
+			void restoreFromValueTree(const ValueTree& v);
+
+			ValueTree exportAsValueTree() const;
+
+			InvertableParameterRange nr;
+			String id;
+			int index;
+			String textConverter;
+		};
+
+		Array<Preset> presets;
+	};
 
 private:
 	static Identifier ri(IdSet set, RangeIdentifier r)
@@ -295,28 +268,19 @@ struct pod
 		Pan,
 		NormalizedPercentage,
 		Decibel,
+		Semitones,
 		numTextValueConverters
 	};
 
-	static StringArray getTextValueConverterNames()
-	{
-		return {
-			"Undefined",
-			"Frequency",
-			"Time",
-			"TempoSync",
-			"Pan",
-			"NormalizedPercentage",
-			"Decibel",
-			"Undefined"
-		};
-	}
+	static StringArray getTextValueConverterNames();
 
+	static constexpr int MaxPageNameLength = 16;
 	static constexpr int MaxParameterNameLength = 32;
 
 	pod()
 	{
 		clearParameterName();
+		clearPageInfo();
 	};
 
 	pod(MemoryInputStream& mis);
@@ -327,10 +291,13 @@ struct pod
 
 	String getId() const { return String(parameterName); }
 
-	void clearParameterName()
-	{
-		memset(parameterName, 0, MaxParameterNameLength);
-	}
+	bool setPageName(const String& newPageName);
+
+	bool setGroupName(const String& newGroupName);
+
+	void clearParameterName();
+
+	void clearPageInfo();
 
 	void setRange(const InvertableParameterRange& r);
 
@@ -340,8 +307,12 @@ struct pod
 	int index = -1;
 
 	char parameterName[MaxParameterNameLength];
+	char pageName[MaxPageNameLength];
+	char subGroupName[MaxPageNameLength];
 
 	bool setId(const String& id);
+
+	void setPageGroup(const String& pageName, const String& groupName);
 
 	DataType min = DataType(0);
 	DataType max = DataType(1);
@@ -356,14 +327,49 @@ struct pod
 	void writeToStream(MemoryOutputStream& b);
 };
 
+struct RefCountedHeapBuffer: public ReferenceCountedObject
+{
+	using Ptr = ReferenceCountedObjectPtr<RefCountedHeapBuffer>;
+
+	RefCountedHeapBuffer(int numBytes):
+		numUsed(numBytes)
+	{
+		if(numUsed > 0)
+			data.calloc(numUsed);
+	}
+
+	Ptr createCopy()
+	{
+		if(getData() != nullptr && getNumBytes() > 0)
+		{
+			Ptr newData = new RefCountedHeapBuffer(numUsed);
+			memcpy(newData->getData(), getData(), getNumBytes());
+			return newData;
+		}
+
+		return nullptr;
+	}
+
+	void* getData() { return data.get(); }
+	size_t getNumBytes() { return numUsed; }
+
+private:
+
+	HeapBlock<uint8> data;
+	int numUsed = 0;
+};
+
 /** Used by the scriptnode interpreter. */
 struct data
 {
 	data();
-	~data() { parameterNames.clear(); }
+	~data() {};
+
 	data(const String& id_);;
 	data(const String& id_, InvertableParameterRange r);
-	data withRange(InvertableParameterRange r);
+	data withRange(InvertableParameterRange r) const;
+
+	data withClonedParameters() const;
 
 	ValueTree createValueTree() const;
 
@@ -395,27 +401,7 @@ struct data
 		info.defaultValue = newDefaultValue;
 	}
 
-	hise::ValueToTextConverter getValueToTextConverter() const
-	{
-		if(!parameterNames.isEmpty())
-		{
-			return ValueToTextConverter::createForOptions(parameterNames);
-		}
-
-		switch(info.textConverter)
-		{
-		case pod::Frequency: return ValueToTextConverter::createForMode("Frequency");
-		case pod::Time:		 return ValueToTextConverter::createForMode("Time");
-		case pod::TempoSync: return ValueToTextConverter::createForMode("TempoSync");
-		case pod::Pan:		 return ValueToTextConverter::createForMode("Pan");
-		case pod::NormalizedPercentage:
-							 return ValueToTextConverter::createForMode("NormalizedPercentage");
-		case pod::Decibel:   return ValueToTextConverter::createForMode("Decibel");
-		case pod::Undefined:
-		case pod::numTextValueConverters:
-		default: return {};
-		}
-	}
+	hise::ValueToTextConverter getValueToTextConverter() const;
 
 	operator bool() const
 	{
@@ -427,7 +413,39 @@ struct data
 
 	pod info;
 	dynamic callback;
-	StringArray parameterNames;
+
+	struct ParameterNames
+	{
+		const void* data = nullptr;
+		size_t size = 0;
+
+		StringArray toStringArray() const
+		{
+			StringArray sa;
+
+			if(size != 0 && data != nullptr)
+			{
+				MemoryInputStream mis(data, size, false);
+
+				while (!mis.isExhausted())
+					sa.add(mis.readString());
+			}
+
+			return sa;
+		}
+	};
+
+	ParameterNames getParameterNames() const
+	{
+		if(parameterNames != nullptr)
+			return { parameterNames->getData(), parameterNames->getNumBytes() };
+		else
+			return { nullptr, 0 };
+	}
+
+private:
+
+	RefCountedHeapBuffer::Ptr parameterNames;
 };
 
 /** A Parameter encoder encodes / decodes the parameter data of a node
@@ -494,7 +512,56 @@ private:
 
 using ParameterDataList = Array<parameter::data>;
 
+struct PageInfo
+{
+	static constexpr uint8 HasPageMarker =  0xF0;
+	static constexpr uint8 HasGroupMarker = 0x0F;
 
+	PageInfo(const parameter::pod& info);
+	PageInfo(InputStream& mis);
+	
+	void writeToStream(OutputStream& mos) const;
+
+	struct Tree
+	{
+		Tree(const ParameterDataList& list);
+
+		int getNumMaxSlidersPerPage() const;
+
+		bool hasPageLayout() const { return hasLayout; }		
+		bool hasMoreThanOnePage() const { return hasLayout && pageTree.size() > 1; }
+		bool hasGroupTags() const { return hasLayout && hasTags; }
+
+		String getGroupIdForParameter(int parameterIndex) const;
+		StringArray getPageNames() const;
+		StringArray getGroups(const String& page) const;
+
+		ParameterDataList getList(const String& page, const String& group) const;
+
+	private:
+
+		bool hasTags = false;
+
+		ParameterDataList& getBucket(const String& page, const String& group);
+
+		bool hasLayout = false;
+		ParameterDataList flatList;
+		std::vector<std::pair<String, std::vector<std::pair<String, ParameterDataList>>>> pageTree;
+
+		JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Tree);
+	};
+
+	static std::unique_ptr<Tree> createPageTree(const ValueTree& parameterTree);
+	static bool hasPageData(const ValueTree& pTree);
+
+	operator bool() const { return isPage() || isGroup(); }
+
+	bool isPage() const { return page.isNotEmpty(); }
+	bool isGroup() const { return group.isNotEmpty(); }
+
+	String page;
+	String group;
+};
 
 
 

@@ -57,6 +57,12 @@ struct ScriptingApi::Content::ScriptSlider::MultiMatrixModulatorConnection: publ
 		{
 			auto mvf = m->getModulationQueryFunction(MatrixModulator::SpecialParameters::Value);
 			auto componentIndex = s.getScriptProcessor()->getScriptingContent()->getComponentIndex(&s);
+
+			// if this happens, the component wasn't added yet.
+			if(componentIndex == -1)
+				componentIndex = s.getScriptProcessor()->getScriptingContent()->getNumComponents();
+
+
 			s.getScriptProcessor()->setModulationDisplayQueryFunction(componentIndex, m, mvf);
 			uint16 indexes[1] = { (uint16)componentIndex };
 			addToProcessor(dynamic_cast<Processor*>(s.getScriptProcessor()), indexes, 1, dispatch::sendNotificationSync);
@@ -113,7 +119,7 @@ struct ScriptingApi::Content::ScriptSlider::MatrixCableConnection: public Matrix
 		QueryFunction(MatrixCableConnection* c);
 		WeakReference<MatrixCableConnection> connection;
 		bool onScaleDrag(Processor* p, bool isDown, float delta) override { return true; };
-		ModulationDisplayValue getDisplayValue(Processor* p, double nv, NormalisableRange<double> nr) const override;
+		ModulationDisplayValue getDisplayValue(Processor* p, double nv, NormalisableRange<double> nr, int sourceIndex) const override;
 	};
 
 	struct Target: public routing::GlobalRoutingManager::CableTargetBase,
@@ -184,7 +190,7 @@ struct ScriptingApi::Content::ScriptSlider::MatrixCableConnection: public Matrix
 	void rebuildTargets();
 
 	SimpleRingBuffer::Ptr getDisplayBuffer(int sourceIndex) override;
-	ModulationDisplayValue getDisplayValue(double nv, NormalisableRange<double> nr);
+	ModulationDisplayValue getDisplayValue(double nv, NormalisableRange<double> nr, int displayIndex);
 	void onSourceTargetChange(const ValueTree& v, const Identifier& id);
 	void addConnection(const ValueTree& v);
 	void removeConnection(const ValueTree& v);

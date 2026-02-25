@@ -875,6 +875,27 @@ public:
         bool prevValue;
     };
 
+    struct ScopedChildSkipper
+    {
+        ScopedChildSkipper(Processor& p_):
+          p(p_)
+        {
+            prevValue = p.skipRestoreChildProcessors;
+            p.skipRestoreChildProcessors = true;
+        };
+        
+        ~ScopedChildSkipper()
+        {
+            p.skipRestoreChildProcessors = prevValue;
+        }
+        
+        bool prevValue;
+        Processor& p;
+    };
+    
+	/** Call this from the baseclass whenever you want its editor to display a value change. */
+	void setOutputValue(float newValue);;
+
 protected:
 
 	/** Overwrite this method if you want to supply a custom symbol for the Processor. 
@@ -885,8 +906,7 @@ protected:
 
 	DisplayValues currentValues;
 
-	/** Call this from the baseclass whenever you want its editor to display a value change. */
-	void setOutputValue(float newValue);;
+	
 
 	/** Call this from the baseclass whenever you want its editor to display a input value change. 
 	*
@@ -945,6 +965,8 @@ private:
 	WeakReference<Processor>::Master masterReference;
     friend class WeakReference<Processor>;
 
+    bool skipRestoreChildProcessors = false;
+    
 	Array<bool> editorStateAsBoolList;
 
 	BigInteger editorState;
@@ -1107,6 +1129,9 @@ public:
 
 	static int getParameterIndexFromProcessor(Processor* p, const Identifier& id);
 
+	static String getDisplayName(Processor* p);
+
+	static void changeDisplayName(Processor* p, const String& newText);
 };
 
 } // namespace hise

@@ -81,7 +81,7 @@ public:
 		Incompatible
 	};
 
-	void initialise(NodeBase* n)
+	void initialise(ObjectWithValueTree* n)
 	{
 		config.initialise(n);
 	}
@@ -243,9 +243,9 @@ public:
 					
 				}
 				else
-					v = mv.toBlock()[s.uptime++];
+					v = bl[s.uptime++];
 
-				if(s.uptime == mv.toBlock().size())
+				if(s.uptime == bl.size())
 					s.uptime = 0;
 
 				applyModulation(&v, 1, s.baseValue, s.intensity);
@@ -349,20 +349,18 @@ public:
 						s.uptime = 0;
 
 					applyModulation(target.begin(), data.getNumSamples(), s.baseValue, s.intensity);
-				}
+ 				}
 				else if (t == Types::ID::Void)
 				{
 					for(int i = 0; i < numToCopy; i++)
 						target[i] = s.baseValue.advance();
-				}
+				} 
 
 				if(ConfigClass::shouldEnableDisplayBuffer() && state.isFirst())
 				{
 					auto numToWrite = jmax(2, data.getNumSamples() / DisplayBufferDownsamplingFactor);
 					this->updateBuffer(target[0], numToWrite);
-
 				}
-					
 
 				modValue.setModValue(target[0]);
 			}
@@ -538,6 +536,9 @@ private:
 	SignalRatio sr = SignalRatio::Uninitialised;
 	bool ok = false;
 	ModValue modValue;
+
+public:
+
 };
 
 }
@@ -997,6 +998,8 @@ template <int NV> struct matrix_mod:
 	}
 
 	float zeroDelta = 0.0f;;
+
+	double getLastModValue() const { return mv.getModValue(); }
 
 private:
 

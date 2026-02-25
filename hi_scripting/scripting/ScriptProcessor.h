@@ -74,12 +74,12 @@ public:
 			return false;
 		}
 
-		ModulationDisplayValue getDisplayValue(Processor* p, double nv, NormalisableRange<double> nr) const override
+		ModulationDisplayValue getDisplayValue(Processor* p, double nv, NormalisableRange<double> nr, int displayIndex) const override
 		{
 			jassert(targetFunction != nullptr);
 
 			if(safeP != nullptr)
-				return targetFunction->getDisplayValue(safeP, nv, nr);
+				return targetFunction->getDisplayValue(safeP, nv, nr, displayIndex);
 
 			return {};
 		}
@@ -305,6 +305,12 @@ public:
 
 	/** This includes every external script, compresses it and returns a base64 encoded string that can be shared without further dependencies. */
 	static ValueTree collectAllScriptFiles(ModulatorSynthChain *synthChainToExport);
+
+	void checkOnFocusGain()
+	{
+		if(reloader != nullptr)
+			reloader->timerCallback();
+	}
 
 private:
 

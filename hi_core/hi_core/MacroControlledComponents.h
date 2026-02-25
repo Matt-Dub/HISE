@@ -199,6 +199,9 @@ struct HisePluginParameterBase: public ControlledObject,
 		auto t = mc->getKillStateHandler().getCurrentThread();
 		auto defer = mc->getDeferNotifyHostFlag() || t != MainController::KillStateHandler::TargetThread::MessageThread;
 
+		if(!getMainController()->getPluginParameterUpdateState())
+			return;
+
 		if(defer)
 			triggerAsyncUpdate();
 		else
@@ -228,6 +231,11 @@ struct HisePluginParameterBase: public ControlledObject,
 		auto typed = dynamic_cast<juce::AudioProcessorParameter*>(this);
 		jassert(typed != nullptr);
 		return typed;
+	}
+
+	void setSendToHost(bool shouldSendToHost)
+	{
+		sendToHost = shouldSendToHost;
 	}
 
 protected:
@@ -685,47 +693,7 @@ public:
     
 	bool enableShiftTextInput = true;
 
-    bool performModifierAction(const MouseEvent& e, bool isDoubleClick, bool isMouseDown = true)
-    {
-        auto a = modObject.getActionForModifier(e.mods, isDoubleClick);
-        
-        if(isMouseDown && a == ModifierObject::Action::TextInput)
-        {
-            onShiftClick(e);
-			return true;
-        }
-        if(isMouseDown && a == ModifierObject::Action::ResetToDefault)
-        {
-            if(asSlider()->isDoubleClickReturnEnabled())
-            {
-                auto defaultValue = asSlider()->getDoubleClickReturnValue();
-                asSlider()->setValue(defaultValue, sendNotificationSync);
-                return true;
-            }
-        }
-        if(isMouseDown && a == ModifierObject::Action::ContextMenu)
-        {
-            if(auto mco = dynamic_cast<MacroControlledObject*>(this))
-				mco->enableMidiLearnWithPopup();
-			else if(customPopupFunction)
-				customPopupFunction(e);
-
-            return true;
-        }
-		if(a == ModifierObject::Action::ScaleModulation)
-		{
-			if(scaleFunction)
-			{
-				float delta = ModulationDisplayValue::getDeltaForDragEvent(*asSlider(), e);
-				
-				return scaleFunction(isMouseDown, delta);
-			}
-
-			return true;
-		}
-        
-        return false;
-    }
+    bool performModifierAction(const MouseEvent& e, bool isDoubleClick, bool isMouseDown = true);
 
 protected:
 
@@ -766,7 +734,7 @@ protected:
 class HiSlider: public juce::Slider,
 			    public SliderWithShiftTextBox,
 				public MacroControlledObject,
-				public SliderListener,
+				public Slider::Listener,
 				public ProfiledComponent,
 				public TouchAndHoldComponent,
 			    public DragAndDropTarget
@@ -940,9 +908,18 @@ public:
 		bool canBeDropped(const var& info) const;
 		void onDrop(const var& info);
 
+		bool isUsingExclusiveSourceMode() const { return exclusiveSourceMode; }
+
+		bool exclusiveSourceMode = false;
+		int currentExlusiveIndex = -1;
+
+		static void onExclusiveSourceSelection(ModUpdater& updater, int sourceIndex);
+
 		ModulationDisplayValue::QueryFunction::Ptr modFunction;
 		HiSlider& parent;
 		ModulationDisplayValue lastValue;
+		
+		JUCE_DECLARE_WEAK_REFERENCEABLE(ModUpdater);
 	} ;
 
 	bool isInterestedInDragSource (const SourceDetails& dragSourceDetails) override
@@ -958,6 +935,12 @@ public:
 			repaint();
 		}
 		
+	}
+
+	void visibilityChanged() override
+	{
+		if(currentHoverPopup != nullptr && modUpdater != nullptr && modUpdater->isUsingExclusiveSourceMode())
+			currentHoverPopup->setVisible(isVisible());
 	}
 
     void itemDragExit (const SourceDetails& d) override
@@ -988,6 +971,8 @@ private:
 	double dragStartValue = 0.0f;
 	ScopedPointer<LookAndFeel> laf;
 	HoverPopupLookandFeel fallback;
+
+	bool skipGestureActive = false;
 };
 
 

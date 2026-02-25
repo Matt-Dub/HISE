@@ -206,7 +206,14 @@ struct GlobalRoutingManager: public ReferenceCountedObject
             
             if(Add)
             {
-                return rt.runtimeTargets.addIfNotAlreadyThere(tt);
+                auto ok = rt.runtimeTargets.addIfNotAlreadyThere(tt);
+
+				if(ok && c->lastData.getSize() > 0)
+				{
+					tt->onData(c->lastData.getData(), c->lastData.getSize());
+				}
+
+				return ok;
             }
             else
                 return rt.runtimeTargets.removeAllInstancesOf(tt) != 0;
@@ -238,6 +245,7 @@ struct GlobalRoutingManager: public ReferenceCountedObject
         void sendValue(CableTargetBase* source, double v);
 		double getLastValue() const { return lastValue; }
 
+		MemoryBlock lastData;
 		double lastValue = 0.0;
 		CableTargetBase::List targets;
         
@@ -367,6 +375,50 @@ struct GlobalRoutingManager: public ReferenceCountedObject
 	LambdaBroadcaster<OSCConnectionData::Ptr> oscListeners;
 
 	hise::AdditionalEventStorage additionalEventStorage;
+	struct GlobalUUIDManager: public hise::DllBoundaryUUIDManager
+	{
+		/** Override this method, make sure that the initialId is unique and update the char buffer and length accordingly. */
+		void registerUUID(void* obj, char* initialId, int& numBytes) override
+		{
+			if (uuids.find(obj) != uuids.end())
+			{
+				auto x = uuids.at(obj);
+
+				numBytes = x.length();
+				memcpy(initialId, x.begin().getAddress(), numBytes);
+				return;
+			}
+
+			String id(initialId, numBytes);
+
+			int numFound = 0;
+
+			for (const auto& existing : uuids)
+			{
+				if (existing.second == id)
+					numFound++;
+			}
+
+			if (numFound != 0)
+				id << String(numFound);
+
+			uuids[obj] = id;
+
+			numBytes = (int)id.getNumBytesAsUTF8();
+			memcpy(initialId, id.begin().getAddress(), numBytes);
+		}
+
+		/** Override this method and remove the UUID for the given object. */
+		bool deregisterUUID(void* obj) override
+		{
+			return uuids.erase(obj) != 0;
+		}
+
+		/** Removes all UUIDs. */
+		void clearUUIDs() override { uuids.clear(); }
+
+		std::map<void*, juce::String> uuids;
+	} uuidManager;
 
 	void sendOSCError(const String& r);
 

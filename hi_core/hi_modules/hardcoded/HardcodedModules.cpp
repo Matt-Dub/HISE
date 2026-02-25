@@ -119,15 +119,16 @@ void HardcodedMasterFX::connectionChanged()
 
 bool HardcodedMasterFX::setEffect(const String& newEffect, bool cond)
 {
-		
-
 	auto ok = HardcodedSwappableEffect::setEffect(newEffect, true);
 
 	if(ok)
 	{
 		extraMods.updateModulationProperties(modProperties, 
-		                                     BIND_MEMBER_FUNCTION_1(HardcodedSwappableEffect::getParameterInitData));
+			BIND_MEMBER_FUNCTION_1(HardcodedSwappableEffect::getParameterInitData));
 	}
+
+	extraMods.updateModulationChainIdAndColour(this, modProperties,
+		BIND_MEMBER_FUNCTION_1(HardcodedSwappableEffect::getOpaqueNodeParameterId));
 
 	return ok;
 }
@@ -538,7 +539,9 @@ bool HardcodedPolyphonicFX::isVoiceResetActive() const
 void HardcodedPolyphonicFX::onVoiceReset(bool allVoices, int voiceIndex)
 {
 	if (allVoices)
-		voiceStack.voiceNoteOns.clear();
+	{
+		getMainController()->allNotesOff();
+	}
 	else
 		voiceStack.reset(voiceIndex);
 }
@@ -551,8 +554,11 @@ bool HardcodedPolyphonicFX::setEffect(const String& effectName, bool cond)
 	{
 		jassert(opaqueNode != nullptr);
 		extraModSources.updateModulationProperties(modProperties, 
-		                                           BIND_MEMBER_FUNCTION_1(HardcodedSwappableEffect::getParameterInitData));
+			BIND_MEMBER_FUNCTION_1(HardcodedSwappableEffect::getParameterInitData));
 	}
+
+	extraModSources.updateModulationChainIdAndColour(this, modProperties,
+		BIND_MEMBER_FUNCTION_1(HardcodedSwappableEffect::getOpaqueNodeParameterId));
 
 	return ok;
 }
@@ -661,6 +667,12 @@ bool HardcodedTimeVariantModulator::checkHardcodedChannelCount()
 
 Result HardcodedTimeVariantModulator::prepareOpaqueNode(scriptnode::OpaqueNode *n)
 {
+	if (auto rm = dynamic_cast<scriptnode::routing::GlobalRoutingManager*>(asProcessor().getMainController()->getGlobalRoutingManager()))
+	{
+		tempoSyncer.additionalEventStorage = &rm->additionalEventStorage;
+		tempoSyncer.uuidManager = &rm->uuidManager;
+	}
+
     if (n != nullptr && asProcessor().getSampleRate() > 0.0 && asProcessor().getLargestBlockSize() > 0)
     {
         PrepareSpecs ps;
@@ -766,8 +778,7 @@ void HardcodedEnvelopeModulator::onVoiceReset(bool allVoices, int voiceIndex)
 {
 	if (allVoices)
 	{
-		for (int i = 0; i < polyManager.getVoiceAmount(); i++)
-			reset(i);
+		getMainController()->allNotesOff();
 	}
 	else
 		reset(voiceIndex);
@@ -794,7 +805,10 @@ void HardcodedEnvelopeModulator::prepareToPlay(double sampleRate, int samplesPer
 Result HardcodedEnvelopeModulator::prepareOpaqueNode(scriptnode::OpaqueNode* n)
 {
 	if(auto rm = dynamic_cast<scriptnode::routing::GlobalRoutingManager*>(asProcessor().getMainController()->getGlobalRoutingManager()))
+	{
 		tempoSyncer.additionalEventStorage = &rm->additionalEventStorage;
+		tempoSyncer.uuidManager = &rm->uuidManager;
+	}
 
 	if (n != nullptr && asProcessor().getSampleRate() > 0.0 && asProcessor().getLargestBlockSize() > 0)
 	{
@@ -937,12 +951,12 @@ void HardcodedSynthesiser::Voice::resetVoice()
 
 void HardcodedSynthesiser::Voice::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
-	ModulatorSynthVoice::prepareToPlay(sampleRate, samplesPerBlock);
-
 	auto numSynthChannels = synth->numChannelsToRender;
 
-	if(numSynthChannels != voiceBuffer.getNumChannels())
+	if (numSynthChannels != voiceBuffer.getNumChannels())
 		voiceBuffer.setSize(numSynthChannels, samplesPerBlock);
+	
+	ModulatorSynthVoice::prepareToPlay(sampleRate, samplesPerBlock);
 }
 
 HardcodedSynthesiser::HardcodedSynthesiser(MainController* mc, const String& id, int numVoices):
@@ -1137,8 +1151,11 @@ bool HardcodedSynthesiser::setEffect(const String& effectName, bool cond)
 	{
 		jassert(opaqueNode != nullptr);
 		extraModSources.updateModulationProperties(modProperties, 
-		                                           BIND_MEMBER_FUNCTION_1(HardcodedSwappableEffect::getParameterInitData));
+			BIND_MEMBER_FUNCTION_1(HardcodedSwappableEffect::getParameterInitData));
 	}
+
+	extraModSources.updateModulationChainIdAndColour(this, modProperties,
+		BIND_MEMBER_FUNCTION_1(HardcodedSwappableEffect::getOpaqueNodeParameterId));
 
 	return ok;
 }
@@ -1147,8 +1164,7 @@ void HardcodedSynthesiser::onVoiceReset(bool allVoices, int voiceIndex)
 {
 	if (allVoices)
 	{
-		for(auto v: activeVoices)
-			v->resetVoice();
+		getMainController()->allNotesOff();
 	}
 	else
 	{

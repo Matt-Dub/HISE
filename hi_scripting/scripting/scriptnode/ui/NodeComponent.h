@@ -54,7 +54,8 @@ using NodeProfiler = DummyNodeProfiler;
 
 class NodeComponent : public ComponentWithMiddleMouseDrag,
 					  public DspNetwork::SelectionListener,
-					  public ComponentWithDocumentation
+					  public ComponentWithDocumentation,
+					  public ParameterSourceObject
 {
 public:
 
@@ -130,6 +131,7 @@ public:
 		void updateColour(Identifier id, var value)
 		{
 			colour = PropertyHelpers::getColourFromVar(value);
+			parent.setColour(complex_ui_laf::NodeColourId, colour);
 			repaint();
 		}
 
@@ -192,12 +194,82 @@ public:
 	{
 		static juce::Rectangle<int> getPositionInCanvasForStandardSliders(const NodeBase* n, Point<int> topLeft);
 
-		static juce::Rectangle<int> createRectangleForParameterSliders(const NodeBase* n, int numColumns);
+		static juce::Rectangle<int> createRectangleForParameterSliders(int numParameters, int numColumns);
+
+		static juce::Rectangle<int> withExtraBoundsApplied(const NodeBase* n, Rectangle<int> sliderBounds);
+
+		static juce::Rectangle<int> getPageBounds(int numParameters);
+
+		static void applySliderPositions(Rectangle<int>& b, const Array<Component::SafePointer<Component>>& sliders)
+		{
+			auto rowHeight = 48 + 28;
+			int numPerRow = jlimit(1, jmax(sliders.size(), 1), b.getWidth() / 100);
+			int numColumns = jmax(1, (b.getHeight() + 10) / rowHeight);
+
+			auto staticIntend = 0;
+
+			if (numColumns == 2 && numPerRow > 3)
+				numPerRow = (int)hmath::ceil((float)sliders.size() / 2.0f);
+
+			staticIntend = (b.getWidth() - numPerRow * 100) / 2;
+
+			auto intendOddRows = (sliders.size() % jmax(1, numPerRow)) != 0;
+
+			auto rowIndex = 0;
+
+			auto row = b.removeFromTop(rowHeight);
+			row.removeFromLeft(staticIntend);
+			row.removeFromRight(staticIntend);
+
+			for (auto s : sliders)
+			{
+				auto sliderBounds = row.removeFromLeft(100);
+
+				if (sliderBounds.getWidth() < 100)
+				{
+					rowIndex++;
+					row = b.removeFromTop(rowHeight);
+
+					auto intend = staticIntend;
+
+					if (intendOddRows && (rowIndex % 2 != 0))
+						intend += 50;
+
+					row.removeFromLeft(intend);
+					row.removeFromRight(staticIntend);
+
+					sliderBounds = row.removeFromLeft(100);
+				}
+
+				if (b.getHeight() > 0)
+					sliderBounds.removeFromBottom(10);
+
+				s->setBounds(sliderBounds);
+			}
+		}
 	};
 
 	void paint(Graphics& g) override;
 	void paintOverChildren(Graphics& g) override;
 	void resized() override;
+
+	double getParameterValue(int index) const override
+	{
+		jassert(isPositiveAndBelow(index, node->getNumParameters()));
+		return node->getParameterFromIndex(index)->getValue();
+	}
+
+	InvertableParameterRange getParameterRange(int index) const override
+	{
+		jassert(isPositiveAndBelow(index, node->getNumParameters()));
+		return RangeHelpers::getDoubleRange(node->getParameterFromIndex(index)->data);
+	}
+
+	PrepareSpecs getLastPrepareSpecs() const override { return node->getLastPrepareSpecs(); }
+
+	ValueTree getValueTree() const override { return node->getValueTree(); }
+
+	UndoManager* getUndoManager() const override { return node->getUndoManager(); }
 
 	bool keyPressed(const KeyPress& key) override
 	{
@@ -279,28 +351,6 @@ struct DeactivatedComponent : public NodeComponent
 	void resized() override;
 };
 
-struct simple_visualiser : public ScriptnodeExtraComponent<NodeBase>
-{
-	simple_visualiser(NodeBase*, PooledUIUpdater* u);
 
-	NodeBase* getNode();
-	double getParameter(int index);
-    
-    InvertableParameterRange getParameterRange(int index);
-    
-	Colour getNodeColour();
-
-	void timerCallback() override;
-	virtual void rebuildPath(Path& path) = 0;
-	void paint(Graphics& g) override;
-
-	Path original;
-	Path gridPath;
-	Path p;
-
-	bool stroke = true;
-	bool drawBackground = true;
-	float thickness = 1.0f;
-};
 
 }

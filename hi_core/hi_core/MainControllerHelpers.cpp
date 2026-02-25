@@ -983,7 +983,7 @@ bool MidiControllerAutomationHandler::handleControllerMessage(const HiseEvent& e
 					}
 					else
 					{
-						a.processor->setAttribute(a.attribute, snappedValue, sendNotificationAsync);
+						a.processor->setAttribute(a.attribute, snappedValue, sendNotificationSync);
 					}
 
 					a.lastValue = snappedValue;
@@ -1609,7 +1609,8 @@ void AudioRendererBase::initAfterFillingEventBuffer()
 			for (int i = 0; i < numChannelsToRender; i++)
 				channels.add(new VariantBuffer(numSamplesToRender));
 
-			Thread::startThread(8);
+			ThreadStarters::startHigh(this);
+
 		}
 	}
 }
@@ -1865,6 +1866,7 @@ String OverlayMessageBroadcaster::getOverlayTextMessage(State s) const
 #endif
 
 		break;
+#if HISE_INCLUDE_UNLOCKER_OVERLAY
 	case LicenseNotFound:
 	{
 #if USE_COPY_PROTECTION
@@ -1906,6 +1908,7 @@ String OverlayMessageBroadcaster::getOverlayTextMessage(State s) const
 		return "";
 #endif
 	}
+#endif
 	case State::CustomErrorMessage:
 	case State::CriticalCustomErrorMessage:
 	case State::CustomInformation:

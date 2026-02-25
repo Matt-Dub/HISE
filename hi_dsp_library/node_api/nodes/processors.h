@@ -268,9 +268,10 @@ public:
 	static constexpr int getFixChannelAmount() { return NumChannels; };
 
 	/** Forwards the callback to its wrapped object. */
-	void initialise(NodeBase* n)
+	void initialise(ObjectWithValueTree* n)
 	{
-		this->obj.initialise(n);
+		if constexpr(prototypes::check::initialise<T>::value)
+			this->obj.initialise(n);
 	}
 
 	/** Forwards the callback to its wrapped object, but it will change the channel amount to NumChannels. */
@@ -354,7 +355,7 @@ public:
 	SN_DEFAULT_PROCESS(T);
 	SN_DEFAULT_MOD(T);
 
-	void initialise(NodeBase* n)
+	void initialise(ObjectWithValueTree* n)
 	{
 		if constexpr(prototypes::check::initialise<T>::value)
 			obj.initialise(n);
@@ -401,9 +402,10 @@ public:
 
 	SN_OPAQUE_WRAPPER(skip, T);
 
-	void initialise(NodeBase* n)
+	void initialise(ObjectWithValueTree* n)
 	{
-		this->obj.initialise(n);
+		if constexpr (prototypes::check::initialise<T>::value)
+			this->obj.initialise(n);
 	}
 
 	void prepare(PrepareSpecs) {}
@@ -545,6 +547,8 @@ public:
 private:
 };
 
+
+
 template <class T> class no_data
 {
 public:
@@ -591,9 +595,10 @@ public:
 
 	SN_OPAQUE_WRAPPER(frame_x, T);
 
-	void initialise(NodeBase* n)
+	void initialise(ObjectWithValueTree* n)
 	{
-		obj.initialise(n);
+		if constexpr (prototypes::check::initialise<T>::value)
+			this->obj.initialise(n);
 	}
 
 	void prepare(PrepareSpecs ps)
@@ -1026,9 +1031,10 @@ public:
 		oversampler->processSamplesDown(bl);
 	}
 
-	void initialise(NodeBase* n)
+	void initialise(ObjectWithValueTree* n)
 	{
-		obj.initialise(n);
+		if constexpr (prototypes::check::initialise<T>::value)
+			this->obj.initialise(n);
 	}
 
 private:
@@ -1152,7 +1158,11 @@ public:
 	SN_EMPTY_PROCESS_FRAME;
 	SN_EMPTY_HANDLE_EVENT;
 	
-	void initialise(NodeBase* n) { obj.initialise(n); }
+	void initialise(ObjectWithValueTree* n)
+	{
+		if constexpr (prototypes::check::initialise<T>::value)
+			this->obj.initialise(n);
+	}
 
 	void prepare(PrepareSpecs ps) { obj.prepare(ps); }
 
@@ -1240,15 +1250,16 @@ template <class T, typename FixBlockClass> struct fix_blockx
 {
 	SN_OPAQUE_WRAPPER(fix_blockx, T);
 
-	
 	SN_DEFAULT_RESET(T);
 	SN_DEFAULT_MOD(T);
 	SN_DEFAULT_HANDLE_EVENT(T);
 
-	void initialise(NodeBase* n)
+	void initialise(ObjectWithValueTree* n)
 	{
 		fbClass.initialise(n);
-		obj.initialise(n);
+
+		if constexpr (prototypes::check::initialise<T>::value)
+			this->obj.initialise(n);
 	}
 
 	void prepare(PrepareSpecs ps)
@@ -1307,9 +1318,10 @@ template <class T> struct dynamic_blocksize
 		obj.prepare(ps);
 	}
 
-	void initialise(NodeBase* n)
+	void initialise(ObjectWithValueTree* n)
 	{
-		obj.initialise(n);
+		if constexpr (prototypes::check::initialise<T>::value)
+			this->obj.initialise(n);
 	}
 
 	void handleHiseEvent(HiseEvent& e)
@@ -1409,9 +1421,10 @@ public:
 
 	constexpr static bool isModulationSource = false;
 
-	void initialise(NodeBase* n)
+	void initialise(ObjectWithValueTree* n)
 	{
-		obj.initialise(n);
+		if constexpr (prototypes::check::initialise<T>::value)
+			this->obj.initialise(n);
 	}
 
 	void prepare(PrepareSpecs ps)
@@ -1527,9 +1540,10 @@ template <class ParameterClass, class T> struct mod
 		checkModValue();
 	}
 
-	inline void initialise(NodeBase* n)
+	void initialise(ObjectWithValueTree* n)
 	{
-		obj.initialise(n);
+		if constexpr (prototypes::check::initialise<T>::value)
+			this->obj.initialise(n);
 	}
 
 	/** Calls handleHiseEvent on the wrapped object and sends out a modulation signal if required. */
@@ -1623,7 +1637,7 @@ template <typename T> struct illegal_poly: public scriptnode::data::base,
 
 	static Identifier getStaticId() { return T::getStaticId(); }
 
-	static constexpr bool isPolyphonic() { return true; }
+	static constexpr bool isPolyphonic() { return false; }
 
 	void prepare(PrepareSpecs ps)
 	{
@@ -1644,7 +1658,11 @@ template <typename T> struct illegal_poly: public scriptnode::data::base,
 	SN_EMPTY_HANDLE_EVENT;
 	SN_EMPTY_MOD;
 	
-	void initialise(NodeBase* n) { obj.initialise(n); }
+	void initialise(ObjectWithValueTree* n)
+	{
+		if constexpr (prototypes::check::initialise<T>::value)
+			this->obj.initialise(n);
+	}
 
 	void createParameters(ParameterDataList& l) { obj.createParameters(l); }
 
@@ -1652,7 +1670,6 @@ template <typename T> struct illegal_poly: public scriptnode::data::base,
 
 	T obj;
 };
-
 
 
 /** A "base class for the node template". */
@@ -1706,9 +1723,10 @@ template <class T> struct node : public scriptnode::data::base
 	{
 	}
 
-	void initialise(NodeBase* n)
+	void initialise(ObjectWithValueTree* n)
 	{
-		obj.initialise(n);
+		if constexpr (prototypes::check::initialise<T>::value)
+			this->obj.initialise(n);
 	}
 
 	template <int P> static void setParameterStatic(void* ptr, double v)
@@ -1752,12 +1770,9 @@ template <class T> struct node : public scriptnode::data::base
 		obj.handleHiseEvent(e);
 	}
 
-	bool isPolyphonic() const
+	constexpr bool isPolyphonic()
 	{
-		if constexpr (prototypes::check::isPolyphonic<T>::value)
-			return obj.isPolyphonic();
-		else
-			return false;
+		return obj.isPolyphonic();
 	}
 
 	static constexpr bool isProcessingHiseEvent()
@@ -1768,7 +1783,10 @@ template <class T> struct node : public scriptnode::data::base
 			return false;
 	}
 
-	void reset() noexcept { obj.reset(); }
+	void reset() noexcept 
+	{ 
+		obj.reset(); 
+	}
 
 	bool handleModulation(double& value) noexcept
 	{
@@ -1803,7 +1821,7 @@ template <class T> struct node : public scriptnode::data::base
 	void createParameters(ParameterDataList& data)
 	{
 		ParameterDataList l;
-		obj.parameters.addToList(l);
+		obj.getObject().parameters.addToList(l);
 
 		auto peList = parameter::encoder::fromNode<node>();
 

@@ -527,6 +527,22 @@ Node::Ptr ValueTreeBuilder::parseRuntimeTargetNode(Node::Ptr u)
 			jassertfalse;
 		}
 
+		auto factoryPath = ValueTreeIterator::getNodeFactoryPath(u->nodeTree);
+
+		if(factoryPath.toString() == "math::neural")
+		{
+			auto fixHpfValue = ValueTreeIterator::getNodeProperty(u->nodeTree, PropertyIds::HpfFreq).toString();
+			std::map<String, String> hpfMap;
+			hpfMap[""] = "HpfFrequency::Off";
+			hpfMap["Off"] = "HpfFrequency::Off";
+			hpfMap["1 Hz"] = "HpfFrequency::Hz1";
+			hpfMap["5 Hz"] = "HpfFrequency::Hz5";
+
+			auto v = hpfMap[fixHpfValue];
+
+			*u << v;
+		}
+
 		if(CustomNodeProperties::nodeHasProperty(u->nodeTree, PropertyIds::NeedsModConfig))
 		{
 			auto cid = getNodeId(u->nodeTree).getIdentifier().toString();
@@ -546,10 +562,10 @@ Node::Ptr ValueTreeBuilder::parseRuntimeTargetNode(Node::Ptr u)
 				switch(config.config.getMode())
 				{
 				case modulation::TargetMode::Gain:
-					configClass << "modulation::TargetMode::Gain:";
+					configClass << "modulation::TargetMode::Gain";
 					break;
 				case modulation::TargetMode::Unipolar:
-					configClass << "modulation::TargetMode::Unipolar:";
+					configClass << "modulation::TargetMode::Unipolar";
 					break;
 				case modulation::TargetMode::Bipolar:
 					configClass << "modulation::TargetMode::Bipolar";
@@ -1897,11 +1913,13 @@ int ValueTreeIterator::getFixRuntimeHash(const ValueTree &nodeTree)
         auto c = getNodeProperty(nodeTree, PropertyIds::Connection).toString();
         return c.hashCode();
     }
-	if(path == NamespacedIdentifier::fromString("core::global_mod"))
+	if(path == NamespacedIdentifier::fromString("core::global_mod") ||
+	   path == NamespacedIdentifier::fromString("envelope::global_mod_gate"))
 	{
 		return 1;
 	}
-	if(path == NamespacedIdentifier::fromString("core::extra_mod"))
+	if(path == NamespacedIdentifier::fromString("core::extra_mod") ||
+	   path == NamespacedIdentifier::fromString("envelope::extra_mod_gate"))
 	{
 		return modulation::config::CustomOffset;
 #if 0
@@ -2576,13 +2594,25 @@ void ValueTreeBuilder::RootContainerBuilder::addParameterConnections()
 
 		for (auto containerWithParameter : pList)
 		{
+			String prefix = containerWithParameter->nodeTree[PropertyIds::ID].toString();
+
+			prefix = snex::cppgen::StringHelpers::makeValidCppName(prefix);
+
+			if(containerWithParameter == root)
+				prefix = "";
+
 			for (auto p : containerWithParameter->nodeTree.getChildWithName(PropertyIds::Parameters))
 			{
 				String def;
 
 				PooledStackVariable::Ptr c = getChildNodeAsStackVariable(containerWithParameter->nodeTree);
 				
-				auto pId = p[PropertyIds::ID].toString();
+				String pId;
+
+				if(prefix.isNotEmpty())
+					pId << prefix << "_";
+
+				pId << StringHelpers::makeValidCppName(p[PropertyIds::ID].toString());
 				pId << "_p";
 
 				StackVariable pv(parent, pId, TypeInfo(Types::ID::Dynamic, false, true));

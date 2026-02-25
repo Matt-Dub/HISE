@@ -55,8 +55,9 @@
 namespace hise { using namespace juce;
 
 
-ValueTreeUpdateWatcher::ScopedDelayer::ScopedDelayer(ValueTreeUpdateWatcher* watcher_) :
-	watcher(watcher_)
+ValueTreeUpdateWatcher::ScopedDelayer::ScopedDelayer(ValueTreeUpdateWatcher* watcher_, bool forceMessageThread_) :
+	watcher(watcher_),
+    forceMessageThread(forceMessageThread_)
 {
 	if (watcher != nullptr)
 		watcher->delayCalls = true;
@@ -69,7 +70,19 @@ ValueTreeUpdateWatcher::ScopedDelayer::~ScopedDelayer()
 		watcher->delayCalls = false;
 
 		if (watcher->shouldCallAfterDelay)
-			watcher->callListener();
+		{
+			if (forceMessageThread)
+			{
+				SafeAsyncCall::callAsyncIfNotOnMessageThread<ValueTreeUpdateWatcher>(*watcher, [](ValueTreeUpdateWatcher& w)
+				{
+					w.callListener();
+				});
+			}
+			else
+			{
+				watcher->callListener();
+			}
+		}
 	}
 }
 
@@ -2369,7 +2382,7 @@ void ScriptingApi::Content::ScriptSlider::connectToModulatedParameter(String mod
 
 	if(auto p = ProcessorHelpers::getFirstProcessorWithName(getScriptProcessor()->getMainController_()->getMainSynthChain(), moduleId))
 	{
-		int parameterIndex;
+		int parameterIndex = -1;
 
 		if(parameterId.isInt())
 			parameterIndex = (int)parameterId;
@@ -2395,9 +2408,12 @@ void ScriptingApi::Content::ScriptSlider::connectToModulatedParameter(String mod
 			
 			getScriptProcessor()->setModulationDisplayQueryFunction(idx, p, mv);
 
-			if(auto gc = ProcessorHelpers::getFirstProcessorWithType<GlobalModulatorContainer>(p->getMainController()->getMainSynthChain()))
+			if(parameterIndex != -1)
 			{
-				setModulationData(gc->createMatrixModulationPopupData(p, parameterIndex));
+				if (auto gc = ProcessorHelpers::getFirstProcessorWithType<GlobalModulatorContainer>(p->getMainController()->getMainSynthChain()))
+				{
+					setModulationData(gc->createMatrixModulationPopupData(p, parameterIndex));
+				}
 			}
 		}
 		
@@ -2487,7 +2503,7 @@ void ScriptingApi::Content::ScriptSlider::setValueNormalized(double normalizedVa
 	if (minValue < maxValue &&
 		midPoint > minValue &&
 		midPoint < maxValue &&
-		step > 0.0)
+		step >= 0.0)
 	{
 		const double skew = log(0.5) / log((midPoint - minValue) / (maxValue - minValue));
 
@@ -2527,7 +2543,7 @@ double ScriptingApi::Content::ScriptSlider::getValueNormalized() const
 	if (minValue < maxValue &&
 		midPoint > minValue &&
 		midPoint < maxValue &&
-		step > 0.0)
+		step >= 0.0)
 	{
 		const double skew = log(0.5) / log((midPoint - minValue) / (maxValue - minValue));
 
@@ -2628,7 +2644,7 @@ juce::Array<hise::ScriptingApi::Content::ScriptComponent::PropertyWithValue> Scr
 	idList.add({ Properties::stepSize });
 	idList.add({ Properties::suffix });
 	idList.add({ ScriptComponent::defaultValue });
-	idList.add({ Properties::matrixTargetId, ""});
+	idList.add({ Properties::matrixTargetId });
 
 	return idList;
 }
@@ -5135,6 +5151,37 @@ void ScriptingApi::Content::ScriptPanel::repaintWrapped()
 	{
 		repaint();
 	}
+}
+
+Result ScriptingApi::Content::ScriptPanel::testCallback(const String& callbackId, const Array<var>& args)
+{
+	if (callbackId == "setMouseCallback")
+	{
+		auto ok = MouseCallbackComponent::validateEventObject(args[0], getScriptObjectProperty(ScriptPanel::allowCallbacks).toString());
+
+		if (!ok.wasOk())
+			return ok;
+
+		return testWithThis(mouseRoutine, args);
+	}
+	if (callbackId == "setPaintRoutine")
+	{
+		var g(new ScriptingObjects::GraphicsObject(getScriptProcessor(), this));
+
+		Array<var> ga;
+		ga.add(g);
+
+		return testWithThis(paintRoutine, ga);
+
+	}
+	if (callbackId == "setTimerCallback")
+		return testWithThis(timerRoutine, args);
+	if (callbackId == "setLoadingCallback")
+		return testWithThis(loadRoutine, args);
+	if (callbackId == "setFileDropCallback")
+		return testWithThis(fileDropRoutine, args);
+
+	return ScriptComponent::testCallback(callbackId, args);
 }
 
 var ScriptingApi::Content::ScriptPanel::addChildPanel()

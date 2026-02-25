@@ -49,10 +49,13 @@ namespace pimpl
 template <typename ParameterType> struct envelope_base: public control::pimpl::parameter_node_base<ParameterType>,
 														public polyphonic_base
 {
-    envelope_base(const Identifier& id):
-	  control::pimpl::parameter_node_base<ParameterType>(id),
-	  polyphonic_base(id, true)
-	{}
+    envelope_base(const Identifier& id_):
+	  control::pimpl::parameter_node_base<ParameterType>(id_),
+	  polyphonic_base(id_, true),
+	  id(id_)
+	{
+		cppgen::CustomNodeProperties::addModOutput(id, { "CV", "Gate" });
+	}
 
 	virtual ~envelope_base() {};
 
@@ -76,7 +79,7 @@ template <typename ParameterType> struct envelope_base: public control::pimpl::p
 		}
 	}
 
-	virtual void initialise(NodeBase* n)
+	virtual void initialise(ObjectWithValueTree* n)
 	{
 		this->p.initialise(n);
 
@@ -148,9 +151,11 @@ template <typename ParameterType> struct envelope_base: public control::pimpl::p
 		return false;
 	}
 
+	Identifier getId() { return id; }
+
 private:
 
-	
+	Identifier id;
 	bool pedal = false;
 	int numKeys = 0;
 	int numSustainedKeys = 0;
@@ -629,6 +634,7 @@ template <int NV, typename ParameterType> struct simple_ar: public pimpl::envelo
 		{
 			DEFINE_PARAMETERDATA(simple_ar, Attack);
 			p.setRange({ 0.0, 1000.0, 0.1 });
+			p.info.textConverter = parameter::pod::Time;
 			p.setSkewForCentre(100.0);
 			p.setDefaultValue(10.0);
 			data.add(std::move(p));
@@ -637,6 +643,7 @@ template <int NV, typename ParameterType> struct simple_ar: public pimpl::envelo
 		{
 			DEFINE_PARAMETERDATA(simple_ar, Release);
 			p.setRange({ 0.0, 1000.0, 0.1 });
+			p.info.textConverter = parameter::pod::Time;
 			p.setSkewForCentre(100.0);
 			p.setDefaultValue(10.0);
 			data.add(std::move(p));
@@ -645,6 +652,7 @@ template <int NV, typename ParameterType> struct simple_ar: public pimpl::envelo
 		{
 			DEFINE_PARAMETERDATA(simple_ar, Gate);
 			p.setRange({ 0.0, 1.0, 1.0 });
+			p.setParameterValueNames({ "Off", "On" });
 			p.setDefaultValue(0.0);
 			data.add(std::move(p));
 		}
@@ -652,13 +660,12 @@ template <int NV, typename ParameterType> struct simple_ar: public pimpl::envelo
 		{
 			DEFINE_PARAMETERDATA(simple_ar, AttackCurve);
 			p.setRange({ 0.0, 1.0 });
+			p.info.textConverter = parameter::pod::NormalizedPercentage;
 			p.setDefaultValue(0.0);
 			data.add(std::move(p));
 		}
 	}
 
-	
-	
 	PolyData<State, NumVoices> states;
 };
 
@@ -894,12 +901,14 @@ template <int NV, typename ParameterType> struct ahdsr : public pimpl::envelope_
 			DEFINE_PARAMETERDATA(ahdsr, Attack);
 			p.setRange(timeRange);
 			p.setDefaultValue(10.0);
+			p.info.textConverter = parameter::pod::Time;
 			data.add(p);
 		}
 		
 		{
 			DEFINE_PARAMETERDATA(ahdsr, AttackLevel);
 			p.setDefaultValue(1.0);
+			p.info.textConverter = parameter::pod::NormalizedPercentage;
 			data.add(p);
 		}
 
@@ -907,6 +916,7 @@ template <int NV, typename ParameterType> struct ahdsr : public pimpl::envelope_
 			DEFINE_PARAMETERDATA(ahdsr, Hold);
 			p.setRange(timeRange);
 			p.setDefaultValue(20.0);
+			p.info.textConverter = parameter::pod::Time;
 			data.add(p);
 		}
 
@@ -914,12 +924,14 @@ template <int NV, typename ParameterType> struct ahdsr : public pimpl::envelope_
 			DEFINE_PARAMETERDATA(ahdsr, Decay);
 			p.setRange(timeRange);
 			p.setDefaultValue(300.0);
+			p.info.textConverter = parameter::pod::Time;
 			data.add(p);
 		}
 
 		{
 			DEFINE_PARAMETERDATA(ahdsr, Sustain);
 			p.setDefaultValue(0.5);
+			p.info.textConverter = parameter::pod::NormalizedPercentage;
 			data.add(p);
 		}
 
@@ -927,24 +939,28 @@ template <int NV, typename ParameterType> struct ahdsr : public pimpl::envelope_
 			DEFINE_PARAMETERDATA(ahdsr, Release);
 			p.setRange(timeRange);
 			p.setDefaultValue(20.0);
+			p.info.textConverter = parameter::pod::Time;
 			data.add(p);
 		}
 
 		{
 			DEFINE_PARAMETERDATA(ahdsr, AttackCurve);
 			p.setDefaultValue(0.5);
+			p.info.textConverter = parameter::pod::NormalizedPercentage;
 			data.add(p);
 		}
 
 		{
 			DEFINE_PARAMETERDATA(ahdsr, Retrigger);
 			p.setRange({ 0.0, 1.0, 1.0 });
+			p.setParameterValueNames({ "Off", "On"});
 			p.setDefaultValue(0.0);
 			data.add(p);
 		}
 		{
 			DEFINE_PARAMETERDATA(ahdsr, Gate);
 			p.setRange({ 0.0, 1.0, 1.0 });
+			p.setParameterValueNames({ "Off", "On" });
 			p.setDefaultValue(0.0);
 			data.add(p);
 		}
@@ -1002,7 +1018,7 @@ template <int NV, typename ParameterClass, typename DragHandler=flex_ahdsr_base:
 
 	}
 
-	void initialise(NodeBase* n)
+	void initialise(ObjectWithValueTree* n)
 	{
 		pimpl::envelope_base<ParameterClass>::initialise(n);
 
@@ -1156,7 +1172,12 @@ template <int NV, typename ParameterClass, typename DragHandler=flex_ahdsr_base:
 			memset(data.data(), 0, sizeof(data));
 
 			for(auto& s: data)
+			{
+				s.timeModValue = 1.0f;
+				s.levelModValue = 1.0f;
 				s.curve.set(1.0);
+			}
+				
 
 			set<State::DECAY, ParameterType::Level>(0.5);
 			set<State::SUSTAIN, ParameterType::Level>(0.5);
@@ -1261,9 +1282,9 @@ template <int NV, typename ParameterClass, typename DragHandler=flex_ahdsr_base:
 			switch(T)
 			{
 			case ParameterType::Time:
-				return v.time;
+				return v.time * v.timeModValue;
 			case ParameterType::Level:
-				return v.level.advance();
+				return v.level.advance() * v.levelModValue;
 			case ParameterType::Curve:
 				return v.curve.advance();
 			default:
@@ -1278,6 +1299,17 @@ template <int NV, typename ParameterClass, typename DragHandler=flex_ahdsr_base:
 			{
 				data[i].prepare(sampleRate, 20.0);
 			}
+		}
+
+		template <State S, ParameterType T> void setModulationValue(float newValue)
+		{
+			jassert(newValue >= 0.0f && newValue <= 1.0f);
+			auto& s = data[(int)S];
+
+			if (T == ParameterType::Level)
+				s.levelModValue = newValue;
+			else
+				s.timeModValue = newValue;
 		}
 
 		bool isStaticState()
@@ -1397,6 +1429,8 @@ template <int NV, typename ParameterClass, typename DragHandler=flex_ahdsr_base:
 			sfloat curve;
 			float time = 0.0f;
 			sfloat level;
+			float timeModValue = 0.0f;
+			float levelModValue = 0.0f;
 		};
 
 		Mode m = Mode::Note;
@@ -1791,6 +1825,7 @@ template <int NV> struct silent_killer: public voice_manager_base,
 		{
 			DEFINE_PARAMETERDATA(silent_killer, Active);
 			p.setRange({ 0.0, 1.0, 1.0 });
+			p.setParameterValueNames({ "Off", "On" });
 			p.setDefaultValue(1.0);
 			data.add(std::move(p));
 		}
@@ -1798,6 +1833,7 @@ template <int NV> struct silent_killer: public voice_manager_base,
 		{
 			DEFINE_PARAMETERDATA(silent_killer, Threshold);
 			p.setRange({ -120.0, -60, 1.0 });
+			p.info.textConverter = parameter::pod::Decibel;
 			p.setDefaultValue(-100.0);
 			data.add(std::move(p));
 		}
@@ -1809,12 +1845,179 @@ template <int NV> struct silent_killer: public voice_manager_base,
 	double threshold;
 };
 
+template <int NV, typename IndexClass, runtime_target::RuntimeTarget TargetType> struct mod_voice_checker_base:
+	public polyphonic_base,
+	public runtime_target::indexable_target<IndexClass, TargetType, modulation::SignalSource>
+{
+	static constexpr int NumVoices = NV;
+
+	mod_voice_checker_base(const Identifier& id) :
+		polyphonic_base(id, false)
+	{
+		cppgen::CustomNodeProperties::addNodeIdManually(id, PropertyIds::IsFixRuntimeTarget);
+	};
+
+	~mod_voice_checker_base()
+	{
+		this->disconnect();
+	}
+
+	SN_EMPTY_RESET;
+	SN_EMPTY_INITIALISE;
+
+	void onConnectionChange() override {}
+
+	void onValue(modulation::SignalSource currentModSignals) override
+	{
+		signal = currentModSignals;
+	}
+
+	void handleHiseEvent(const HiseEvent& e)
+	{
+		if(e.isNoteOn())
+		{
+			auto& s = state.get();
+			s.eventData = signal.getEventData(index, e, NumVoices > 1);
+			s.voiceIndex = e.getEventId() % NumVoices;
+			mv.setModValue(1.0);
+		}
+	}
+
+	template <typename PD> void process(PD&)
+	{
+		check();
+	}
+
+	// note: never use this directly outside of the usual HISE callback system
+	// use the isPlaying() function instead, this gets you the state for the currently
+	// rendered voice
+	bool handleModulation(double& v)
+	{
+		return mv.getChangedValue(v);
+	}
+
+	template <typename FD> void processFrame(FD& )
+	{
+		check();
+	}
+
+	bool check()
+	{
+		auto isPlaying = state.get().isPlaying();
+
+		if(!isPlaying)
+			mv.setModValue(0.0);
+
+		return isPlaying;
+	}
+
+	virtual void prepare(PrepareSpecs ps)
+	{
+		state.prepare(ps);
+	}
+
+	void setIndex(double newValue)
+	{
+		this->index = jlimit(-1, modulation::NumMaxModulationSources, roundToInt(newValue));
+	}
+
+	template <int P> void setParameter(double v)
+	{
+		if (P == 0)
+			setIndex(v);
+	}
+
+	SN_FORWARD_PARAMETER_TO_MEMBER(mod_voice_checker_base);
+
+	void createParameters(ParameterDataList& data)
+	{
+		{
+			parameter::data d("Index", { 0.0, 16.0, 1.0 });
+			d.callback = parameter::inner<mod_voice_checker_base, 0>(*this);
+			d.setDefaultValue(1.0f);
+			data.add(d);
+		}
+	}
+
+	struct Data
+	{
+		bool isPlaying() const
+		{
+			if(eventData.resetFlag != nullptr)
+			{
+				return eventData.resetFlag[voiceIndex] != modulation::ClearState::Reset;
+			}
+
+			return true;
+		}
+
+		modulation::EventData eventData;
+		int voiceIndex;
+	};
+
+	ModValue mv;
+
+	PolyData<Data, NumVoices> state;
+
+	modulation::SignalSource signal;
+	int index;
+
+public:
+
+};
+
+template <int NV, typename IndexClass=runtime_target::indexers::fix_hash<1>> struct global_mod_gate : 
+	public mod_voice_checker_base<NV, IndexClass, runtime_target::RuntimeTarget::GlobalModulator>
+{
+    using Base = mod_voice_checker_base<NV, IndexClass, runtime_target::RuntimeTarget::GlobalModulator>;
+    
+    static constexpr int NumVoices = NV;
+    
+	SN_POLY_NODE_ID("global_mod_gate");
+	SN_DESCRIPTION("Sends a On-Off modulation signal while the global modulator is active.")
+	SN_GET_SELF_AS_OBJECT(global_mod_gate);
+
+	global_mod_gate() :
+		Base(getStaticId())
+	{}
+
+	void prepare(PrepareSpecs ps) override
+	{
+		Base::prepare(ps);
+	}
+};
+
+template <int NV, typename IndexClass=modulation::config::ExtraIndexer> struct extra_mod_gate :
+	public mod_voice_checker_base<NV, IndexClass, runtime_target::RuntimeTarget::ExternalModulatorChain>
+{
+    static constexpr int NumVoices = NV;
+    
+	SN_POLY_NODE_ID("extra_mod_gate");
+	SN_DESCRIPTION("Sends a On-Off modulation signal while the extra modulator is active.");
+	SN_GET_SELF_AS_OBJECT(extra_mod_gate);
+
+    using Base = mod_voice_checker_base<NV, IndexClass, runtime_target::RuntimeTarget::ExternalModulatorChain>;
+    
+	extra_mod_gate() :
+      Base(getStaticId())
+	{}
+
+	void prepare(PrepareSpecs ps) override
+	{
+		Base::prepare(ps);
+	}
+};
 
 struct voice_manager: public voice_manager_base
 {
 	SN_NODE_ID("voice_manager");
 	SN_GET_SELF_AS_OBJECT(voice_manager);
 	SN_DESCRIPTION("Sends a voice reset message when `Value < 0.5`");
+
+	voice_manager()
+	{
+		cppgen::CustomNodeProperties::addNodeIdManually(getStaticId(), PropertyIds::OutsideSignalPath);
+	}
 
 	static constexpr bool isPolyphonic() { return false; }
 

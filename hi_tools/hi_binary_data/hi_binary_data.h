@@ -60,6 +60,7 @@ namespace ScriptnodeIcons
 {
 	DECLARE_DATA(mainLogo, 4537);
 	DECLARE_DATA(zoomFit, 549);
+	DECLARE_DATA(tabIcon, 760);
 	DECLARE_DATA(errorIcon, 318);
 	DECLARE_DATA(fixIcon, 725);
 	DECLARE_DATA(unscaledMod, 576);
@@ -73,6 +74,9 @@ namespace ScriptnodeIcons
 	DECLARE_DATA(os2Icon, 345);
 	DECLARE_DATA(os4Icon, 277);
 	DECLARE_DATA(os8Icon, 570);
+	DECLARE_DATA(rangeIcon, 421);
+	DECLARE_DATA(colourIcon, 1024);
+	DECLARE_DATA(swapOrientationIcon, 428);
 }
 
 
@@ -82,6 +86,7 @@ namespace HnodeIcons
 	DECLARE_DATA(testIcon, 442);
 	DECLARE_DATA(exportIcon, 366);
 	DECLARE_DATA(mapIcon, 142);
+	DECLARE_DATA(wrapIcon, 500);
 	DECLARE_DATA(loopIcon, 286);
 	DECLARE_DATA(jit, 59);
 	DECLARE_DATA(freezeIcon, 280);

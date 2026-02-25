@@ -94,7 +94,7 @@ struct cable_base
 
 	virtual void validate(PrepareSpecs ps) {};
 	virtual void prepare(PrepareSpecs ps) = 0;
-	virtual void initialise(NodeBase* n) {};
+	virtual void initialise(ObjectWithValueTree* n) {};
 
 	virtual void reset() = 0;
 
@@ -144,7 +144,7 @@ template <int NV, int C> struct frame: public cable_base
 		}
 	}
 
-	void initialise(NodeBase* n) override {};
+	void initialise(ObjectWithValueTree* n) override {};
 
 	void processFrame(FrameType& t)
 	{
@@ -304,7 +304,7 @@ template <int NV, int C> struct block: public block_base<NV, C>
 	static constexpr bool allowFrame() { return false; };
 	static constexpr bool allowBlock() { return true; };
 
-	void initialise(NodeBase* n) override {};
+	void initialise(ObjectWithValueTree* n) override {};
 
 	void setIsNull() {};
 
@@ -370,6 +370,7 @@ struct public_mod
 
 	public_mod()
 	{
+		cppgen::CustomNodeProperties::setPropertyForObject(*this, PropertyIds::OutsideSignalPath);
 		cppgen::CustomNodeProperties::setPropertyForObject(*this, PropertyIds::IsPublicMod);
 	}
 
@@ -434,7 +435,7 @@ template <int NV, typename CheckClass=NoCheck> struct event_data_reader:
 	SN_EMPTY_PROCESS_FRAME;
 	SN_EMPTY_PROCESS;
 
-	void initialise(NodeBase* b)
+	void initialise(ObjectWithValueTree* b)
 	{
 		checkClass.initialise(b);
 	}
@@ -545,7 +546,7 @@ template <int NV, typename CheckClass=NoCheck> struct event_data_writer:
 	SN_EMPTY_PROCESS_FRAME;
 	SN_EMPTY_PROCESS;
 
-	void initialise(NodeBase* b)
+	void initialise(ObjectWithValueTree* b)
 	{
 		checkClass.initialise(b);
 	}
@@ -681,7 +682,7 @@ template <int NV, typename CableType> struct receive: public receive_base
 
 	void handleHiseEvent(HiseEvent& e) {}
 
-	void initialise(NodeBase* n)
+	void initialise(ObjectWithValueTree* n)
 	{
 		
 	}
@@ -746,6 +747,7 @@ template <int NV, typename CableType> struct receive: public receive_base
 	void createParameters(ParameterDataList& data)
 	{
 		DEFINE_PARAMETERDATA(receive, Feedback);
+		p.info.textConverter = parameter::pod::NormalizedPercentage;
 		data.add(p);
 	}
 
@@ -806,7 +808,7 @@ template <int NV, typename CableType> struct send: public send_base
 
 	void createParameters(ParameterDataList&) {};
 
-	void initialise(NodeBase* n)
+	void initialise(ObjectWithValueTree* n)
 	{
 		cable.initialise(n);
 	}
@@ -1162,15 +1164,33 @@ public runtime_target::indexable_target<IndexType, runtime_target::RuntimeTarget
     SN_ADD_SET_VALUE(global_cable);
     
     global_cable():
-    control::pimpl::parameter_node_base<ParameterClass>(getStaticId())
+    control::pimpl::parameter_node_base<ParameterClass>(getStaticId()),
+	control::pimpl::no_processing(getStaticId())
     {
         
     };
     
-    ~global_cable() = default;
+    ~global_cable()
+	{
+		this->disconnect();	
+	};
     
     static constexpr bool isPolyphonic() { return false; }
     
+	void prepare(PrepareSpecs ps)
+	{
+		if(ps)
+		{
+			if(IndexType::mustBeConnected() && !this->isConnected())
+			{
+				scriptnode::Error e;
+				e.error = scriptnode::Error::NoGlobalCable;
+				e.expected = this->index.getIndex();
+				throw e;
+			}
+		}
+	}
+
     void onValue(double c) override
     {
         if(recursion)
@@ -1231,7 +1251,7 @@ template <class MatrixType> struct matrix
 		m.prepare(specs);
 	}
 
-	void initialise(NodeBase* node)
+	void initialise(ObjectWithValueTree* node)
 	{
 		m.initialise(node);
 	}
@@ -1366,10 +1386,19 @@ template <typename... Ts> struct global_cable_cpp_manager: private advanced_tupl
 
 	virtual ~global_cable_cpp_manager()
 	{
-		this->connectToRuntimeTarget(false, {});
+		if(!cleanedUp)
+			cleanup();
 	}
 
-	void connectToRuntimeTarget(bool addConnection, const runtime_target::connection& c)
+	bool cleanedUp = false;
+
+	void cleanup()
+	{
+		this->connectToRuntimeTarget(false, {});
+		cleanedUp = true;
+	}
+
+	virtual void connectToRuntimeTarget(bool addConnection, const runtime_target::connection& c)
 	{
 		reset_each(addConnection, c, this->getIndexSequence());
 
@@ -1380,6 +1409,12 @@ template <typename... Ts> struct global_cable_cpp_manager: private advanced_tupl
 			for(auto& c: this->pendingData)
 				c = {};
 		}
+	}
+
+	virtual void prepare(PrepareSpecs ps)
+	{
+		polyHandler = ps.voiceIndex;
+		prepare_each(ps, this->getIndexSequence());
 	}
 
 	template <auto CableIndex> void sendDataToGlobalCable(const var& dataToSend)
@@ -1402,8 +1437,20 @@ template <typename... Ts> struct global_cable_cpp_manager: private advanced_tupl
 	template <auto CableIndex> void registerDataCallback(const std::function<void(const var&)>& f)
 	{
 		static constexpr int Idx = static_cast<int>(CableIndex);
-        auto& c = this->template get<Idx>();
-        c.setDataCallback(f);
+		auto& c = this->template get<Idx>();
+		
+		c.setDataCallback([this, f](const var& data)
+		{
+			if (polyHandler != nullptr)
+			{
+				PolyHandler::ScopedAllVoiceSetter avs(*polyHandler);
+				f(data);
+			}
+			else
+			{
+				f(data);
+			}
+		});
 	}
 
 	template <auto CableIndex> void setGlobalCableValue(double value)
@@ -1420,11 +1467,17 @@ private:
 		using swallow = int[]; (void)swallow { 1, ( std::get<Ns>(this->elements).connectToRuntimeTarget(addConnection, c) , void(), int{})... };
 	};
 
+	template <std::size_t ...Ns> void prepare_each(PrepareSpecs ps, std::index_sequence<Ns...>)
+	{
+		using swallow = int[]; (void)swallow { 1, (std::get<Ns>(this->elements).prepare(ps), void(), int{})... };
+	};
+
 	template <std::size_t ...Ns> void sendPending_each(std::index_sequence<Ns...>)
 	{
 		using swallow = int[]; (void)swallow { 1, ( std::get<Ns>(this->elements).sendData(this->pendingData[Ns].getData(), this->pendingData[Ns].getSize()) , void(), int{})... };
 	};
 
+	PolyHandler* polyHandler = nullptr;
 	std::array<MemoryBlock, sizeof...(Ts)> pendingData;
 	bool dataEnableCalled = false;
 };

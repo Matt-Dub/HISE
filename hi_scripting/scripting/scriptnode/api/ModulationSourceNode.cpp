@@ -284,7 +284,7 @@ ModulationSourcePlotter::ModulationSourcePlotter(PooledUIUpdater* updater) :
 	ModulationSourceBaseComponent(updater)
 {
 	
-	p.setSpecialLookAndFeel(new data::ui::pimpl::complex_ui_laf(), true);
+	p.setSpecialLookAndFeel(new scriptnode::complex_ui_laf(), true);
 
 	start();
 	setOpaque(true);
@@ -430,7 +430,7 @@ void WrapperNode::initParameterData(ParameterDataList& pData)
 		auto ndb = new parameter::dynamic_base(p.callback);
 
 		newP->setDynamicParameter(ndb);
-		newP->valueNames = p.parameterNames;
+		newP->valueNames = p.getParameterNames().toStringArray();
 
 		addParameter(newP);
 	}

@@ -433,54 +433,73 @@ NodeComponent::~NodeComponent()
 juce::Rectangle<int> NodeComponent::PositionHelpers::getPositionInCanvasForStandardSliders(const NodeBase* n,
 	Point<int> topLeft)
 {
-	auto numParameters = n->getNumParameters();
+	auto pTree = n->getValueTree().getChildWithName(PropertyIds::Parameters);
 
-	if (numParameters == 7)
-		return createRectangleForParameterSliders(n, 4).withPosition(topLeft);
-	else if (numParameters == 0)
-		return createRectangleForParameterSliders(n, 0).withPosition(topLeft);
-	else if (numParameters % 5 == 0)
-		return createRectangleForParameterSliders(n, 5).withPosition(topLeft);
-	else if (numParameters % 4 == 0)
-		return createRectangleForParameterSliders(n, 4).withPosition(topLeft);
-	else if (numParameters % 3 == 0)
-		return createRectangleForParameterSliders(n, 3).withPosition(topLeft);
-	else if (numParameters % 2 == 0)
-		return createRectangleForParameterSliders(n, 2).withPosition(topLeft);
-	else if (numParameters == 1)
-		return createRectangleForParameterSliders(n, 1).withPosition(topLeft);
+	auto forceNoLayout = (int)n->getValueTree()[PropertyIds::CurrentPageIndex] == -1;
+
+	if(PageInfo::hasPageData(pTree) && !forceNoLayout)
+	{
+		auto pageTree = PageInfo::createPageTree(pTree);
+		auto a = DefaultParameterNodeComponent::getPageBounds(*pageTree, topLeft);
+		return withExtraBoundsApplied(n, a);
+	}
 	else
-		return createRectangleForParameterSliders(n, 5).withPosition(topLeft);
-
+	{
+		auto a = getPageBounds(n->getNumParameters()).withPosition(topLeft);
+		return withExtraBoundsApplied(n, a);
+	}
 }
 
 
-juce::Rectangle<int> NodeComponent::PositionHelpers::createRectangleForParameterSliders(const NodeBase* n,
-                                                                                        int numColumns)
+juce::Rectangle<int> NodeComponent::PositionHelpers::createRectangleForParameterSliders(int numParameters, int numColumns)
 {
 	int h = UIValues::HeaderHeight;
-
-	auto eb = n->getExtraComponentBounds();
-
-	h += eb.getHeight();
 	int w = 0;
 
 	if (numColumns == 0)
-		w = eb.getWidth() > 0 ? eb.getWidth() : UIValues::NodeWidth * 2;
+		w = UIValues::NodeWidth * 2;
 	else
 	{
-		int numParameters = n->getNumParameters();
 		int numRows = (int)std::ceil((float)numParameters / (float)numColumns);
 
 		h += numRows * (48 + 28) - 10;
 		w = jmin(numColumns * 100, numParameters * 100);
 	}
 
-
-	w = jmax(w, eb.getWidth());
-
 	auto b = Rectangle<int>(0, 0, w, h);
 	return b.expanded(UIValues::NodeMargin);
+}
+
+juce::Rectangle<int> NodeComponent::PositionHelpers::withExtraBoundsApplied(const NodeBase* n, Rectangle<int> sliderBounds)
+{
+	auto eb = n->getExtraComponentBounds();
+
+	sliderBounds.setWidth(jmax(sliderBounds.getWidth(), eb.getWidth()));
+	sliderBounds.setHeight(sliderBounds.getHeight() + eb.getHeight());
+	return sliderBounds;
+
+}
+
+juce::Rectangle<int> NodeComponent::PositionHelpers::getPageBounds(int numParameters)
+{
+	if (numParameters == 7)
+		return createRectangleForParameterSliders(numParameters, 4);
+	if(numParameters == 6)
+		return createRectangleForParameterSliders(numParameters, 3);
+	else if (numParameters == 0)				   
+		return createRectangleForParameterSliders(numParameters, 0);
+	else if (numParameters % 5 == 0)			   
+		return createRectangleForParameterSliders(numParameters, 5);
+	else if (numParameters % 4 == 0)			   
+		return createRectangleForParameterSliders(numParameters, 4);
+	else if (numParameters % 3 == 0)			   
+		return createRectangleForParameterSliders(numParameters, 3);
+	else if (numParameters % 2 == 0)			   
+		return createRectangleForParameterSliders(numParameters, 2);
+	else if (numParameters == 1)				   
+		return createRectangleForParameterSliders(numParameters, 1);
+	else										   
+		return createRectangleForParameterSliders(numParameters, 5);
 }
 
 void NodeComponent::paint(Graphics& g)
@@ -1154,100 +1173,6 @@ void NodeComponent::PopupHelpers::wrapIntoChain(NodeBase* node, MenuActions resu
 #endif
 }
 
-simple_visualiser::simple_visualiser(NodeBase*, PooledUIUpdater* u) :
-	ScriptnodeExtraComponent<NodeBase>(nullptr, u)
-{
-	setSize(100, 60);
-}
 
-scriptnode::NodeBase* simple_visualiser::getNode()
-{
-	auto nc = findParentComponentOfClass<NodeComponent>();
-	auto n = nc->node.get();
-	return n;
-}
-
-double simple_visualiser::getParameter(int index)
-{
-	if (auto n = getNode())
-	{
-		jassert(isPositiveAndBelow(index, n->getNumParameters()));
-		return n->getParameterFromIndex(index)->getValue();
-	}
-
-	return 0.0;
-}
-
-InvertableParameterRange simple_visualiser::getParameterRange(int index)
-{
-    if (auto n = getNode())
-    {
-        jassert(isPositiveAndBelow(index, n->getNumParameters()));
-        return RangeHelpers::getDoubleRange(n->getParameterFromIndex(index)->data);
-    }
-
-    return {};
-}
-
-juce::Colour simple_visualiser::getNodeColour()
-{
-	auto c = findParentComponentOfClass<NodeComponent>()->header.colour;
-
-	if (c == Colours::transparentBlack)
-		return Colour(0xFFAAAAAA);
-
-	return c;
-}
-
-void simple_visualiser::timerCallback()
-{
-	original.clear();
-	p.clear();
-	gridPath.clear();
-	rebuildPath(p);
-
-	auto b = getLocalBounds().toFloat().reduced(4.0f);
-
-	if (!p.getBounds().isEmpty())
-		p.scaleToFit(b.getX(), b.getY(), b.getWidth(), b.getHeight(), false);
-
-	if (!original.getBounds().isEmpty())
-	{
-		original.scaleToFit(b.getX(), b.getY(), b.getWidth(), b.getHeight(), false);
-
-		auto cp = original;
-
-		float l[2] = { 2.0f, 2.0f };
-		PathStrokeType(1.5f).createDashedStroke(original, cp, l, 2);
-	}
-
-	if (!gridPath.getBounds().isEmpty())
-	{
-		gridPath.scaleToFit(b.getX(), b.getY(), b.getWidth(), b.getHeight(), false);
-	}
-
-	repaint();
-}
-
-void simple_visualiser::paint(Graphics& g)
-{
-	if (drawBackground)
-		ScriptnodeComboBoxLookAndFeel::drawScriptnodeDarkBackground(g, getLocalBounds().toFloat(), false);
-
-	if (!gridPath.isEmpty())
-	{
-		UnblurryGraphics ug(g, *this);
-
-		g.setColour(Colours::black.withAlpha(0.5f));
-		g.strokePath(gridPath, PathStrokeType(ug.getPixelSize()));
-	}
-
-	g.setColour(getNodeColour());
-
-	if (!original.isEmpty())
-		g.fillPath(original);
-
-	g.strokePath(p, PathStrokeType(thickness));
-}
 
 }

@@ -169,6 +169,7 @@ Array<juce::Identifier> HiseSettings::Scripting::getAllIds()
 	ids.add(CodeFontSize);
 	ids.add(EnableDebugMode);
 	ids.add(SaveConnectedFilesOnCompile);
+	ids.add(RecompileOnFileChange);
 	ids.add(EnableMousePositioning);
     ids.add(WarnIfUndefinedParameters);
 
@@ -313,7 +314,11 @@ Array<juce::Identifier> HiseSettings::SnexWorkbench::getAllIds()
 		P_();
 
 		P(HiseSettings::Project::WindowsStaticLibFolder);
-		D("If you need to link a static library on Windows, supply the absolute path to the folder here. Unfortunately, relative paths do not work well with the VS Linker");
+		D("If you need to link a static library on Windows, supply the absolute path to the folder here. This will be used for both the plugin compilation and DLL network compilation.  \n");
+		D("> Usually you need to supply an absolute path here because the VS linker doesn't work well with relative paths, but you can use the `%ADDITIONAL_SOURCE_CODE%` wildcard to point to the additional source code directory of your project which is the preferred location for static libraries.  \n");
+		D("Once you've supplied a folder here, it assumes that there are two subfolders called `/Debug_x64` and `/Release_x64` which contain all static libraries that should be linked during compilation. Note that the compile flags for the library (static runtime, debug configuration etc.) must match the compiler settings for the entire project otherwise you'll get subtle linker issues.  \n");
+		D("> Example: If the relative path to the static libraries from your additional source code folder is `my_lib/Debug_x64/my_lib1.lib` and `my_lib/Release_x64/mylib1.lib`, then you need to use `%ADDITIONAL_SOURCE_CODE%/my_lib` as value here.  \n");
+		D("You also make sure that both folders (Debug and Release) contain the same amount of .lib files that are linked (so that the debug / release workflow is consistent).");
 		P_();
 
 		P(HiseSettings::Project::OSXStaticLibs);
@@ -390,7 +395,8 @@ Array<juce::Identifier> HiseSettings::SnexWorkbench::getAllIds()
 		D("- Script-encrypted expansions");
 		D("- Full expansions that contain the entire instrument");
 		D("- Custom expansions that uses a custom C++ class");
-		D("> If you use a custom expansion, you will need to implement `ExpansionHandler::createCustomExpansion()` in your project's C++ code");
+		D("If you use a custom expansion, you will need to implement `ExpansionHandler::createCustomExpansion()` in your project's C++ code");
+		D("> Note that you need to restart HISE for this setting to take effect.");
 		P_();
 
 		P(HiseSettings::Project::EncryptionKey);
@@ -629,6 +635,10 @@ Array<juce::Identifier> HiseSettings::SnexWorkbench::getAllIds()
 
 		P(HiseSettings::Scripting::SaveConnectedFilesOnCompile);
 		D("If this is enabled, it will save a connected script file everytime the script is compiled. By default this is disabled, but if you want to apply changes to a connected script file, you will have to enable this setting");
+		P_();
+
+		P(HiseSettings::Scripting::RecompileOnFileChange);
+		D("If this is enabled, HISE will recompile all scripts as soon as it detects a change made with an external text editor.");
 		P_();
 
 		P(HiseSettings::ExpansionSettings::UUID);
@@ -969,6 +979,7 @@ juce::StringArray HiseSettings::Data::getOptionsFor(const Identifier& id)
 		id == SnexWorkbench::PlayOnRecompile ||
 		id == SnexWorkbench::AddFade ||
 		id == Other::ShowWelcomeScreen ||
+		id == Scripting::RecompileOnFileChange ||
 		id == Scripting::SaveConnectedFilesOnCompile ||
         id == Scripting::WarnIfUndefinedParameters ||
 		id == Scripting::EnableMousePositioning)
@@ -976,7 +987,7 @@ juce::StringArray HiseSettings::Data::getOptionsFor(const Identifier& id)
 	    return { "Yes", "No" };
 
 	if (id == Compiler::VisualStudioVersion)
-		return { "Visual Studio 2017", "Visual Studio 2022" };
+		return { "Visual Studio 2022", "Visual Studio 2026" };
 
 	if(id == Other::GlobalHiseScaleFactor)
 	{
@@ -1188,7 +1199,7 @@ var HiseSettings::Data::getDefaultSetting(const Identifier& id) const
 	else if (id == Project::ReadOnlyFactoryPresets) return "No";
     else if (id == Project::ForceStereoOutput)      return "No";
 		else if (id == Project::AdminPermissions) return "No";
-	else if (id == Project::VST3Support)			return "No";
+	else if (id == Project::VST3Support)			return "Yes";
 	else if (id == Project::UseRawFrontend)			return "No";
 	else if (id == Project::CompileWithPerfetto)	return "No";
 	else if (id == Compiler::ExportSetup)			return "No";
@@ -1219,7 +1230,7 @@ var HiseSettings::Data::getDefaultSetting(const Identifier& id) const
 #if HISE_USE_VS2022
 	else if (id == Compiler::VisualStudioVersion)	return "Visual Studio 2022";
 #else
-	else if (id == Compiler::VisualStudioVersion)	return "Visual Studio 2017";
+	else if (id == Compiler::VisualStudioVersion)	return "Visual Studio 2026";
 #endif
 
 #if JUCE_MAC
@@ -1371,7 +1382,9 @@ void HiseSettings::Data::settingWasChanged(const Identifier& id, const var& newV
 	else if (id == Other::UseOpenGL)
 		PresetHandler::showMessageWindow("Reopen HISE window", "Restart HISE (or reopen this window) in order to apply the new Graphics setting", PresetHandler::IconType::Info);
 	else if (id == Other::EnableAutosave || id == Other::AutosaveInterval)
-		mc->getAutoSaver().updateAutosaving();
+	{
+		BACKEND_ONLY(dynamic_cast<BackendProcessor*>(mc)->getAutoSaver().updateAutosaving());
+	}
 	else if (id == Other::AudioThreadGuardEnabled)
 		mc->getKillStateHandler().enableAudioThreadGuard(newValue);
 	else if (id == Other::GlobalHiseScaleFactor)

@@ -510,7 +510,16 @@ void ScriptCreatedComponentWrapper::initAllProperties()
 	}
 }
 
-
+void ScriptCreatedComponentWrapper::postInit()
+{
+	// Apply the current z-level after component is fully initialized
+	auto sc = getScriptComponent();
+	auto currentLevel = sc->getCurrentZLevel();
+	if (currentLevel != ScriptingApi::Content::ScriptComponent::ZLevelListener::ZLevel::Default)
+	{
+		zLevelChanged(currentLevel);
+	}
+}
 
 ScriptCreatedComponentWrappers::SliderWrapper::SliderWrapper(ScriptContentComponent *content, ScriptingApi::Content::ScriptSlider *sc, int index) :
 ScriptCreatedComponentWrapper(content, index)
@@ -1121,7 +1130,7 @@ ScriptCreatedComponentWrapper(content, index)
 
 	cb->setup(getProcessor(), getIndex(), scriptComboBox->name.toString());
 	cb->addListener(this);
-	//cb->setLookAndFeel(&plaf);
+	cb->setLookAndFeel(&plaf);
 
 	component = cb;
 
@@ -2000,7 +2009,8 @@ void ScriptCreatedComponentWrappers::ViewportWrapper::scrollBarMoved(ScrollBar* 
 
 		auto sv = dynamic_cast<ScriptingApi::Content::ScriptedViewport*>(getScriptComponent());
 		sv->positionBroadcaster.sendMessage(dontSendNotification, pos[0], pos[1]);
-		getScriptComponent()->setScriptObjectProperty(propertyToChange, normPos, dontSendNotification);
+		// Use sendNotificationAsync so the script's broadcaster gets notified, but async to avoid circular updates
+		getScriptComponent()->setScriptObjectProperty(propertyToChange, normPos, sendNotificationAsync);
 	}
 }
 
@@ -2898,12 +2908,18 @@ void ScriptCreatedComponentWrappers::AudioWaveformWrapper::updateColours(AudioDi
 ScriptCreatedComponentWrappers::WebViewWrapper::WebViewWrapper(ScriptContentComponent *content, ScriptingApi::Content::ScriptWebView *webview, int index) :
 	ScriptCreatedComponentWrapper(content, webview)
 {
-	auto wc = new hise::WebViewWrapper(webview->getData());
+	auto wc = new hise::WebViewWrapper(webview->getData(), false);
 	dynamic_cast<GlobalSettingManager*>(getProcessor()->getMainController())->addScaleFactorListener(this);
 	component = wc;
-
+	
 	if ((vp = content->findParentComponentOfClass<ZoomableViewport>()))
 		vp->addZoomListener(this);
+}
+
+void ScriptCreatedComponentWrappers::WebViewWrapper::postInit()
+{
+	auto wv = dynamic_cast<hise::WebViewWrapper*>(getComponent());
+	wv->refresh();
 }
 
 ScriptCreatedComponentWrappers::WebViewWrapper::~WebViewWrapper()
@@ -2955,11 +2971,20 @@ void ScriptCreatedComponentWrappers::FloatingTileWrapper::updateLookAndFeel()
     {
         laf = &mc->getGlobalLookAndFeel();
 
-        if (auto l = floatingTile->createLocalLookAndFeel(contentComponent, ft))
-        {
-            localLookAndFeel = l;
-            laf = localLookAndFeel.get();
-        }
+		if(auto content = dynamic_cast<Component*>(ft->getCurrentFloatingPanel()))
+		{
+			if(auto pc = dynamic_cast<PanelWithProcessorConnection*>(content))
+				content = pc->getContent<Component>();
+
+			if(content != nullptr)
+			{
+				if (auto l = floatingTile->createLocalLookAndFeel(contentComponent, content))
+				{
+					localLookAndFeel = l;
+					laf = localLookAndFeel.get();
+				}
+			}
+		}
     }
     
     if (dynamic_cast<ScriptingObjects::ScriptedLookAndFeel::LafBase*>(laf) != nullptr)

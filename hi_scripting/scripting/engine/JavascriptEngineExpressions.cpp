@@ -594,7 +594,7 @@ struct HiseJavascriptEngine::RootObject::FunctionObject : public DynamicObject,
 
 	FunctionObject(const FunctionObject& other);
 
-	DynamicObject::Ptr clone() override    { return new FunctionObject(*this); }
+	DynamicObject::Ptr clone() const override    { return new FunctionObject(*this); }
 
 	void writeAsJSON(OutputStream& out, int /*indentLevel*/, bool /*allOnOneLine*/, int /*maximumDecimalPlaces*/) override
 	{
@@ -866,7 +866,7 @@ struct HiseJavascriptEngine::RootObject::AnonymousFunctionWithCapture : public E
 		return function;
 	}
 
-	bool isConstant() const override { return true; }
+	bool isConstant() const override { return false; }
 
 	Statement* getChildStatement(int) override { return nullptr; };
 

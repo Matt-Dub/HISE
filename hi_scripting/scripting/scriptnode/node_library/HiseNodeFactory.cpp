@@ -106,71 +106,7 @@ struct input_toggle_editor : public ScriptnodeExtraComponent<input_toggle_base>
 
 
 
-template <typename ParameterClass> struct xy : 
-	public pimpl::parameter_node_base<ParameterClass>,
-	public pimpl::no_processing
-{
-	SN_NODE_ID("xy");
-	SN_GET_SELF_AS_OBJECT(xy);
-	SN_PARAMETER_NODE_CONSTRUCTOR(xy, ParameterClass);
-	
 
-	enum class Parameters
-	{
-		X,
-		Y
-	};
-
-	void initialise(NodeBase* n)
-	{
-		this->p.initialise(n);
-		
-		if constexpr (!parameter::dynamic_list::isStaticList())
-		{
-			this->getParameter().numParameters.storeValue(2, n->getUndoManager());
-			this->getParameter().updateParameterAmount({}, 2);
-		}
-	}
-
-	DEFINE_PARAMETERS
-	{
-		DEF_PARAMETER(X, xy);
-		DEF_PARAMETER(Y, xy);
-	};
-	SN_PARAMETER_MEMBER_FUNCTION;
-
-	void setX(double v)
-	{
-		if(this->getParameter().getNumParameters() > 0)
-			this->getParameter().template call<0>(v);
-	}
-
-	void setY(double v)
-	{
-		if (this->getParameter().getNumParameters() > 1)
-			this->getParameter().template call<1>(v);
-	}
-
-	void createParameters(ParameterDataList& data)
-	{
-		{
-			DEFINE_PARAMETERDATA(xy, X);
-			p.setRange({ 0.0, 1.0 });
-			p.setDefaultValue(0.0);
-			data.add(std::move(p));
-		}
-		{
-			DEFINE_PARAMETERDATA(xy, Y);
-			p.setRange({ -1.0, 1.0 });
-			p.setDefaultValue(0.0);
-			data.add(std::move(p));
-		}
-	}
-
-	
-
-	JUCE_DECLARE_WEAK_REFERENCEABLE(xy);
-};
 
 struct TransportDisplay : public juce::ComponentWithMiddleMouseDrag,
 						  public PooledUIUpdater::SimpleTimer
@@ -863,172 +799,18 @@ Factory::Factory(DspNetwork* network) :
 
 namespace fx
 {
-	struct bitcrush_editor : simple_visualiser
-	{
-		bitcrush_editor(PooledUIUpdater* u) :
-			simple_visualiser(nullptr, u)
-		{};
-
-		void rebuildPath(Path& p) override
-		{
-			span<float, 100> x;
-			
-			for (int i = 0; i < 100; i++)
-				x[i] = (float)i / 100.0f - 50.0f;
-			
-            
-            
-			getBitcrushedValue(x, getParameter(0) / 2.5, getParameter(1));
-			
-            FloatSanitizers::sanitizeArray(x.begin(), x.size());
-            
-			p.startNewSubPath(0, 1.0f - x[0]);
-
-			for (int i = 1; i < 100; i++)
-				p.lineTo(i, 1.0f - x[i]);
-		}
-
-		static Component* createExtraComponent(void* , PooledUIUpdater* u)
-		{
-			return new bitcrush_editor(u);
-		}
-	};
-
-	struct sampleandhold_editor : simple_visualiser
-	{
-		sampleandhold_editor(PooledUIUpdater* u) :
-			simple_visualiser(nullptr, u)
-		{};
-
-		void rebuildPath(Path& p) override
-		{
-			span<float, 100> x;
-
-			for (int i = 0; i < 100; i++)
-				x[i] = hmath::sin(float_Pi * 2.0f * (float)i / 100.0f);
-
-			auto n = getNode();
-
-			if (n == nullptr)
-				return;
-
-			auto delta = (int)(getNode()->getParameterFromIndex(0)->getValue() / JUCE_LIVE_CONSTANT_OFF(10.0f));
-			int counter = 0;
-			float v = 0.0;
-
-			for (int i = 0; i < 100; i++)
-			{
-				if (counter++ >= delta)
-				{
-					counter = 0;
-					v = x[i];
-				}
-
-				x[i] = v;
-			}
-			
-			
-
-			//getBitcrushedValue(x,  / JUCE_LIVE_CONSTANT_OFF(2.5f));
-
-			p.startNewSubPath(0, 1.0f - x[0]);
-
-			for (int i = 1; i < 100; i++)
-				p.lineTo(i, 1.0f - x[i]);
-		}
-
-		static Component* createExtraComponent(void*, PooledUIUpdater* u)
-		{
-			return new sampleandhold_editor(u);
-		}
-	};
-
-	struct phase_delay_editor : public simple_visualiser
-	{
-		phase_delay_editor(PooledUIUpdater* u) :
-			simple_visualiser(nullptr, u)
-		{};
-
-		void rebuildPath(Path& p) override
-		{
-			span<float, 100> x;
-
-			for (int i = 0; i < 100; i++)
-				x[i] = hmath::sin(float_Pi * 2.0f * (float)i / 100.0f);
-
-			auto v = getParameter(0);
-
-			NormalisableRange<double> fr(20.0, 20000.0);
-			fr.setSkewForCentre(500.0);
-
-			auto nv = fr.convertTo0to1(v);
-
-			original.startNewSubPath(0, 1.0f - x[0]);
-
-			for (int i = 1; i < 100; i++)
-				original.lineTo(i, 1.0f - x[i]);
-
-			p.startNewSubPath(0, 1.0f - x[50 + roundToInt(nv * 49)]);
-
-			for (int i = 1; i < 100; i++)
-			{
-				auto index = (i + 50 + roundToInt(nv * 49)) % 100;
-
-				p.lineTo(i, 1.0f - x[index]);
-			}
-		}
-
-		static Component* createExtraComponent(void*, PooledUIUpdater* u)
-		{
-			return new phase_delay_editor(u);
-		}
-	};
-
-    
-
-	struct reverb_editor : simple_visualiser
-	{
-		reverb_editor(PooledUIUpdater* u) :
-			simple_visualiser(nullptr, u)
-		{};
-
-		void rebuildPath(Path& p) override
-		{
-			auto damp = getParameter(0);
-			auto width = getParameter(1);
-			auto size = getParameter(2);
-
-			p.startNewSubPath(0.0f, 0.0f);
-			p.startNewSubPath(1.0f, 1.0f);
-
-			Rectangle<float> base(0.5f, 0.5f, 0.0f, 0.0f);
-
-			for (int i = 0; i < 8; i++)
-			{
-				auto ni = (float)i / 8.0f;
-				ni = hmath::pow(ni, 1.0f + (float)damp);
-
-				auto a = base.withSizeKeepingCentre(width * ni * 2.0f, size * ni);
-				p.addRectangle(a);
-			}
-		}
-
-		static Component* createExtraComponent(void*, PooledUIUpdater* u)
-		{
-			return new reverb_editor(u);
-		}
-	};
+	
 
 
 Factory::Factory(DspNetwork* network) :
 	NodeFactory(network)
 {
-	registerPolyNode<reverb, wrap::illegal_poly<reverb>, reverb_editor>();
-	registerPolyNode<sampleandhold<1>, sampleandhold<NUM_POLYPHONIC_VOICES>, sampleandhold_editor>();
-	registerPolyNode<bitcrush<1>, bitcrush<NUM_POLYPHONIC_VOICES>, bitcrush_editor>();
+	registerPolyNode<reverb, wrap::illegal_poly<reverb>>();
+	registerPolyNode<sampleandhold<1>, sampleandhold<NUM_POLYPHONIC_VOICES>>();
+	registerPolyNode<bitcrush<1>, bitcrush<NUM_POLYPHONIC_VOICES>>();
 	registerPolyNode<wrap::fix<2, haas<1>>, wrap::fix<2, haas<NUM_POLYPHONIC_VOICES>>>();
 	registerPolyNode<pitch_shift<1>, pitch_shift<NUM_POLYPHONIC_VOICES>>();
-	registerPolyNode<phase_delay<1>, phase_delay<NUM_POLYPHONIC_VOICES>, phase_delay_editor>();
+	registerPolyNode<phase_delay<1>, phase_delay<NUM_POLYPHONIC_VOICES>>();
 }
 
 }
@@ -1039,26 +821,39 @@ namespace math
 
 
 struct NeuralComp : public ScriptnodeExtraComponent<NodeBase>
-              
 {
     NeuralComp(NodeBase* n, PooledUIUpdater* updater) :
         ScriptnodeExtraComponent<NodeBase>(n, updater),
-        networkSelector("", PropertyIds::Model)
+        networkSelector("", PropertyIds::Model),
+        hpfSelector("Off", PropertyIds::HpfFreq)
     {
 #if HISE_INCLUDE_RT_NEURAL
         auto& holder = n->getScriptProcessor()->getMainController_()->getNeuralNetworks();
         networkSelector.initModes(holder.getIdList(), n);
-		addAndMakeVisible(networkSelector);
+        addAndMakeVisible(networkSelector);
+
+        hpfSelector.initModes({ "Off", "1 Hz", "5 Hz" }, n);
+        addAndMakeVisible(hpfSelector);
 #endif
-        
-        setSize(128, 32);
+
+        setSize(128, 64);
     };
 
     ComboBoxWithModeProperty networkSelector;
+    ComboBoxWithModeProperty hpfSelector;
 
     void resized() override
     {
+#if HISE_INCLUDE_RT_NEURAL
+        auto area = getLocalBounds().reduced(0, 4);
+        const int rowHeight = 24;
+
+        networkSelector.setBounds(area.removeFromTop(rowHeight));
+        area.removeFromTop(4);
+        hpfSelector.setBounds(area.removeFromTop(rowHeight));
+#else
         networkSelector.setBounds(getLocalBounds());
+#endif
     }
 
     void timerCallback() override
@@ -1083,17 +878,21 @@ template <int NV> struct NeuralNode: public NodeBase
     
     NeuralNode(DspNetwork* root, const ValueTree& data):
       NodeBase(root, data, 0),
-      networkId(PropertyIds::Model, "")
+      networkId(PropertyIds::Model, ""),
+      hpfFrequency(PropertyIds::HpfFreq, "Off")
     {
         cppgen::CustomNodeProperties::setPropertyForObject(*this, PropertyIds::IsFixRuntimeTarget);
         
         networkId.initialise(this);
         networkId.setAdditionalCallback(BIND_MEMBER_FUNCTION_2(NeuralNode::updateModel), true);
+
+        hpfFrequency.initialise(this);
+        hpfFrequency.setAdditionalCallback(BIND_MEMBER_FUNCTION_2(NeuralNode::updateHpf), true);
     }
     
     AttributedString getDescription() const override
     {
-        return AttributedString(obj.getDescription());
+        return AttributedString(obj.getWrappedObject().getDescription());
     }
 
     NodeComponent* createComponent() override
@@ -1127,6 +926,11 @@ template <int NV> struct NeuralNode: public NodeBase
     {
         NodeBase::prepare(ps);
 
+		
+
+#if USE_BACKEND && HISE_INCLUDE_RT_NEURAL
+		obj.getWrappedObject().warmup = getRootNetwork()->getMainController()->getExtraDefinitionsValue("HISE_NEURAL_NETWORK_WARMUP_TIME", 0);
+#endif
         obj.prepare(ps);
     }
     
@@ -1146,63 +950,61 @@ template <int NV> struct NeuralNode: public NodeBase
 
 
             auto nn = getScriptProcessor()->getMainController_()->getNeuralNetworks().getOrCreate(newId);
-            
+
             // make sure it matches when connecting
-            obj.getIndex().currentHash = nn->getRuntimeHash();
-            obj.connectToRuntimeTarget(true, nn->createConnection());
+            auto& neuralObj = obj.getWrappedObject();
+            neuralObj.getIndex().currentHash = nn->getRuntimeHash();
+            neuralObj.connectToRuntimeTarget(true, nn->createConnection());
 
         }
         else
         {
-            if(auto nn = obj.getCurrentNetwork())
+            auto& neuralObj = obj.getWrappedObject();
+
+            if(auto nn = neuralObj.getCurrentNetwork())
             {
-                obj.connectToRuntimeTarget(false, nn->createConnection());
+                neuralObj.connectToRuntimeTarget(false, nn->createConnection());
             }
         }
 #endif
     }
+
+    void updateHpf(Identifier, var value)
+    {
+#if HISE_INCLUDE_RT_NEURAL
+        auto text = value.toString().trim();
+        auto lower = text.toLowerCase();
+
+        auto& neuralObj = obj.getWrappedObject();
+        auto freq = HpfFrequency::Off;
+
+        if(lower == "1 hz" || lower == "1hz" || lower == "1")
+            freq = HpfFrequency::Hz1;
+        else if(lower == "5 hz" || lower == "5hz" || lower == "5")
+            freq = HpfFrequency::Hz5;
+
+        neuralObj.setHpfFrequency(freq);
+#else
+        ignoreUnused(value);
+#endif
+    }
+
+    void setBypassed(bool shouldBeBypassed) override
+    {
+        NodeBase::setBypassed(shouldBeBypassed);
+        obj.setBypassed(shouldBeBypassed);
+    }
+
+    using NeuralType = neural<NV, runtime_target::indexers::dynamic>;
+    using BypassWrapper = bypass::simple<NeuralType>;
     
-    neural<NV, runtime_target::indexers::dynamic> obj;
+    BypassWrapper obj;
     
     NodePropertyT<String> networkId;
+    NodePropertyT<String> hpfFrequency;
 };
 
-struct map_editor : public simple_visualiser
-{
-    map_editor(PooledUIUpdater* u) :
-        simple_visualiser(nullptr, u)
-    {
-        setSize(256, 100);
-    };
 
-    void rebuildPath(Path& p) override
-    {
-        
-        auto p0 = getParameterRange(0).convertTo0to1(getParameter(0), true);
-        auto p1 = getParameterRange(1).convertTo0to1(getParameter(1), true);
-        auto p2 = getParameterRange(2).convertTo0to1(getParameter(2), true);
-        auto p3 = getParameterRange(3).convertTo0to1(getParameter(3), true);
-        
-        p.startNewSubPath(0.0f, 0.0f);
-        p.startNewSubPath(1.0f, 1.0f);
-        
-        original.startNewSubPath(0.0f, 0.0f);
-        original.startNewSubPath(1.0f, 1.0f);
-        
-        p.startNewSubPath(0.0f, 1.0f - p0);
-        p.lineTo(1.0f, 1.0f - p2);
-        p.startNewSubPath(0.0f, 1.0f - p1);
-        p.lineTo(1.0f, 1.0f - p3);
-        
-        original.startNewSubPath(0.0f, 1.0f - (p0 + p1) / 2.0f);
-        original.lineTo(1.0f, 1.0f - (p2 + p3) / 2.0f);
-    }
-
-    static Component* createExtraComponent(void*, PooledUIUpdater* u)
-    {
-        return new map_editor(u);
-    }
-};
     
 
 Factory::Factory(DspNetwork* n) :
@@ -1234,7 +1036,7 @@ Factory::Factory(DspNetwork* n) :
 	REGISTER_POLY_MATH_NODE(pow);
     REGISTER_POLY_MATH_NODE(intensity);
     
-    registerNode<map, map_editor>();
+    registerNode<map>();
     
     registerNode<wrap::data<table, data::dynamic::table>, data::ui::table_editor_without_mod>();
 
@@ -1272,24 +1074,24 @@ namespace control
 		NodeFactory(network)
 	{
 
-		registerPolyNoProcessNode<control::bipolar<1, parameter::dynamic_base_holder>, control::bipolar<NUM_POLYPHONIC_VOICES, parameter::dynamic_base_holder>, bipolar_editor>();
+		registerPolyNoProcessNode<control::bipolar<1, parameter::dynamic_base_holder>, control::bipolar<NUM_POLYPHONIC_VOICES, parameter::dynamic_base_holder>, bipolar_editor_wrapped>();
 
-		registerPolyNoProcessNode<control::blend<1, parameter::dynamic_base_holder>, control::blend<NUM_POLYPHONIC_VOICES, parameter::dynamic_base_holder>, blend_editor>();
+		registerPolyNoProcessNode<control::blend<1, parameter::dynamic_base_holder>, control::blend<NUM_POLYPHONIC_VOICES, parameter::dynamic_base_holder>, blend_editor_wrapped>();
 
-		registerPolyNoProcessNode<control::intensity<1, parameter::dynamic_base_holder>, control::intensity<NUM_POLYPHONIC_VOICES, parameter::dynamic_base_holder>, intensity_editor>();
+		registerPolyNoProcessNode<control::intensity<1, parameter::dynamic_base_holder>, control::intensity<NUM_POLYPHONIC_VOICES, parameter::dynamic_base_holder>, intensity_editor_wrapped>();
 
 		
 
-		registerPolyNoProcessNode<control::pma<1, parameter::dynamic_base_holder>, control::pma<NUM_POLYPHONIC_VOICES, parameter::dynamic_base_holder>, pma_editor<multilogic::pma>>();
-		registerPolyNoProcessNode<control::pma_unscaled<1, parameter::dynamic_base_holder>, control::pma_unscaled<NUM_POLYPHONIC_VOICES, parameter::dynamic_base_holder>, pma_editor<multilogic::pma_unscaled>>();
+		registerPolyNoProcessNode<control::pma<1, parameter::dynamic_base_holder>, control::pma<NUM_POLYPHONIC_VOICES, parameter::dynamic_base_holder>, extra_drag_wrapper<pma_editor, Justification::bottom>>();
+		registerPolyNoProcessNode<control::pma_unscaled<1, parameter::dynamic_base_holder>, control::pma_unscaled<NUM_POLYPHONIC_VOICES, parameter::dynamic_base_holder>, extra_drag_wrapper<pma_editor, Justification::bottom>>();
 
-		registerPolyNoProcessNode<control::minmax<1, parameter::dynamic_base_holder>, control::minmax<NUM_POLYPHONIC_VOICES, parameter::dynamic_base_holder>, minmax_editor>();
+		registerPolyNoProcessNode<control::minmax<1, parameter::dynamic_base_holder>, control::minmax<NUM_POLYPHONIC_VOICES, parameter::dynamic_base_holder>, minmax_editor_wrapped>();
 
-		registerPolyNoProcessNode<control::logic_op<1, parameter::dynamic_base_holder>, control::logic_op<NUM_POLYPHONIC_VOICES, parameter::dynamic_base_holder>, logic_op_editor>();
+		registerPolyNoProcessNode<control::logic_op<1, parameter::dynamic_base_holder>, control::logic_op<NUM_POLYPHONIC_VOICES, parameter::dynamic_base_holder>, logic_op_editor_wrapped>();
 
 		registerPolyNoProcessNode<control::bang<1, parameter::dynamic_base_holder>, control::bang<NUM_POLYPHONIC_VOICES, parameter::dynamic_base_holder>, ModulationSourceBaseComponent>();
 
-		registerPolyNoProcessNode<control::compare<1, parameter::dynamic_base_holder>, control::compare<NUM_POLYPHONIC_VOICES, parameter::dynamic_base_holder>, compare_editor>();
+		registerPolyNoProcessNode<control::compare<1, parameter::dynamic_base_holder>, control::compare<NUM_POLYPHONIC_VOICES, parameter::dynamic_base_holder>, compare_editor_wrapped>();
 
 		registerPolyNoProcessNode<control::change<1, parameter::dynamic_base_holder>, control::change<NUM_POLYPHONIC_VOICES, parameter::dynamic_base_holder>, ModulationSourceBaseComponent>();
         
@@ -1298,6 +1100,8 @@ namespace control
 
         registerNoProcessNode<dynamic_pack_resizer, data::ui::sliderpack_editor>();
         
+		registerPolyNoProcessNode<branch_cable<1, parameter::dynamic_list>, branch_cable<NUM_POLYPHONIC_VOICES, parameter::dynamic_list>, branch_editor_wrapped>()
+
         ;
         
         registerNoProcessNode<wrap::data<pack2_writer, data::dynamic::sliderpack>, data::ui::sliderpack_editor_without_mod>();
@@ -1321,13 +1125,13 @@ namespace control
 
 		registerPolyNoProcessNode<control::input_toggle<1, parameter::dynamic_base_holder>, control::input_toggle<NUM_POLYPHONIC_VOICES, parameter::dynamic_base_holder>, input_toggle_editor>();
 
-        registerNoProcessNode<conversion_logic::dynamic::NodeType, conversion_logic::dynamic::editor>();
+        registerNoProcessNode<conversion_logic::DynamicNodeType, conversion_logic::DynamicEditor>();
 
 		registerNoProcessNode<control::clone_forward<parameter::clone_holder>, ModulationSourceBaseComponent>();
 
 		registerNoProcessNode<duplilogic::dynamic::NodeType, duplilogic::dynamic::editor>();
 		registerNoProcessNode<dynamic_dupli_pack, data::ui::sliderpack_editor>();
-		registerNoProcessNode<faders::dynamic::NodeType, faders::dynamic::editor>();
+		registerNoProcessNode<faders::NodeType, faders::Editor>();
 		registerNoProcessNode<control::xy_editor::NodeType, control::xy_editor>();
 		registerNoProcessNode<control::resetter_editor::NodeType, control::resetter_editor>();
 		registerPolyModNode<dynamic_smoother_parameter<1>, dynamic_smoother_parameter<NUM_POLYPHONIC_VOICES>, smoothers::dynamic_base::editor>();
@@ -1377,13 +1181,14 @@ namespace dynamic
 			addAndMakeVisible(modValue);
 			addAndMakeVisible(activeValue);
 
-			modValue.textFunction = getAxis;
-			activeValue.textFunction = getAxis;
+			modValue.textFunction = BIND_MEMBER_FUNCTION_1(envelope_display_base::getAxis);
+			activeValue.textFunction = BIND_MEMBER_FUNCTION_1(envelope_display_base::getAxis);
 		};
 
-		static String getAxis(int index)
+		String getAxis(int index)
 		{
-			return index == 0 ? "CV" : "GT";
+			auto id = getObject()->getId();
+			return cppgen::CustomNodeProperties::getModOutputs(id)[index];
 		}
 
 		Dragger modValue, activeValue;
@@ -1764,13 +1569,13 @@ Factory::Factory(DspNetwork* network) :
 			}
 		}
 
-		void initialise(NodeBase* n) override
+		void initialise(ObjectWithValueTree* n) override
 		{
-			parentNode = n;
+			parentNode = dynamic_cast<NodeBase*>(n);
 
 			if(n != nullptr)
 			{
-				auto ptree = n->getParameterTree().getChildWithProperty(PropertyIds::ID, "Index");
+				auto ptree = parentNode->getParameterTree().getChildWithProperty(PropertyIds::ID, "Index");
 
 				indexListener.setCallback(ptree, 
 									      { PropertyIds::Value }, 
@@ -1826,9 +1631,9 @@ Factory::Factory(DspNetwork* network) :
 {
 	struct parameter_handler: public flex_ahdsr_base::DragHandlerBase
 	{
-		void initialise(NodeBase* n)
+		void initialise(ObjectWithValueTree* n)
 		{
-			parentNode = n;
+			parentNode = dynamic_cast<NodeBase*>(n);
 		}
 
 		bool handleAdditionalDrag(int parameterIndex, double value) override
@@ -1861,6 +1666,12 @@ Factory::Factory(DspNetwork* network) :
 						false>();
 
 	registerNode<voice_manager, voice_manager_base::editor>();
+
+	using gi = runtime_target::indexers::fix_hash<1>;
+	using ei = modulation::config::ExtraIndexer;
+	using ph = parameter::dynamic_base_holder;
+	registerPolyModNode<global_mod_gate<1, gi>, global_mod_gate<NUM_POLYPHONIC_VOICES, gi>, ModulationSourceBaseComponent>();
+	registerPolyModNode<extra_mod_gate<1, ei>, extra_mod_gate<NUM_POLYPHONIC_VOICES, ei>, ModulationSourceBaseComponent>();
 
 	registerPolyNode<silent_killer<1>, silent_killer<NUM_POLYPHONIC_VOICES>, voice_manager_base::editor>();
 }

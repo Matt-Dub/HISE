@@ -561,15 +561,18 @@ WebViewData::OpaqueResourceType WebViewData::fetch(const std::string& path)
 	return {};
 };
 
-WebViewWrapper::WebViewWrapper(WebViewData::Ptr d) :
+WebViewWrapper::WebViewWrapper(WebViewData::Ptr d, bool init) :
 	data(d)
 {
 	data->registerWebView(this);
 
-	SafeAsyncCall::callAsyncIfNotOnMessageThread<WebViewWrapper>(*this, [](WebViewWrapper& wv)
+	if(init)
 	{
-		wv.refresh();
-	});
+		SafeAsyncCall::callAsyncIfNotOnMessageThread<WebViewWrapper>(*this, [](WebViewWrapper& wv)
+		{
+			wv.refresh();
+		});
+	}
 }
 
 WebViewWrapper::~WebViewWrapper()
@@ -645,7 +648,7 @@ void WebViewWrapper::refresh()
 #if !JUCE_LINUX
 	jassert(MessageManager::getInstance()->isThisTheMessageThread());
 
-	auto currentFocusComponent = Component::getCurrentlyFocusedComponent();
+	
 
 	choc::ui::WebView::Options options;
 	options.enableDebugMode = data->isDebugModeEnabled();
@@ -693,7 +696,7 @@ void WebViewWrapper::refresh()
 	
 	refreshBounds(UnblurryGraphics::getScaleFactorForComponent(this));
 
-	if(currentFocusComponent != nullptr)
+	if(auto currentFocusComponent = Component::getCurrentlyFocusedComponent())
 		currentFocusComponent->grabKeyboardFocusAsync();
 
 	webView->navigate("");

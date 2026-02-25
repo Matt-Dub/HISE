@@ -187,11 +187,22 @@ public:
 
 	bool isEntireSampleLoaded() const noexcept { return entireSampleLoaded; };
 	
-	
-
 #if HISE_SAMPLER_ALLOW_RELEASE_START
 
-	bool isReleaseStartEnabled() const noexcept { return releaseStart != 0; }
+	void setIsReleaseSample(bool shouldBeReleaseSample)
+	{
+		if(shouldBeReleaseSample != isReleaseSample)
+		{
+			isReleaseSample = shouldBeReleaseSample;
+
+			if(isReleaseSample)
+				releaseStart = 0;
+
+			rebuildReleaseStartBuffer();
+		}
+	}
+
+	bool isReleaseStartEnabled() const noexcept { return releaseStart != 0 || isReleaseSample; }
 
 	/** Sets the point where the sample should seek to if the note is released (0 = disabled). */
 	void setReleaseStart(int newReleaseStart);
@@ -228,6 +239,13 @@ public:
 			releaseStartData->calculateReleasePeak(calculatedValues, numSamples, releaseStartOptions);
 	}
 
+	float getCurrentReleasePeak() const
+	{
+		if(releaseStartData != nullptr)
+			return releaseStartData->currentAttenuationPeak;
+
+		return 0.0f;
+	}
 #else
 
 	static constexpr bool isReleaseStartEnabled() { return false; }
@@ -426,7 +444,7 @@ private:
 
 		int64 getSampleLength() const
 		{
-			return sampleLength;
+			return realSampleLength ? realSampleLength : sampleLength;
 		}
 
 		double getMonolithSampleRate() const
@@ -437,6 +455,12 @@ private:
 			}
 
 			return 0.0;
+		}
+
+		void setMonolithSampleLength(int64 newRealSampleLength)
+		{
+			if(monolithicInfo != nullptr)
+				realSampleLength = newRealSampleLength;
 		}
 
 		// ==============================================================================================================================================
@@ -478,6 +502,7 @@ private:
 		bool isReading;
 
 		int64 sampleLength;
+		int64 realSampleLength = 0;
 
 		File loadedFile;
 
@@ -584,6 +609,7 @@ private:
 #if HISE_SAMPLER_ALLOW_RELEASE_START
 
 	int releaseStart = 0;
+	bool isReleaseSample = false;
 
 	struct ReleaseStartData
 	{

@@ -326,6 +326,13 @@ public:
 			return vtc.getTextForValue(value);
 		}
 
+		/** Uses one of the inbuilt text converts to parse a text string to a numeric value. */
+		double getValueForText(String text, String convertedMode)
+		{
+			auto vtc = ValueToTextConverter::createForMode(convertedMode);
+			return vtc.getValueForText(text);
+		}
+
 		/** Iterates the given sub-directory of the Samples folder and returns a list with all references to audio files. */
 		var getSampleFilesFromDirectory(const String& relativePathFromSampleFolder, bool recursive);
 
@@ -830,6 +837,9 @@ public:
 		/** Returns enabled state of midi channel (0 = All channels). */
 		bool isMidiChannelEnabled(int index);
 
+		/** Returns true (on Windows) if IPP is enabled or (optionally) if the plugin is running on macOS. */
+		bool isIppEnabled(bool returnTrueIfMacOS);
+
 		/** Returns an array of the form [width, height]. */
 		var getUserDesktopSize();
 
@@ -1054,6 +1064,9 @@ public:
 
 		/** Clears the current samplemap. */
 		bool clearSampleMap();
+
+		/** Returns an object that can be used to control the complex group management of this sampler. */
+		var getComplexGroupManager();
 
 		// ============================================================================================================
 
@@ -1406,6 +1419,9 @@ public:
 		/** Throws an error message if the value is a string. */
 		void assertNoString(var value);
 
+		/** Throws the given error message if the condition isn't met. */
+		void assertWithMessage(bool condition, String errorMessage);
+
 		/** Throws an error message if the value is not a legal number (eg. string or array or infinity or NaN). */
 		void assertLegalNumber(var value);
 
@@ -1414,6 +1430,9 @@ public:
 
 		/** Starts a sampling session with the given ID. */
 		void startSampling(const String& sessionId);
+
+		/** Synchronously tests a callback of a given object for automated testing cycles. */
+		void testCallback(var obj, String callbackId, var argList);
 
 		/** Stores the current state of the given data into the current sampling session. */
 		void sample(const String& label, var dataToSample);
@@ -1522,6 +1541,12 @@ private:
 		/** Enables a high precision grid timer. */
 		void setEnableGrid(bool shouldBeEnabled, int tempoFactor);
 
+		/** Adds a multiplier to slow down the grid callbacks for this transport handler. */
+		void setLocalGridMultiplier(int factor);
+
+		/** Bypasses the grid callback for this transport handler. */
+		void setLocalGridBypassed(bool shouldBeBypassed);
+
         /** Sets the internal clock to stop when the external clock was stopped. */
         void stopInternalClockOnExternalStop(bool shouldStop);
         
@@ -1543,6 +1568,15 @@ private:
 		/** This will return true if the DAW is currently bouncing the audio to a file. You can use this in the transport change callback to modify your processing chain. */
 		bool isNonRealtime() const;
 
+		/** Returns the number of samples for the current grid duration. */
+		double getGridLengthInSamples() const;
+
+		/** Returns whether the transport has been started. */
+		bool isPlaying() const;
+
+		/** Returns the current grid position. */
+		int getGridPosition(int timestamp) const;
+
 	private:
 
 		static void onBypassUpdate(TransportHandler& handler, bool state);
@@ -1562,6 +1596,11 @@ private:
 		int gridIndex = 0;
 		int gridTimestamp = 0;
 		bool firstGridInPlayback = false;
+		int localGridMultiplier = 1;
+		int localBitShift = 0;
+		bool nextLocalIsFirst = false;
+		bool localBypassed = false;
+		int lastGridIndex = -1;
 
 		struct Wrapper;
 

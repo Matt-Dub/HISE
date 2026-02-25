@@ -41,10 +41,10 @@ ScriptingApi::Content::ScriptSlider::MatrixCableConnection::QueryFunction::Query
 {}
 
 ModulationDisplayValue ScriptingApi::Content::ScriptSlider::MatrixCableConnection::QueryFunction::getDisplayValue(
-	Processor* p, double nv, NormalisableRange<double> nr) const
+	Processor* p, double nv, NormalisableRange<double> nr, int displayIndex) const
 {
 	if(connection != nullptr)
-		return connection->getDisplayValue(nv, nr);
+		return connection->getDisplayValue(nv, nr, displayIndex);
 
 	return {};
 }
@@ -234,6 +234,12 @@ ScriptingApi::Content::ScriptSlider::MatrixCableConnection::MatrixCableConnectio
 	MatrixIds::Helpers::fillModSourceList(getMainController(), sourceNames);
 
 	auto componentIndex = slider.getScriptProcessor()->getScriptingContent()->getComponentIndex(&slider);
+
+	// if the component can't be found it's probably currently being constructed so we make 
+	// an educated guess that it will be appended at the end of the list shortly...
+	if(componentIndex == -1)
+		componentIndex = slider.getScriptProcessor()->getScriptingContent()->getNumComponents();
+
 	slider.getScriptProcessor()->setModulationDisplayQueryFunction(componentIndex, dynamic_cast<Processor*>(parent->getScriptProcessor()), new QueryFunction(this));
 
 	connectionListener.setCallback(matrixData, 
@@ -315,7 +321,7 @@ SimpleRingBuffer::Ptr ScriptingApi::Content::ScriptSlider::MatrixCableConnection
 }
 
 ModulationDisplayValue ScriptingApi::Content::ScriptSlider::MatrixCableConnection::getDisplayValue(double nv,
-	NormalisableRange<double> nr)
+	NormalisableRange<double> nr, int displayIndex)
 {
 	ModulationDisplayValue mv;
 
@@ -333,28 +339,46 @@ ModulationDisplayValue ScriptingApi::Content::ScriptSlider::MatrixCableConnectio
 		
 	for(auto s: scaleTargets)
 	{
-		auto i = s->intensity;
-		auto a = 1.0f - i;
-		normValue *= a + i * s->lastModValue;
-		min = jmin(min, a * sv);
+		if(displayIndex == -1 || s->sourceIndex == displayIndex)
+		{
+			auto i = s->intensity;
+
+			min = jmin(min, (1.0f - i) * sv);
+
+			if (s->auxTarget != nullptr)
+				i *= s->auxTarget->getAuxValue();
+
+			auto a = 1.0f - i;
+			normValue *= a + i * s->lastModValue;
+		}
 	}
 		
 	mv.scaledValue = normValue;
 
 	for(auto a: addTargets)
 	{
-		auto modValue = a->lastModValue;
-		max += a->intensity;
-
-		if(a->tm == modulation::TargetMode::Bipolar)
+		if(displayIndex == -1 || a->sourceIndex == displayIndex)
 		{
-			modValue *= 2.0;
-			modValue -= 1.0;
-			min -= a->intensity;
-		}
+			auto modValue = a->lastModValue;
+			max += a->intensity;
 
-		modValue *= a->intensity;
-		mv.addValue += modValue;
+			if (a->tm == modulation::TargetMode::Bipolar)
+			{
+				modValue *= 2.0;
+				modValue -= 1.0;
+				min -= a->intensity;
+			}
+
+			auto thisIntensity = a->intensity;
+
+			if(a->auxTarget != nullptr)
+			{
+				thisIntensity *= a->auxTarget->getAuxValue();
+			}
+
+			modValue *= thisIntensity;
+			mv.addValue += modValue;
+		}
 	}
 
 	if(min > max)
@@ -862,12 +886,12 @@ void ScriptModulationMatrix::setCurrentlySelectedSource(String sourceId)
 {
 	auto idx = sourceList.indexOf(sourceId);
 
-	if(idx != -1 && container != nullptr)
+	if(container != nullptr)
 	{
 		if(!container->matrixProperties.selectableSources)
 			reportScriptError("Selectable sources are disabled");
 
-		container->currentMatrixSourceBroadcaster.sendMessage(sendNotificationSync, idx);
+		container->setExlusiveMatrixSource(idx, sendNotificationAsync);
 	}
 }
 
@@ -877,12 +901,11 @@ void ScriptModulationMatrix::setSourceSelectionCallback(var newCallback)
 
 	if(HiseJavascriptEngine::isJavascriptFunction(newCallback))
 	{
-		if(!container->matrixProperties.selectableSources)
-			reportScriptError("Selectable sources are disabled");
-
 		sourceSelectionCallback = WeakCallbackHolder(getScriptProcessor(), this, newCallback, 1);
 		sourceSelectionCallback.incRefCount();
 		sourceSelectionCallback.setThisObject(this);
+
+		container->matrixProperties.selectableSources = true;
 
 		container->currentMatrixSourceBroadcaster.addListener(*this, [](ScriptModulationMatrix& m, int idx)
 		{
@@ -893,7 +916,10 @@ void ScriptModulationMatrix::setSourceSelectionCallback(var newCallback)
 			}
 		});
 	}
-	
+	else
+	{
+		container->matrixProperties.selectableSources = false;
+	}
 }
 
 void ScriptModulationMatrix::setDragCallback(var newDragCallback)
@@ -1007,7 +1033,7 @@ var ScriptModulationMatrix::getModulationDataFromQueryFunction (const QueryObjec
 			if(nr.getRange().contains (midPos))
 			    nr.setSkewForCentre (midPos);
 			
-			auto mv = p.qf->getDisplayValue(p.p.get(), nv, nr);
+			auto mv = p.qf->getDisplayValue(p.p.get(), nv, nr, -1);
 
 			DynamicObject::Ptr obj = new DynamicObject();
 			mv.storeToJSON(obj.get());

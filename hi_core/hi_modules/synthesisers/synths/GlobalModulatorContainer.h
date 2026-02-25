@@ -175,6 +175,7 @@ public:
 		RuntimeData d;
 		d.type = scriptnode::modulation::SourceType::TimeVariant;
 		d.thisBlockSize = &typed->thisBlockSize;
+		d.resetFlag = nullptr;
 		d.signal = (float*)typed->getReadPointer(0);
 		d.constantValue = 0.0f;
 		return d;
@@ -227,13 +228,7 @@ class EnvelopeData : public GlobalModulatorDataBase<EnvelopeModulator>
 {
 public:
 
-	enum class ClearState: uint8
-	{
-		Playing,
-		PendingReset1, // Leave one buffer through to avoid glitches at fast release times
-		PendingReset2, // Leave another buffer through to avoid glitches at fast release times
-		Reset
-	};
+	using ClearState = scriptnode::modulation::ClearState;
 
 	EnvelopeData(Modulator* mod, int samplesPerBlock) :
 		GlobalModulatorDataBase(mod),
@@ -329,11 +324,13 @@ public:
 			auto rt = typed->getRuntimePointer(e, 0);
 			d.thisBlockSize = rt.first;
 			d.signal = rt.second;
+			d.resetFlag = typed->isClear;
 		}
 		else
 		{
 			d.signal = typed->getMonoReadBuffer();
 			d.thisBlockSize = &typed->monoBlockSize;
+			d.resetFlag = nullptr;
 		}
 	
 		return d;
@@ -665,6 +662,7 @@ public:
 	StringArray customEditCallbacks;
 	LambdaBroadcaster<int, String> editCallbackHandler;
 
+	bool exclusiveSourceMode = false;
 	LambdaBroadcaster<int> currentMatrixSourceBroadcaster;
 
 	enum class DragAction
@@ -683,6 +681,27 @@ public:
 	}
 
 	LambdaBroadcaster<int, String, DragAction> dragBroadcaster;
+
+	void cleanUpRuntimeSources()
+	{
+		runtimeSource.clear();
+	}
+
+	void setExlusiveMatrixSource(int sourceIndex, NotificationType n)
+	{
+		if (matrixProperties.selectableSources)
+		{
+			currentMatrixSourceBroadcaster.sendMessage(n, sourceIndex);
+		}
+	}
+
+	int getExclusiveMatrixSource() const
+	{
+		if(matrixProperties.selectableSources)
+			return currentMatrixSourceBroadcaster.getLastValue();
+
+		return -1;
+	}
 
 private:
 
@@ -848,7 +867,19 @@ private:
 		GlobalModulatorContainer& parent;
 	} runtimeSource;
 
-    struct GlobalModulatorCable;
+	struct GlobalModulatorCable
+	{
+		WeakReference<Modulator> mod;
+		var cable;
+
+		void send(int voiceIndex, bool isEnvelope = false, int startSample = 0);
+
+		bool operator==(const GlobalModulatorCable& other) const
+		{
+			return other.mod == mod &&
+				cable == other.cable;
+		}
+	};
 
     SimpleReadWriteLock cableLock;
     

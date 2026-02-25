@@ -49,10 +49,11 @@ public:
 	class ScopedDelayer
 	{
 	public:
-		ScopedDelayer(ValueTreeUpdateWatcher* watcher_);;
+		ScopedDelayer(ValueTreeUpdateWatcher* watcher_, bool forceMessageThread_=false);;
 		~ScopedDelayer();
 	private:
 		WeakReference<ValueTreeUpdateWatcher> watcher;
+		bool forceMessageThread = false;
 	};
 
 	class ScopedSuspender
@@ -327,6 +328,46 @@ public:
 
 		const ScriptComponent* getParentScriptComponent() const;
 
+		Result testWithThis(WeakCallbackHolder& c, const Array<var>& argList)
+		{
+			juce::var::NativeFunctionArgs args(var(this), argList.begin(), argList.size());
+			return c.callSync(args);
+		}
+
+		Result testWithThis(const var& function, const Array<var>& argList)
+		{
+			if (HiseJavascriptEngine::isJavascriptFunction(function))
+			{
+				WeakCallbackHolder c(getScriptProcessor(), this, function, argList.size());
+				c.incRefCount();
+				c.setThisObject(this);
+
+				return testWithThis(c, argList);
+			}
+			else
+			{
+				return Result::fail("function is not defined");
+			}
+		}
+
+		virtual Result testCallback(const String& callbackId, const Array<var>& argList)
+		{
+			if (callbackId == "setControlCallback")
+			{
+				if (argList[0] != this)
+					return Result::fail("argList[0] must be equal to the obj parameter of the testCallback call");
+
+				if (argList.size() < 2)
+					return Result::fail("testing setControlCallback requires 2 arguments");
+
+				return testWithThis(customControlCallback, argList);
+			}
+			if (callbackId == "setKeyPressCallback")
+				return testWithThis(keyboardCallback, argList);
+
+			return Result::fail("unknown callback ID " + callbackId);
+		}
+
 		virtual void preRecompileCallback() 
 		{
 			controlSender.cancelMessage();
@@ -547,6 +588,9 @@ public:
 
 		/** Changes the depth hierarchy (z-axis) of sibling components (Back, Default, Front or AlwaysOnTop). */
 		void setZLevel(String zLevel);
+
+		/** Returns the current z-level. */
+		ZLevelListener::ZLevel getCurrentZLevel() const { return currentZLevel; }
 
 		/** Adds a callback to react on key presses (when this component is focused). */
 		void setKeyPressCallback(var keyboardFunction);
@@ -1943,6 +1987,8 @@ public:
 		String fileDropLevel;
 
 		dispatch::AccumulatedFlowManager flowManager;
+
+		Result testCallback(const String& callbackId, const Array<var>& args) override;
 
 	private:
 
@@ -3360,19 +3406,22 @@ private:
 
 		if (auto sc = getComponentWithName(name))
 		{
+			if (x != -1 && y != -1)
+			{
+				sc->handleScriptPropertyChange("x");
+				sc->handleScriptPropertyChange("y");
+				sc->setScriptObjectProperty(ScriptComponent::Properties::x, x);
+				sc->setScriptObjectProperty(ScriptComponent::Properties::y, y);
+			}
 
-			sc->handleScriptPropertyChange("x");
-			sc->handleScriptPropertyChange("y");
-			sc->setScriptObjectProperty(ScriptComponent::Properties::x, x);
-			sc->setScriptObjectProperty(ScriptComponent::Properties::y, y);
 			return dynamic_cast<Subtype*>(sc);
 		}
 
 		ValueTree newChild("Component");
 		newChild.setProperty("type", Subtype::getStaticObjectName().toString(), nullptr);
 		newChild.setProperty("id", name.toString(), nullptr);
-		newChild.setProperty("x", x, nullptr);
-		newChild.setProperty("y", y, nullptr);
+		newChild.setProperty("x", jmax(0, x), nullptr);
+		newChild.setProperty("y", jmax(0, y), nullptr);
 		contentPropertyData.addChild(newChild, -1, nullptr);
 
 		Subtype *t = new Subtype(getScriptProcessor(), this, name, x, y, 0, 0);

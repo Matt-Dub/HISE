@@ -30,6 +30,7 @@
 *   ===========================================================================
 */
 
+
 namespace hise { using namespace juce;
 
 #define GET_SETTING(id) dataObject.getSetting(id).toString()
@@ -157,7 +158,9 @@ ValueTree BaseExporter::collectAllSampleMapsInDirectory()
 	return sampleMaps;
 }
 
+bool CompileExporter::skipAudioDriverInitialisation = false;
 bool CompileExporter::globalCommandLineExport = false;
+bool CompileExporter::projectFolderIsWorkingDirectory = false;
 bool CompileExporter::useCIMode = false;
 int CompileExporter::forcedVSTVersion = 0;
 
@@ -196,6 +199,8 @@ String CompileExporter::getCompileResult(ErrorCodes result)
 	case CompileExporter::ASIOSDKMissing: return "ASIO SDK is missing";
 	case CompileExporter::HISEPathNotSpecified: return "HISE path not set";
 	case CompileExporter::HiseCodeMismatch: return "The git commit hash of the HISE build doesn't match the source code hash.";
+	case CompileExporter::JUCESubModuleNotInitialised: return "The JUCE codebase was not pulled as submodule yet";
+	case CompileExporter::JUCEVersionMismatch: return "The JUCE version of the source code is different to the HISE build version";
 	case CompileExporter::CorruptedPoolFiles:	return "Pooled binary resources are corrupt. Clean build folder and retry.";
 	case CompileExporter::numErrorCodes: return "OK";
 		
@@ -460,6 +465,23 @@ int CompileExporter::getBuildOptionPart(const String& argument)
 void CompileExporter::setExportUsingCI(bool shouldUseCIMode)
 {
 	useCIMode = shouldUseCIMode;
+}
+
+File CompileExporter::getCurrentWorkDirectory(bool throwOnInvalidFolder)
+{
+	auto workDirectory = File::getCurrentWorkingDirectory();
+
+	if (workDirectory.isDirectory())
+	{
+		auto projectInfoExists = workDirectory.getChildFile("project_info.xml").existsAsFile();
+		auto scriptFolderExists = workDirectory.getChildFile("Scripts").isDirectory();
+		auto sampleMapFolderExists = workDirectory.getChildFile("SampleMaps").isDirectory();
+
+		if (throwOnInvalidFolder && !(projectInfoExists || scriptFolderExists || sampleMapFolderExists))
+			throw Result::fail(workDirectory.getFullPathName() + " is not a valid HISE directory. Call this from your HISE project folder");
+	}
+
+	return workDirectory;
 }
 
 CompileExporter::BuildOption CompileExporter::getBuildOptionFromCommandLine(StringArray &args)
@@ -812,6 +834,69 @@ CompileExporter::ErrorCodes CompileExporter::exportInternal(TargetTypes type, Bu
 	return ErrorCodes::UserAbort;
 }
 
+struct JuceVersionExtractor
+{
+	JuceVersionExtractor(const File& hisePath_):
+	  hisePath(hisePath_),
+	  sysDef(hisePath.getChildFile("JUCE/modules/juce_core/system/juce_StandardHeader.h"))
+	{
+		
+	}
+
+	bool doesVersionMatch() const
+	{
+		if(hasJUCE())
+		{
+			auto lines = StringArray::fromLines(sysDef.loadFileAsString());
+
+			int major = 0;
+			int minor = 0;
+			int patch = 0;
+
+			for(auto l: lines)
+			{
+				if(!l.startsWith("#define"))
+					continue;
+
+				if(l.contains("#define JUCE_MAJOR_VERSION"))
+					major = l.getTrailingIntValue();
+				
+				if (l.contains("#define JUCE_MINOR_VERSION"))
+					minor = l.getTrailingIntValue();
+
+				if (l.contains("#define JUCE_BUILDNUMBER"))
+					patch = l.getTrailingIntValue();
+			}
+
+			auto ok =  major == JUCE_MAJOR_VERSION &&
+				       minor == JUCE_MINOR_VERSION &&
+				       patch == JUCE_BUILDNUMBER;
+
+			if(!ok)
+			{
+				errorMessage << "JUCE version mismatch: HISE was built with " << SystemStats::getJUCEVersion();
+				errorMessage << ", but the JUCE submodule has version ";
+				errorMessage << String(major) << "." << String(minor) << "." << String(patch);
+			}
+
+			return ok;
+		}
+
+		return false;
+	}
+
+	bool hasJUCE() const { return sysDef.existsAsFile(); }
+
+	String getErrorMessage() const { return errorMessage; }
+
+private:
+
+	mutable String errorMessage;
+
+	File hisePath;
+	File sysDef;
+};
+
 CompileExporter::ErrorCodes CompileExporter::setupHisePath()
 {
 	const auto& data = dynamic_cast<GlobalSettingManager*>(chainToExport->getMainController())->getSettingsObject();
@@ -838,6 +923,17 @@ CompileExporter::ErrorCodes CompileExporter::setupHisePath()
 		
 	if (!hisePath.isDirectory()) 
 		return ErrorCodes::HISEPathNotSpecified;
+
+	JuceVersionExtractor jve(hisePath);
+
+	if(!jve.hasJUCE())
+		return ErrorCodes::JUCESubModuleNotInitialised;
+
+	if(!jve.doesVersionMatch())
+	{
+		printErrorMessage("JUCE version error", jve.getErrorMessage());
+		return ErrorCodes::JUCEVersionMismatch;
+	}
 
 	return ErrorCodes::OK;
 }
@@ -915,6 +1011,8 @@ bool CompileExporter::checkSanity(TargetTypes type, BuildOption option)
 	// Check if a frontend script is in the main synth chain
 
     const bool frontWasFound = chainToExport->hasDefinedFrontInterface();
+
+	
 
 #if !USE_IPP
 	if(useIpp)
@@ -1493,7 +1591,7 @@ CompileExporter::ErrorCodes CompileExporter::createResourceFile(const String &so
 	resourcesFile << "  END" << "\n";
 	resourcesFile << "END" << "\n";
 
-    String year = HelperClasses::isUsingVisualStudio2017(dataObject) ? "2017" : "2022";
+    String year = HelperClasses::isUsingVisualStudio2026(dataObject) ? "2026" : "2022";
 
 	File resourcesFileObject(solutionDirectory + "/Builds/VisualStudio" + year + "/resources.rc");
 
@@ -1934,6 +2032,18 @@ void CompileExporter::ProjectTemplateHelpers::handleCompilerInfo(CompileExporter
         headerPath << ";" << folder.getChildFile("common").getFullPathName();
     }
     
+#if JUCE_WINDOWS
+    auto hasNKS = exporter->dataObject.getSetting(HiseSettings::Project::ExtraDefinitionsWindows).toString().contains("HISE_INCLUDE_NKS_SDK=1");
+#else
+    auto hasNKS = exporter->dataObject.getSetting(HiseSettings::Project::ExtraDefinitionsOSX).toString().contains("HISE_INCLUDE_NKS_SDK=1");
+#endif
+    
+    if(hasNKS)
+    {
+        auto vst3sdk = exporter->hisePath.getChildFile("JUCE/modules/juce_audio_processors/format_types/VST3_SDK");
+        headerPath << ";" << vst3sdk.getFullPathName();
+    }
+    
     REPLACE_WILDCARD_WITH_STRING("%FAUST_HEADER_PATH%", headerPath);
     
     REPLACE_WILDCARD_WITH_STRING("%IPP_1A%", exporter->useIpp ? "Static_Library" : String());
@@ -2050,15 +2160,15 @@ void CompileExporter::ProjectTemplateHelpers::handleCompanyInfo(CompileExporter*
 
 void CompileExporter::ProjectTemplateHelpers::handleVisualStudioVersion(const HiseSettings::Data& dataObject, String& templateProject)
 {
-	const bool isUsingVisualStudio2017 = HelperClasses::isUsingVisualStudio2017(dataObject);
+	const bool isUsingVisualStudio2026 = HelperClasses::isUsingVisualStudio2026(dataObject);
 
-	auto shouldUseVS2017 = !(bool)HISE_USE_VS2022;
+	auto shouldUseVS2026 = !(bool)HISE_USE_VS2022;
 
 #if JUCE_WINDOWS
-	if (isUsingVisualStudio2017 != shouldUseVS2017)
+	if (isUsingVisualStudio2026 != shouldUseVS2026)
 	{
-		auto buildVersion = shouldUseVS2017 ? "VS2017" : "VS2022";
-		auto settingsVersion = isUsingVisualStudio2017 ? "VS2017" : "VS2022";
+		auto buildVersion = shouldUseVS2026 ? "VS2026" : "VS2022";
+		auto settingsVersion = isUsingVisualStudio2026 ? "VS2026" : "VS2022";
 
 		String message;
 
@@ -2070,10 +2180,10 @@ void CompileExporter::ProjectTemplateHelpers::handleVisualStudioVersion(const Hi
 	}
 #endif
 	
-	if (isUsingVisualStudio2017)
+	if (isUsingVisualStudio2026)
 	{
-		REPLACE_WILDCARD_WITH_STRING("%VS_VERSION%", "VS2017");
-		REPLACE_WILDCARD_WITH_STRING("%TARGET_FOLDER%", "VisualStudio2017");
+		REPLACE_WILDCARD_WITH_STRING("%VS_VERSION%", "VS2026");
+		REPLACE_WILDCARD_WITH_STRING("%TARGET_FOLDER%", "VisualStudio2026");
 	}
 	else
 	{
@@ -2232,24 +2342,7 @@ void CompileExporter::ProjectTemplateHelpers::handleAdditionalSourceCode(Compile
         REPLACE_WILDCARD_WITH_STRING("%BEATPORT_LIB_MACOS%", "");
     }
 
-#if JUCE_MAC
-    const String additionalStaticLibs = exporter->GET_SETTING(HiseSettings::Project::OSXStaticLibs);
-    templateProject = templateProject.replace("%OSX_STATIC_LIBS%", additionalStaticLibs);
-#else
-
-	auto additionalStaticLibFolder = exporter->GET_SETTING(HiseSettings::Project::WindowsStaticLibFolder);
-	
-	if (additionalStaticLibFolder.isNotEmpty())
-	{
-		REPLACE_WILDCARD_WITH_STRING("%WIN_STATIC_LIB_FOLDER_D64%", beatportLibPath + additionalStaticLibFolder + "/Debug_x64");
-		REPLACE_WILDCARD_WITH_STRING("%WIN_STATIC_LIB_FOLDER_R64%", beatportLibPath + additionalStaticLibFolder + "/Release_x64");
-	}
-	else
-	{
-		REPLACE_WILDCARD_WITH_STRING("%WIN_STATIC_LIB_FOLDER_D64%", beatportLibPath);
-		REPLACE_WILDCARD_WITH_STRING("%WIN_STATIC_LIB_FOLDER_R64%", beatportLibPath);
-	}
-#endif
+	handleAdditionalStaticLibs(exporter, templateProject, beatportLibPath);
     
 	if (additionalSourceFiles.size() != 0)
 	{
@@ -2257,7 +2350,7 @@ void CompileExporter::ProjectTemplateHelpers::handleAdditionalSourceCode(Compile
 
 		for (int i = 0; i < additionalSourceFiles.size(); i++)
 		{
-			auto fileEntry = createXmlElementForFile(chainToExport, templateProject, additionalSourceFiles[i], true);
+			ScopedPointer<XmlElement> fileEntry = createXmlElementForFile(chainToExport, templateProject, additionalSourceFiles[i], true);
 
 			String newAditionalSourceLine = fileEntry->createDocument("", false, false);
             
@@ -2285,6 +2378,146 @@ void CompileExporter::ProjectTemplateHelpers::handleAdditionalSourceCode(Compile
     {
         templateProject = templateProject.replace("%ADDITIONAL_FILES%", "");
     }
+}
+
+void CompileExporter::ProjectTemplateHelpers::handleAdditionalStaticLibs(CompileExporter* exporter, String& templateProject, const String& previousLibPath)
+{
+	auto chainToExport = exporter->chainToExport;
+
+	File additionalSourceCodeDirectory = GET_PROJECT_HANDLER(chainToExport).getSubDirectory(ProjectHandler::SubDirectories::AdditionalSourceCode);
+
+#if JUCE_MAC
+    
+    auto additionalStaticLibFolder = exporter->GET_SETTING(HiseSettings::Project::WindowsStaticLibFolder);
+    
+    if(additionalStaticLibFolder.isNotEmpty())
+    {
+        if (additionalStaticLibFolder.contains("%ADDITIONAL_SOURCE_CODE%"))
+            additionalStaticLibFolder = additionalStaticLibFolder.replace("%ADDITIONAL_SOURCE_CODE%", additionalSourceCodeDirectory.getFullPathName());
+
+        additionalStaticLibFolder = additionalStaticLibFolder.replace("\\", "/");
+
+        auto debugFolder = File(additionalStaticLibFolder).getChildFile("Debug_macOS");
+        auto releaseFolder = File(additionalStaticLibFolder).getChildFile("Release_macOS");
+
+        Array<File> debugLibraries = debugFolder.findChildFiles(File::findFiles, false, "*.a");
+        Array<File> releaseLibraries = debugFolder.findChildFiles(File::findFiles, false, "*.a");
+
+        if (debugLibraries.size() == releaseLibraries.size())
+        {
+            StringArray debugLibs, releaseLibs;
+
+            for (int i = 0; i < debugLibraries.size(); i++)
+            {
+                // remove "lib" xxx ".a"
+                debugLibs.add(debugLibraries[i].getFileNameWithoutExtension().substring(3));
+                releaseLibs.add(releaseLibraries[i].getFileNameWithoutExtension().substring(3));
+            }
+
+            debugLibs.sort(true);
+            releaseLibs.sort(true);
+
+            String debugLibString = "";
+
+            for (int i = 0; i < debugLibs.size(); i++)
+            {
+                if (debugLibs[i] != releaseLibs[i])
+                {
+                    debugToConsole(chainToExport, "!Debug / Release library mismatch: " + debugLibs[i]);
+                }
+                else
+                {
+                    debugToConsole(chainToExport, "Added static library " + debugLibs[i]);
+                    debugLibString << "&#10;" << debugLibs[i];
+                }
+            }
+
+            REPLACE_WILDCARD_WITH_STRING("%OSX_EXTERNAL_LIBRARIES%", debugLibString);
+        }
+        else
+        {
+            debugToConsole(chainToExport, "!Debug / Release library mismatch");
+            REPLACE_WILDCARD_WITH_STRING("%OSX_EXTERNAL_LIBRARIES%", "");
+        }
+
+        REPLACE_WILDCARD_WITH_STRING("%OSC_STATIC_LIB_FOLDER_DEBUG%", previousLibPath + ";" + debugFolder.getFullPathName());
+        REPLACE_WILDCARD_WITH_STRING("%OSC_STATIC_LIB_FOLDER_RELEASE%", previousLibPath + ";" + releaseFolder.getFullPathName());
+        
+    }
+    else
+    {
+        REPLACE_WILDCARD_WITH_STRING("%OSC_STATIC_LIB_FOLDER_DEBUG%", "");
+        REPLACE_WILDCARD_WITH_STRING("%OSC_STATIC_LIB_FOLDER_RELEASE%", "");
+        REPLACE_WILDCARD_WITH_STRING("%OSX_EXTERNAL_LIBRARIES%", "");
+    }
+    
+    const String additionalStaticLibs = exporter->GET_SETTING(HiseSettings::Project::OSXStaticLibs);
+    templateProject = templateProject.replace("%OSX_STATIC_LIBS%", additionalStaticLibs);
+    
+#else
+
+	auto additionalStaticLibFolder = exporter->GET_SETTING(HiseSettings::Project::WindowsStaticLibFolder);
+
+	if (additionalStaticLibFolder.isNotEmpty())
+	{
+		if (additionalStaticLibFolder.contains("%ADDITIONAL_SOURCE_CODE%"))
+			additionalStaticLibFolder = additionalStaticLibFolder.replace("%ADDITIONAL_SOURCE_CODE%", additionalSourceCodeDirectory.getFullPathName());
+
+		additionalStaticLibFolder = additionalStaticLibFolder.replace("\\", "/");
+
+		auto debugFolder = File(additionalStaticLibFolder).getChildFile("Debug_x64");
+		auto releaseFolder = File(additionalStaticLibFolder).getChildFile("Release_x64");
+
+		Array<File> debugLibraries = debugFolder.findChildFiles(File::findFiles, false, "*.lib");
+		Array<File> releaseLibraries = debugFolder.findChildFiles(File::findFiles, false, "*.lib");
+
+		if (debugLibraries.size() == releaseLibraries.size())
+		{
+			StringArray debugLibs, releaseLibs;
+
+			for (int i = 0; i < debugLibraries.size(); i++)
+			{
+				debugLibs.add(debugLibraries[i].getFileName());
+				releaseLibs.add(releaseLibraries[i].getFileName());
+			}
+
+			debugLibs.sort(true);
+			releaseLibs.sort(true);
+
+			String debugLibString = "";
+
+			for (int i = 0; i < debugLibs.size(); i++)
+			{
+				if (debugLibs[i] != releaseLibs[i])
+				{
+					debugToConsole(chainToExport, "!Debug / Release library mismatch: " + debugLibs[i]);
+				}
+				else
+				{
+					debugToConsole(chainToExport, "Added static library " + debugLibs[i]);
+					debugLibString << "&#10;" << debugLibs[i];
+				}
+			}
+
+			REPLACE_WILDCARD_WITH_STRING("%WIN_STATIC_LIBS%", debugLibString);
+		}
+		else
+		{
+			debugToConsole(chainToExport, "!Debug / Release library mismatch");
+			REPLACE_WILDCARD_WITH_STRING("%WIN_STATIC_LIBS%", "");
+		}
+
+		REPLACE_WILDCARD_WITH_STRING("%WIN_STATIC_LIB_FOLDER_D64%", previousLibPath + ";" + debugFolder.getFullPathName());
+		REPLACE_WILDCARD_WITH_STRING("%WIN_STATIC_LIB_FOLDER_R64%", previousLibPath + ";" + releaseFolder.getFullPathName());
+	}
+	else
+	{
+		REPLACE_WILDCARD_WITH_STRING("%WIN_STATIC_LIB_FOLDER_D64%", previousLibPath);
+		REPLACE_WILDCARD_WITH_STRING("%WIN_STATIC_LIB_FOLDER_R64%", previousLibPath);
+
+		REPLACE_WILDCARD_WITH_STRING("%WIN_STATIC_LIBS%", "");
+	}
+#endif
 }
 
 void CompileExporter::ProjectTemplateHelpers::handleCopyProtectionInfo(CompileExporter* exporter, String &templateProject, BuildOption option)
@@ -2541,15 +2774,16 @@ void CompileExporter::BatchFileCreator::createBatchFile(CompileExporter* exporte
 
 #if JUCE_WINDOWS
     
-	const String msbuildPath = HelperClasses::isUsingVisualStudio2017(exporter->dataObject) ? 
-		"\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Community\\MSBuild\\15.0\\Bin\\MsBuild.exe\"" :
+	const String msbuildPath = HelperClasses::isUsingVisualStudio2026(exporter->dataObject) ? 
+
+		"\"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\MsBuild.exe\"" :
 		"\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MsBuild.exe\"";
 
-	const String projucerPath = exporter->hisePath.getChildFile("tools/Projucer/Projucer.exe").getFullPathName();
+	const String projucerPath = exporter->hisePath.getChildFile("JUCE/Projucer/Projucer.exe").getFullPathName();
 	
 	const String vsArgs = "/p:Configuration=\"" + exporter->configurationName + "\" /verbosity:minimal";
 
-	const String vsFolder = HelperClasses::isUsingVisualStudio2017(exporter->dataObject) ? "VisualStudio2017" : "VisualStudio2022";
+	const String vsFolder = HelperClasses::isUsingVisualStudio2026(exporter->dataObject) ? "VisualStudio2026" : "VisualStudio2022";
 
 	ADD_LINE("@echo off");
 
@@ -2563,13 +2797,13 @@ void CompileExporter::BatchFileCreator::createBatchFile(CompileExporter* exporte
 		ADD_LINE("set vs_args=" << vsArgs);
 		ADD_LINE("set PreferredToolArchitecture=x64");
 
-		if (HelperClasses::isUsingVisualStudio2017(exporter->dataObject))
+		if (HelperClasses::isUsingVisualStudio2026(exporter->dataObject))
 		{
-			ADD_LINE("set VisualStudioVersion=15.0");
+			ADD_LINE("set VisualStudioVersion=18.0"); // VS2026
 		}
 		else
 		{
-			ADD_LINE("set VisualStudioVersion=17.0");
+			ADD_LINE("set VisualStudioVersion=17.0"); // VS2022
 		}
 	}
 	
@@ -2577,26 +2811,6 @@ void CompileExporter::BatchFileCreator::createBatchFile(CompileExporter* exporte
 	ADD_LINE("\"" << projucerPath << "\" --resave \"%build_path%\\AutogeneratedProject.jucer\"");
 	ADD_LINE("");
 
-	if (!exporter->rawMode && BuildOptionHelpers::is32Bit(buildOption))
-	{
-		ADD_LINE("echo Compiling 32bit " << projectType << " %project% ...");
-		ADD_LINE("set Platform=Win32");
-		ADD_LINE("%msbuild% \"%build_path%\\Builds\\" << vsFolder << "\\%project%.sln\" %vs_args%");
-
-		ADD_LINE("");
-
-		if (isUsingCIMode())
-		{
-			ADD_LINE("if %errorlevel% NEQ 0 (");
-			ADD_LINE("  echo Compile error at " << projectType);
-			ADD_LINE("  exit 1");
-			ADD_LINE(")");
-		}
-
-		
-		ADD_LINE("");
-	}
-	
 	if (!exporter->rawMode && BuildOptionHelpers::is64Bit(buildOption))
 	{
 		ADD_LINE("echo Compiling 64bit " << projectType << " %project% ...");
@@ -2620,7 +2834,7 @@ void CompileExporter::BatchFileCreator::createBatchFile(CompileExporter* exporte
 
 	if (exporter->rawMode)
 	{
-		ADD_LINE("echo Project was exported succesfully. Open the VS2017 Solution file found in Binaries/Builds/VS2017");
+		ADD_LINE("echo Project was exported succesfully. Open the VS2026 / VS2022 Solution file found in Binaries/Builds/VS2026/VS2022");
 	}
 
 	if (!CompileExporter::isExportingFromCommandLine() && !hasChildProcessManager)
@@ -2632,7 +2846,7 @@ void CompileExporter::BatchFileCreator::createBatchFile(CompileExporter* exporte
 
 #elif JUCE_LINUX
 
-	const String projucerPath = exporter->hisePath.getChildFile("tools/projucer/Projucer").getFullPathName();
+	const String projucerPath = exporter->hisePath.getChildFile("JUCE/projucer/Projucer").getFullPathName();
 
 	ADD_LINE("\"" << projucerPath << "\" --resave AutogeneratedProject.jucer");
 	ADD_LINE("cd Builds/LinuxMakefile/");
@@ -2654,7 +2868,7 @@ void CompileExporter::BatchFileCreator::createBatchFile(CompileExporter* exporte
 
 #else
     
-	const String projucerPath = exporter->hisePath.getChildFile("tools/Projucer/Projucer.app/Contents/MacOS/Projucer").getFullPathName();
+	const String projucerPath = exporter->hisePath.getChildFile("JUCE/Projucer/Projucer.app/Contents/MacOS/Projucer").getFullPathName();
 
     if(hasChildProcessManager)
     {
@@ -2693,6 +2907,7 @@ void CompileExporter::BatchFileCreator::createBatchFile(CompileExporter* exporte
         
 		xcodeLine << "xcodebuild -project \"Builds/MacOSX/" << projectName << ".xcodeproj\" -configuration \"" << exporter->configurationName << "\" -jobs \"" << threads << "\"";
         
+		// Still rocking the old tools/projucer directory...
         auto xcbeautify = exporter->hisePath.getChildFile("tools/Projucer/xcbeautify");
         
         xcodeLine << " | " << xcbeautify.getFullPathName().quoted();
@@ -2785,7 +3000,7 @@ juce::String CompileExporter::HelperClasses::getFileNameForCompiledPlugin(const 
 	return String();
 }
 
-bool CompileExporter::HelperClasses::isUsingVisualStudio2017(const HiseSettings::Data& dataObject)
+bool CompileExporter::HelperClasses::isUsingVisualStudio2026(const HiseSettings::Data& dataObject)
 {
 	// Always use the version you build HISE with in CI mode
 	if (isUsingCIMode())
@@ -2795,7 +3010,7 @@ bool CompileExporter::HelperClasses::isUsingVisualStudio2017(const HiseSettings:
 
 	const String v = GET_SETTING(HiseSettings::Compiler::VisualStudioVersion);
 
-	return v.isEmpty() || (v == "Visual Studio 2017");
+	return v.isEmpty() || (v == "Visual Studio 2026");
 }
 
 CompileExporter::ErrorCodes CompileExporter::HelperClasses::saveProjucerFile(String templateProject, CompileExporter* exporter)
