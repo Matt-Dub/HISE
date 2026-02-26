@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<Processor Type="SynthChain" ID="ExportWizard" Bypassed="0" Gain="1.0" Balance="0.0"
+<Processor Type="SynthChain" ID="ExportWizard" Bypassed="1" Gain="1.0" Balance="0.0"
            VoiceLimit="64.0" KillFadeTime="20.0" IconColour="0" packageName=""
            BuildVersion="650">
   <ChildProcessors>
