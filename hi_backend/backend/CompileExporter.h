@@ -169,6 +169,8 @@ public:
 		AAXSDKMissing,
 		ASIOSDKMissing,
 		HISEPathNotSpecified,
+		JUCESubModuleNotInitialised,
+		JUCEVersionMismatch,
 		HiseCodeMismatch,
 		numErrorCodes
 	};
@@ -244,7 +246,28 @@ public:
 		globalCommandLineExport = true;
 	};
 
+	static void setSkipAudioDriverInitialisation()
+	{
+		skipAudioDriverInitialisation = true;
+	}
+
 	static void setExportUsingCI(bool shouldUseCIMode);
+
+	/** Call this before creating a BackendProcessor instance. */
+	static void setProjectFolderFromWorkingDirectory()
+	{
+		projectFolderIsWorkingDirectory = true;
+	}
+
+	static bool shouldSkipAudioDriverInitialisation() 
+	{ 
+		return skipAudioDriverInitialisation || isExportingFromCommandLine(); 
+	}
+
+	/** Returns the current working directory from the CLI call and verifies that this is a HISE project folder. Throws a Result::fail() when not valid. */
+	static File getCurrentWorkDirectory(bool throwOnInvalidFolder=true);
+
+	static bool isUsingWorkingDirectoryAsProjectFolder() { return projectFolderIsWorkingDirectory; }
 
 	static bool isUsingCIMode() { return useCIMode; }
 
@@ -285,8 +308,9 @@ protected:
 	String configurationName = "Release";
 
 	static bool globalCommandLineExport;
-	
+	static bool skipAudioDriverInitialisation;
 	static bool useCIMode;
+	static bool projectFolderIsWorkingDirectory;
 
 	static int forcedVSTVersion;
 
@@ -294,7 +318,7 @@ protected:
 	{
 		static String getFileNameForCompiledPlugin(const HiseSettings::Data& dataObject, ModulatorSynthChain* chain, BuildOption option);
 
-		static bool isUsingVisualStudio2017(const HiseSettings::Data& dataObject);
+		static bool isUsingVisualStudio2026(const HiseSettings::Data& dataObject);
 
 		static ErrorCodes saveProjucerFile(String templateProject, CompileExporter* exporter);
 	};
@@ -325,6 +349,7 @@ protected:
 		static void handleCompanyInfo(CompileExporter* exporter, String& templateProject);
 		static void handleVisualStudioVersion(const HiseSettings::Data& dataObject, String& templateProject);
 		static void handleAdditionalSourceCode(CompileExporter* exporter, String &templateProject, BuildOption option);
+		static void handleAdditionalStaticLibs(CompileExporter* exporter, String& templateProject, const String& previousLibPath);
 		static void handleCopyProtectionInfo(CompileExporter* exporter, String &templateProject, BuildOption option);
 		static String getTargetFamilyString(BuildOption option);
 		static String getPluginChannelAmount(ModulatorSynthChain* chain);

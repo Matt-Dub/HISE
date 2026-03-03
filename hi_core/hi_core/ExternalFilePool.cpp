@@ -876,7 +876,7 @@ juce::MemoryInputStream* PoolBase::DataProvider::createInputStream(const String&
 	}
 	else
 	{
-		jassertfalse;
+		//jassertfalse;
 		return nullptr;
 	}
 }

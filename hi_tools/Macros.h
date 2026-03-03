@@ -35,7 +35,6 @@
 namespace juce
 {
 using ButtonListener = Button::Listener;
-using SliderListener = Slider::Listener;
 using ComboBoxListener = ComboBox::Listener;
 using TextEditorListener = TextEditor::Listener;
 using LabelListener = Label::Listener;
@@ -202,12 +201,12 @@ public:
 
     Font getGlobalFont()
     {
-        return Font(getTypeface(typefaceRegular, regularFontData, regularFontSize)).withHeight(13.0f);
+        return Font(getTypeface(typefaceRegular, regularFontData, regularFontSize)).withHeight(16.0f);
     }
 
     Font getGlobalBoldFont()
     {
-        return Font(getTypeface(typefaceBold, boldFontData, boldFontSize)).withHeight(14.0f);
+        return Font(getTypeface(typefaceBold, boldFontData, boldFontSize)).withHeight(16.0f);
     }
 
     Font getGlobalMonospaceFont()

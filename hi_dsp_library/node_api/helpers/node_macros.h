@@ -37,9 +37,6 @@ namespace scriptnode
 using namespace juce;
 using namespace hise;
 
-// We'll define it here once so that it can be used in the initialise() callback
-class NodeBase;
-
 /** Parameter Preprocessors
 
 	1. Create a enum called Parameters for each parameter
@@ -54,23 +51,6 @@ class NodeBase;
 
 #define SN_REGISTER_CALLBACK(className) template <int P> void registerCallback(scriptnode::parameter::data& p) { p.template setParameterCallbackWithIndex<className, P>(this); }
 #define SN_PARAMETER_MEMBER_FUNCTION template <int P> void setParameter(double v) { setParameterStatic<P>(this, v); }
-
-#define SN_EMPTY_VOICE_SETTER(className) using VoiceSetter = container::Helpers::DummyVoiceSetter;
-
-#define SN_VOICE_SETTER(className, polyDataMember) struct VoiceSetter { \
-		using FT = decltype(polyDataMember); \
-		template <typename WT> VoiceSetter(WT& obj, bool forceAll) : svs(obj.getWrappedObject().polyDataMember, forceAll), updater(obj.getWrappedObject()) {}; \
-		data::updater<className> updater; \
-		operator bool() const { return true; } \
-		typename FT::ScopedVoiceSetter svs; }
-
-#define SN_VOICE_SETTER_WITH_DATA_LOCK(className, polyDataMember) struct VoiceSetter { \
-		using FT = decltype(polyDataMember); \
-		template <typename WT> VoiceSetter(WT& obj, bool forceAll) : svs(obj.getWrappedObject().polyDataMember, forceAll), sl(&obj.getWrappedObject(), !forceAll), updater(obj.getWrappedObject()) {}; \
-		DataTryReadLock sl; \
-		data::updater<className> updater; \
-		operator bool() const { return (bool)sl; } \
-		typename FT::ScopedVoiceSetter svs; }
 
 /** Object Accessors
 
@@ -91,8 +71,15 @@ constexpr const auto& getWrappedObject() const { return x; }
 /** Use this macro to pass the static ID to the base constructor of the parameter_node class that will define the IsControlNode property to avoid the wrap::mod wrapper. */
 #define SN_PARAMETER_NODE_CONSTRUCTOR(ClassId, ParameterId) ClassId() : control::pimpl::parameter_node_base<ParameterId>(getStaticId()) {};
 
+#define SN_PARAMETER_NOSIGNAL_CONSTRUCTOR(ClassId, ParameterId) ClassId() : control::pimpl::parameter_node_base<ParameterId>(getStaticId()), control::pimpl::no_processing(getStaticId()) {};
+
 #define SN_TEMPLATED_MODE_PARAMETER_NODE_CONSTRUCTOR(ClassId, ParameterId, namespaceId) ClassId(): \
 	control::pimpl::parameter_node_base<ParameterId>(getStaticId()),\
+    control::pimpl::templated_mode(getStaticId(), namespaceId) {};
+
+#define SN_TEMPLATED_MODE_PARAMETER_NOSIGNAL_CONSTRUCTOR(ClassId, ParameterId, namespaceId) ClassId(): \
+	control::pimpl::parameter_node_base<ParameterId>(getStaticId()),\
+	control::pimpl::no_processing(getStaticId()), \
     control::pimpl::templated_mode(getStaticId(), namespaceId) {};
 
 #define SN_SELF_AWARE_WRAPPER(x, ObjectClass) SN_GET_SELF_OBJECT(*this); SN_GET_WRAPPED_OBJECT(this->obj.getWrappedObject()); using ObjectType = x; using WrappedObjectType = typename ObjectClass::WrappedObjectType; SN_REGISTER_CALLBACK(ObjectClass);
@@ -120,7 +107,7 @@ constexpr const auto& getWrappedObject() const { return x; }
 	else return false; }
 
 
-#define SN_DEFAULT_INIT(ObjectType)  void initialise(NodeBase* n)  { \
+#define SN_DEFAULT_INIT(ObjectType)  void initialise(ObjectWithValueTree* n)  { \
 	if constexpr(prototypes::check::initialise<ObjectType>::value) \
 		obj.initialise(n); }
 
@@ -156,7 +143,7 @@ constexpr const auto& getWrappedObject() const { return x; }
 
 /** Node empty callback macros. */
 
-#define SN_EMPTY_INITIALISE void initialise(NodeBase* ) {}
+#define SN_EMPTY_INITIALISE void initialise(ObjectWithValueTree* ) {}
 #define SN_EMPTY_PREPARE void prepare(PrepareSpecs) {}
 #define SN_EMPTY_RESET void reset() {}
 #define SN_EMPTY_PROCESS template <typename ProcessDataType> void process(ProcessDataType&) {}

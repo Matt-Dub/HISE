@@ -50,6 +50,7 @@ namespace hise { using namespace juce;
 		auto tc = c->findColour(trackColour);
 		auto pc = c->findColour(peakColour);
 		auto mc = c->findColour(maxPeakColour);
+		auto oc = c->findColour(overPeakColour);
             
 		RectangleList<float> onSegments, offSegments, maxSegments;
             
@@ -75,7 +76,14 @@ namespace hise { using namespace juce;
 				{
 					auto maxPos = fullSize * maxPeaks[i];
                         
-					g.setColour(mc);
+					if (maxPeaks[i] >= 0.99f && oc.getAlpha() > 0)
+					{
+						g.setColour(oc);
+					}
+					else
+					{
+						g.setColour(mc);
+					}
                         
 					auto c = isVertical ? maxCopy.removeFromBottom(maxPos).withHeight(2.0f) :
 						         maxCopy.removeFromLeft(maxPos).removeFromRight(2.0f);
@@ -373,6 +381,7 @@ namespace hise { using namespace juce;
 			ni->setColour(peakColour, findPanelColour(PanelColourId::itemColour1));
 			ni->setColour(trackColour, findPanelColour(PanelColourId::itemColour2));
 			ni->setColour(maxPeakColour, findPanelColour(PanelColourId::textColour));
+			ni->setColour(overPeakColour, findPanelColour(PanelColourId::itemColour3));
             
 			if(ni->findColour(bgColour).isOpaque())
 				ni->setOpaque(true);
@@ -854,7 +863,7 @@ void PerformanceLabelPanel::timerCallback()
 	//activityLed->setOn(midiFlag);
 
 	String stats = "CPU: ";
-	stats << String(cpuUsage) << "%, RAM: " << String(ramUsage, 1) << "MB , Voices: " << String(voiceAmount);
+	stats << String(cpuUsage) << "%, RAM: " << String(ramUsage, 1) << "MB, Voices: " << String(voiceAmount);
 	statisticLabel->setText(stats, dontSendNotification);
 }
 
@@ -912,6 +921,44 @@ void TooltipPanel::fromDynamicObject(const var& object)
 	tooltipBar->setColour(TooltipBar::textColour, findPanelColour(PanelColourId::textColour));
 
 	tooltipBar->setFont(getFont());
+
+	useFade = getPropertyWithDefault(object, SpecialPanelIds::Fade);
+	tooltipBar->setUseFade(useFade);
+
+	showIcon = getPropertyWithDefault(object, SpecialPanelIds::ShowIcon);
+	tooltipBar->setShowInfoIcon(showIcon);
+}
+
+var TooltipPanel::toDynamicObject() const
+{
+	var obj = FloatingTileContent::toDynamicObject();
+	storePropertyInObject(obj, SpecialPanelIds::Fade, useFade);
+	storePropertyInObject(obj, SpecialPanelIds::ShowIcon, showIcon);
+	return obj;
+}
+
+Identifier TooltipPanel::getDefaultablePropertyId(int index) const
+{
+	if (index < (int)PanelPropertyId::numPropertyIds)
+		return FloatingTileContent::getDefaultablePropertyId(index);
+
+	RETURN_DEFAULT_PROPERTY_ID(index, SpecialPanelIds::Fade, "Fade");
+	RETURN_DEFAULT_PROPERTY_ID(index, SpecialPanelIds::ShowIcon, "ShowIcon");
+
+	jassertfalse;
+	return{};
+}
+
+var TooltipPanel::getDefaultProperty(int index) const
+{
+	if (index < (int)PanelPropertyId::numPropertyIds)
+		return FloatingTileContent::getDefaultProperty(index);
+
+	RETURN_DEFAULT_PROPERTY(index, SpecialPanelIds::Fade, true);
+	RETURN_DEFAULT_PROPERTY(index, SpecialPanelIds::ShowIcon, true);
+
+	jassertfalse;
+	return{};
 }
 
 void TooltipPanel::resized()
@@ -925,9 +972,13 @@ PresetBrowserPanel::PresetBrowserPanel(FloatingTile* parent) :
 	setDefaultPanelColour(PanelColourId::bgColour, Colours::black.withAlpha(0.97f));
     setDefaultPanelColour(PanelColourId::textColour, Colours::white);
 	setDefaultPanelColour(PanelColourId::itemColour1, Colour(SIGNAL_COLOUR));
+	setDefaultPanelColour(PanelColourId::itemColour2, Colours::black.withAlpha(0.7f));
+	setDefaultPanelColour(PanelColourId::itemColour3, Colours::white.withAlpha(0.6f));
 
 	addAndMakeVisible(presetBrowser = new PresetBrowser(getMainController()));
 	
+	simple_css::FlexboxComponent::Helpers::setIsOpaqueWrapper(*this, true);
+
 	if (parent->getMainController()->getCurrentScriptLookAndFeel() != nullptr)
 	{
 		scriptlaf = HiseColourScheme::createAlertWindowLookAndFeel(parent->getMainController());
@@ -1042,6 +1093,8 @@ void PresetBrowserPanel::fromDynamicObject(const var& object)
 	options.showFavoriteIcons = getPropertyWithDefault(object, SpecialPanelIds::ShowFavoriteIcon);
 	options.backgroundColour = findPanelColour(PanelColourId::bgColour);
 	options.highlightColour = findPanelColour(PanelColourId::itemColour1);
+	options.modalBackgroundColour = findPanelColour(PanelColourId::itemColour2);
+	options.itemColour3 = findPanelColour(PanelColourId::itemColour3);
 	options.textColour = findPanelColour(PanelColourId::textColour);
 	options.font = getFont();
 	
@@ -1600,20 +1653,10 @@ juce::String MidiLearnPanel::getCellText(int rowNumber, int columnId) const
 TableFloatingTileBase::InvertedButton::InvertedButton(TableFloatingTileBase &owner_) :
 	owner(owner_)
 {
-	laf.setFontForAll(owner.font);
-
-	addAndMakeVisible(t = new TextButton("Inverted"));
-	t->setButtonText("Inverted");
-	t->setLookAndFeel(&laf);
-	t->setConnectedEdges(Button::ConnectedOnLeft | Button::ConnectedOnRight);
+	addAndMakeVisible(t = new ToggleButton("Inverted"));
+	t->setButtonText("Normal");
 	t->addListener(this);
 	t->setTooltip("Invert the range of the macro control for this parameter.");
-	t->setColour(TextButton::buttonColourId, Colour(0x88000000));
-	t->setColour(TextButton::buttonOnColourId, Colour(0x88FFFFFF));
-	t->setColour(TextButton::textColourOnId, Colour(0xaa000000));
-	t->setColour(TextButton::textColourOffId, Colour(0x99ffffff));
-
-	t->setClickingTogglesState(true);
 }
 
 void TableFloatingTileBase::InvertedButton::resized()
@@ -1640,9 +1683,6 @@ TableFloatingTileBase::ValueSliderColumn::ValueSliderColumn(TableFloatingTileBas
 {
 	addAndMakeVisible(slider = new RangeSlider());
 
-	laf.setFontForAll(table.font);
-
-	slider->setLookAndFeel(&laf);
 	slider->setSliderStyle(Slider::LinearBar);
 	slider->setTextBoxStyle(Slider::TextBoxLeft, true, 80, 20);
 	slider->setColour(Slider::backgroundColourId, Colour(0x38ffffff));
@@ -1681,6 +1721,32 @@ void TableFloatingTileBase::ValueSliderColumn::sliderValueChanged(Slider *)
 		slider->setValue(actualValue, dontSendNotification);
 }
 
+void TableFloatingTileBase::LookAndFeelMethods::drawTableRowBackground(Graphics& g, const LookAndFeelData& d, int rowNumber, int width, int height, bool rowIsSelected, bool rowIsHovered)
+{
+	if (rowIsSelected)
+		g.fillAll(Colours::white.withAlpha(0.2f));
+}
+
+void TableFloatingTileBase::LookAndFeelMethods::drawTableCell(Graphics& g, const LookAndFeelData& d, const String& text, int rowNumber, int columnId, int width, int height, bool rowIsSelected, bool cellIsClicked, bool cellIsHovered)
+{
+	g.setColour(d.textColour);
+	g.setFont(d.f);
+	g.drawText(text, 2, 0, width - 4, height, Justification::centredLeft, true);
+}
+
+TableFloatingTileBase::LookAndFeelData TableFloatingTileBase::getLookAndFeelData() const
+{
+	LookAndFeelData d;
+	d.f = font;
+	d.textColour = textColour;
+	d.bgColour = findPanelColour(FloatingTileContent::PanelColourId::bgColour);
+	d.itemColour1 = itemColour1;
+	d.itemColour2 = itemColour2;
+	d.itemColour3 = findPanelColour(FloatingTileContent::PanelColourId::itemColour3);
+	d.parentType = getIdentifierForBaseClass().toString();
+	return d;
+}
+
 TableFloatingTileBase::TableFloatingTileBase(FloatingTile* parent) :
 	FloatingTileContent(parent),
 	font(GLOBAL_FONT())
@@ -1690,6 +1756,8 @@ TableFloatingTileBase::TableFloatingTileBase(FloatingTile* parent) :
 
 void TableFloatingTileBase::initTable(bool addChannelColumn)
 {
+	hasChannelColumn = addChannelColumn;
+
 	// Create our table component and add it to this component..
 	addAndMakeVisible(table);
 	table.setModel(this);
@@ -1727,9 +1795,9 @@ void TableFloatingTileBase::initTable(bool addChannelColumn)
 		table.getHeader().addColumn("Channel", Channel, fWidth, 30, -1, TableHeaderComponent::visible);
 
 	table.getHeader().addColumn("Parameter", ParameterName, 70, 30, -1);
-	table.getHeader().addColumn("Inverted", Inverted, 70, 70, 70);
-	table.getHeader().addColumn("Min", Minimum, 70, 70, 70);
-	table.getHeader().addColumn("Max", Maximum, 70, 70, 70);
+	table.getHeader().addColumn("Inverted", Inverted, 70, 30, -1);
+	table.getHeader().addColumn("Min", Minimum, 70, 30, -1);
+	table.getHeader().addColumn("Max", Maximum, 70, 30, -1);
 	table.getHeader().setStretchToFitActive(true);
 }
 
@@ -1738,9 +1806,44 @@ void TableFloatingTileBase::updateContent()
 	table.updateContent();
 }
 
+var TableFloatingTileBase::toDynamicObject() const
+{
+	auto obj = FloatingTileContent::toDynamicObject();
+	storePropertyInObject(obj, SpecialPanelIds::ColumnWidthRatio, var(columnWidthRatios));
+	return obj;
+}
+
+Identifier TableFloatingTileBase::getDefaultablePropertyId(int index) const
+{
+	if (index < (int)PanelPropertyId::numPropertyIds)
+		return FloatingTileContent::getDefaultablePropertyId(index);
+
+	RETURN_DEFAULT_PROPERTY_ID(index, SpecialPanelIds::ColumnWidthRatio, "ColumnWidthRatio");
+
+	return {};
+}
+
+var TableFloatingTileBase::getDefaultProperty(int index) const
+{
+	if (index < (int)PanelPropertyId::numPropertyIds)
+		return FloatingTileContent::getDefaultProperty(index);
+
+	Array<var> defaultRatios;
+	RETURN_DEFAULT_PROPERTY(index, SpecialPanelIds::ColumnWidthRatio, var(defaultRatios));
+
+	return {};
+}
+
 void TableFloatingTileBase::fromDynamicObject(const var& object)
 {
 	FloatingTileContent::fromDynamicObject(object);
+
+	auto ratios = getPropertyWithDefault(object, SpecialPanelIds::ColumnWidthRatio);
+	if (ratios.isArray())
+	{
+		columnWidthRatios.clear();
+		columnWidthRatios.addArray(*ratios.getArray());
+	}
 
 	table.setColour(ListBox::backgroundColourId, findPanelColour(FloatingTileContent::PanelColourId::bgColour));
 
@@ -1787,12 +1890,17 @@ void TableFloatingTileBase::paintRowBackground(Graphics& g, int rowNumber, int w
 	}
 	else
 	{
-		if (rowIsSelected)
-		{
-			g.fillAll(Colours::white.withAlpha(0.2f));
-		}
+		auto point = table.getMouseXYRelative();
+		auto hoverRow = table.getRowContainingPosition(point.getX(), point.getY());
+
+		auto lafToUse = dynamic_cast<LookAndFeelMethods*>(&getLookAndFeel());
+
+		if (lafToUse == nullptr)
+			lafToUse = &fallbackLaf;
+
+		lafToUse->drawTableRowBackground(g, getLookAndFeelData(), rowNumber, width, height, rowIsSelected, rowNumber == hoverRow);
 	}
-	
+
 }
 
 void TableFloatingTileBase::resized()
@@ -1801,6 +1909,21 @@ void TableFloatingTileBase::resized()
 
 	if(auto root = CSSRootComponent::find(*this))
 	{
+		// CSS LAF is set in refreshComponentForCell(),
+		// but that isn't called when there are no rows in the table.
+		// Initialising here for consistent styling for the empty state.
+		if (css_laf == nullptr)
+		{
+			css_laf = new simple_css::StyleSheetLookAndFeel(*root);
+
+			if (root->css.getWithAllStates(this, simple_css::Selector("th")) != nullptr)
+				table.getHeader().setLookAndFeel(css_laf);
+			else if (dynamic_cast<LookAndFeelMethods*>(&getLookAndFeel()))
+				table.getHeader().setLookAndFeel(&getLookAndFeel());
+			else
+				table.getHeader().setLookAndFeel(laf);
+		}
+
 		int firstWidth = 0;
 
 		if(auto ss = root->css.getWithAllStates(this, Selector(ElementType::TableHeader)))
@@ -1873,6 +1996,10 @@ void TableFloatingTileBase::resized()
 			auto ma = ss->getArea(getLocalBounds().toFloat(), {"margin", 0});
 			ma = ss->getArea(ma, {"padding", 0} );
 			table.setBounds(ma.toNearestInt());
+
+			auto scrollbarVisible = table.getViewport()->getVerticalScrollBar().isVisible();
+			auto scrollbarWidth = scrollbarVisible ? table.getViewport()->getScrollBarThickness() : 0;
+			table.getHeader().resizeAllColumnsToFit(ma.toNearestInt().getWidth() - scrollbarWidth);
 			return;
 		}
 
@@ -1880,9 +2007,39 @@ void TableFloatingTileBase::resized()
 
 	}
 
-	
-	
+	if (css_laf == nullptr)
+	{
+		if (dynamic_cast<LookAndFeelMethods*>(&getLookAndFeel()))
+			table.getHeader().setLookAndFeel(&getLookAndFeel());
+		else
+			table.getHeader().setLookAndFeel(laf);
+	}
+
 	table.setBounds(getLocalBounds());
+
+	auto scrollbarVisible = table.getViewport()->getVerticalScrollBar().isVisible();
+	auto scrollbarWidth = scrollbarVisible ? table.getViewport()->getScrollBarThickness() : 0;
+
+	table.getHeader().resizeAllColumnsToFit(getWidth() - scrollbarWidth);
+
+	if (columnWidthRatios.size() > 0)
+	{
+		auto numCols = table.getHeader().getNumColumns(true);
+
+		if (columnWidthRatios.size() == numCols)
+		{
+			table.getHeader().setStretchToFitActive(false);
+			auto w = (double)(getWidth() - scrollbarWidth);
+
+			for (int i = 0; i < numCols; i++)
+			{
+				auto id = table.getHeader().getColumnIdOfIndex(i, true);
+				auto r = jlimit(0.0, 1.0, (double)columnWidthRatios[i]);
+				auto colWidth = roundToInt(w * r);
+				table.getHeader().setColumnWidth(id, colWidth);
+			}
+		}
+	}
 }
 
 double TableFloatingTileBase::setRangeValue(int row, ColumnId column, double newRangeValue)
@@ -1991,10 +2148,11 @@ Component* TableFloatingTileBase::refreshComponentForCell(int rowNumber, int col
 
 		slider->slider->setDoubleClickReturnValue(true, columnId == Maximum ? fullRange.end : fullRange.start);
 
+		slider->slider->setComponentID(columnId == Maximum ? "max" : "min");
 		slider->slider->setColour(Slider::ColourIds::backgroundColourId, Colours::transparentBlack);
 		slider->slider->setColour(Slider::ColourIds::thumbColourId, itemColour1);
 		slider->slider->setColour(Slider::ColourIds::textBoxTextColourId, textColour);
-		
+
 		slider->setRowAndColumn(rowNumber, (ColumnId)columnId, value, fullRange);
 
 		ValueToTextConverter vtc = getValueToTextConverter(rowNumber);
@@ -2019,10 +2177,9 @@ Component* TableFloatingTileBase::refreshComponentForCell(int rowNumber, int col
 			b->t->setLookAndFeel(css_laf.get());
 		}
 		
-		b->t->setColour(TextButton::buttonOnColourId, itemColour1);
-		b->t->setColour(TextButton::textColourOnId, textColour);
-		b->t->setColour(TextButton::buttonColourId, Colours::transparentBlack);
-		b->t->setColour(TextButton::textColourOffId, textColour);
+		b->t->setColour(ToggleButton::textColourId, textColour);
+		b->t->setColour(ToggleButton::tickColourId, itemColour1);
+		b->t->setColour(ToggleButton::tickDisabledColourId, textColour);
 
 		b->setRowAndColumn(rowNumber, isInverted(rowNumber));
 
@@ -2047,7 +2204,7 @@ void TableFloatingTileBase::paintCell(Graphics& g, int rowNumber, int columnId, 
 	{
 		Renderer r(nullptr, rootDialog.stateWatcher);
 		auto state = r.getPseudoClassFromComponent(this);
-                
+
 		if(rowIsSelected)
 			state |= (int)PseudoClassType::Focus;
 
@@ -2059,9 +2216,16 @@ void TableFloatingTileBase::paintCell(Graphics& g, int rowNumber, int columnId, 
 	}
 	else
 	{
-		g.setColour(textColour);
-		g.setFont(font);
-		g.drawText(text, 2, 0, width - 4, height, Justification::centredLeft, true);
+		auto point = table.getMouseXYRelative();
+		auto hoverRow = table.getRowContainingPosition(point.getX(), point.getY());
+
+		auto lafToUse = dynamic_cast<LookAndFeelMethods*>(&getLookAndFeel());
+
+		if (lafToUse == nullptr)
+			lafToUse = &fallbackLaf;
+
+		auto visualIndex = table.getHeader().getIndexOfColumnId(columnId, true);
+		lafToUse->drawTableCell(g, getLookAndFeelData(), text, rowNumber, visualIndex, width, height, rowIsSelected, false, rowNumber == hoverRow);
 	}
 }
 

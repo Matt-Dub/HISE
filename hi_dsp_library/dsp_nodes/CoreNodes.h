@@ -360,6 +360,7 @@ public:
 		{
 			DEFINE_PARAMETERDATA(recorder, RecordingLength);
 			p.setRange({ 0.0, 2000.0, 0.1 });
+			p.info.textConverter = parameter::pod::Time;
 			data.add(std::move(p));
 		}
 	}
@@ -614,7 +615,7 @@ template <class ShaperType> struct snex_shaper
 		shaper.reset();
 	};
 
-	void initialise(NodeBase* n)
+	void initialise(ObjectWithValueTree* n)
 	{
 		if constexpr (prototypes::check::initialise<ShaperType>::value)
 			shaper.initialise(n);
@@ -781,18 +782,21 @@ public:
 			DEFINE_PARAMETERDATA(ramp, PeriodTime);
 			p.setRange({ 0.1, 1000.0, 0.1 });
 			p.setDefaultValue(100.0);
+			p.info.textConverter = parameter::pod::Time;
 			data.add(std::move(p));
 		}
 
 		{
 			DEFINE_PARAMETERDATA(ramp, LoopStart);
 			p.setDefaultValue(0.0);
+			p.info.textConverter = parameter::pod::NormalizedPercentage;
 			data.add(std::move(p));
 		}
 
 		{
 			DEFINE_PARAMETERDATA(ramp, Gate);
 			p.setDefaultValue(1.0);
+			p.setParameterValueNames({ "Off", "On" });
 			data.add(std::move(p));
 		}
 	}
@@ -1280,6 +1284,7 @@ public:
 		{
 			DEFINE_PARAMETERDATA(phasor_base, Gate);
 			p.setRange({ 0.0, 1.0, 1.0 });
+			p.setParameterValueNames({ "Off", "On" });
 			p.setDefaultValue(1.0);
 			data.add(std::move(p));
 		}
@@ -1287,6 +1292,7 @@ public:
 			DEFINE_PARAMETERDATA(phasor_base, Frequency);
 			p.setRange({ 20.0, 20000.0, 0.1 });
 			p.setDefaultValue(220.0);
+			p.info.textConverter = parameter::pod::Frequency;
 			p.setSkewForCentre(1000.0);
 			data.add(std::move(p));
 		}
@@ -1300,6 +1306,7 @@ public:
 		{
 			DEFINE_PARAMETERDATA(phasor_base, Phase);
 			p.setRange({ 0.0, 1.0 });
+			p.info.textConverter = parameter::pod::NormalizedPercentage;
 			p.setDefaultValue(0.0);
 			data.add(std::move(p));
 		}
@@ -1505,6 +1512,7 @@ public:
 			DEFINE_PARAMETERDATA(oscillator, Frequency);
 			p.setRange({ 20.0, 20000.0, 0.1 });
 			p.setDefaultValue(220.0);
+			p.info.textConverter = parameter::pod::Frequency;
 			p.setSkewForCentre(1000.0);
 			data.add(std::move(p));
 		}
@@ -1518,6 +1526,7 @@ public:
 		{
 			DEFINE_PARAMETERDATA(oscillator, Gate);
 			p.setRange({ 0.0, 1.0, 1.0 });
+			p.setParameterValueNames({ "Off", "On" });
 			p.setDefaultValue(1.0);
 			data.add(std::move(p));
 		}
@@ -1525,6 +1534,7 @@ public:
 		{
 			DEFINE_PARAMETERDATA(oscillator, Phase);
 			p.setRange({ 0.0, 1.0 });
+			p.info.textConverter = parameter::pod::NormalizedPercentage;
 			p.setDefaultValue(0.0);
 			data.add(std::move(p));
 		}
@@ -1554,10 +1564,8 @@ public:
 
 			uiData.uptimeDelta = newUptimeDelta;
 
-			voiceData.forEachCurrentVoice([newUptimeDelta](OscData& d)
-			{
+			for (auto& d : voiceData)
 				d.uptimeDelta = newUptimeDelta;
-			});
 		}
 	}
 
@@ -1582,10 +1590,8 @@ public:
 
 		uiData.phase = v;
 
-		voiceData.forEachCurrentVoice([v](OscData& d)
-		{
+		for (auto& d : voiceData)
 			d.phase = v;
-		});
 
 		sendDisplayUpdateMessage(0.0f);
 	}
@@ -1594,10 +1600,8 @@ public:
 	{
 		uiData.gain = gain;
 
-		voiceData.forEachCurrentVoice([gain](OscData& d)
-		{
+		for (auto& d : voiceData)
 			d.gain = gain;
-		});
 
 		sendDisplayUpdateMessage(0.0, true);
 	}
@@ -1606,10 +1610,8 @@ public:
 	{
 		auto pitchMultiplier = newMultiplier;
 
-		voiceData.forEachCurrentVoice([pitchMultiplier](OscData& d)
-		{
+		for (auto& d : voiceData)
 			d.multiplier = pitchMultiplier;
-		});
 
 		uiData.multiplier = pitchMultiplier;
 
@@ -1636,8 +1638,6 @@ public:
 	double freqValue = 220.0;
 	
 	float currentNyquistGain = 1.0f;
-
-	SN_VOICE_SETTER(oscillator, voiceData);
 
 };
 
@@ -1706,15 +1706,18 @@ template <int NV> struct file_player : public data::base,
         {
             if (mode != PlaybackModes::MidiFreq)
             {
-                auto& cd = *currentXYZSample.begin();
+                // Manual lock required here because reset() is called directly
+                // from prepare(), startVoice(), and setPlaybackMode().
+                if (auto dt = DataTryReadLock(this))
+                {
+                    auto& cd = currentXYZSample.get();
+                    HiseEvent e(HiseEvent::Type::NoteOn, 64, 1, 1);
 
-                HiseEvent e(HiseEvent::Type::NoteOn, 64, 1, 1);
+                    if (this->externalData.getStereoSample(cd, e))
+                        s.uptimeDelta = cd.getPitchFactor();
+                }
 
-                if (this->externalData.getStereoSample(cd, e))
-                    s.uptimeDelta = cd.getPitchFactor();
-
-                
-
+                // Always reset playback position, regardless of lock status
                 s.uptime = 0.0;
             }
         }
@@ -1745,6 +1748,8 @@ template <int NV> struct file_player : public data::base,
 
     template <int C> void processFix(ProcessData<C>& data)
     {
+        // Acquire read lock for external audio data access.
+        // If lock fails (data being updated), skip this buffer.
         if (auto dt = DataTryReadLock(this))
         {
             auto& s = getCurrentAudioSample();
@@ -1753,7 +1758,6 @@ template <int NV> struct file_player : public data::base,
             {
                 auto fd = data.toFrameData();
 
-                
                 auto maxIndex = (double)s.data[0].size();
 
                 if (mode == PlaybackModes::SignalInput)
@@ -1766,7 +1770,6 @@ template <int NV> struct file_player : public data::base,
                 }
                 else
                 {
-
                     using IndexType = index::unscaled<double, index::looped<0>>;
 
                     IndexType i(state.get().uptime);
@@ -1783,9 +1786,18 @@ template <int NV> struct file_player : public data::base,
                 for (auto& ch : data)
                 {
                     auto b = data.toChannelData(ch);
-                        FloatVectorOperations::clear(b.begin(), b.size());
+                    FloatVectorOperations::clear(b.begin(), b.size());
                 }
-            };
+            }
+        }
+        else if (mode == PlaybackModes::SignalInput)
+        {
+            // Lock not acquired, still clear output to avoid garbage
+            for (auto& ch : data)
+            {
+                auto b = data.toChannelData(ch);
+                FloatVectorOperations::clear(b.begin(), b.size());
+            }
         }
     }
 
@@ -1843,6 +1855,7 @@ template <int NV> struct file_player : public data::base,
 
     template <typename FrameDataType> void processFrame(FrameDataType& data) noexcept
     {
+        // Acquire read lock for external audio data access.
         if (auto dt = DataTryReadLock(this))
         {
             auto& cd = getCurrentAudioSample().data;
@@ -1882,6 +1895,11 @@ template <int NV> struct file_player : public data::base,
             }
             }
         }
+        else
+        {
+            // Lock not acquired, output silence
+            data = 0.0f;
+        }
     }
 
     void handleHiseEvent(HiseEvent& e)
@@ -1892,12 +1910,21 @@ template <int NV> struct file_player : public data::base,
 
             if (e.isNoteOn())
             {
-                auto& cd = getCurrentAudioSample();
+                // Acquire read lock for external audio data access.
+                if (auto dt = DataTryReadLock(this))
+                {
+                    auto& cd = getCurrentAudioSample();
 
-                if (this->externalData.getStereoSample(cd, e))
-                    s.uptimeDelta = cd.getPitchFactor();
+                    if (this->externalData.getStereoSample(cd, e))
+                        s.uptimeDelta = cd.getPitchFactor();
+                    else
+                        s.uptimeDelta = e.getFrequency() / rootFreq;
+                }
                 else
+                {
+                    // Lock not acquired, use frequency-based pitch
                     s.uptimeDelta = e.getFrequency() / rootFreq;
+                }
 
                 s.uptime = 0.0;
             }
@@ -1951,12 +1978,14 @@ template <int NV> struct file_player : public data::base,
         {
             DEFINE_PARAMETERDATA(file_player, Gate);
             p.setRange({ 0.0, 1.0, 1.0 });
+			p.setParameterValueNames({ "Off", "On" });
             p.setDefaultValue(1.0f);
             d.add(p);
         }
         {
             DEFINE_PARAMETERDATA(file_player, RootFrequency);
             p.setRange({ 20.0, 2000.0 });
+			p.info.textConverter = parameter::pod::Frequency;
             p.setDefaultValue(440.0);
             d.add(p);
         }
@@ -1978,6 +2007,7 @@ private:
 
     PolyData<OscData, NumVoices> state;
     PrepareSpecs lastSpecs;
+
 };
 
 class fm : public HiseDspBase
@@ -2050,6 +2080,7 @@ private:
 	PolyData<double, NUM_POLYPHONIC_VOICES> modGain;
 
 	SharedResourcePointer<SineLookupTable<2048>> sinTable;
+
 };
 
 template <int V> class gain : public HiseDspBase,
@@ -2132,6 +2163,7 @@ public:
 			DEFINE_PARAMETERDATA(gain_impl, Gain);
 			p.setRange({ -100.0, 0.0, 0.1 });
 			p.setSkewForCentre(-12.0);
+			p.info.textConverter = parameter::pod::Decibel;
 			p.setDefaultValue(0.0);
 			data.add(std::move(p));
 		}
@@ -2139,6 +2171,7 @@ public:
 			DEFINE_PARAMETERDATA(gain_impl, Smoothing);
 			p.setRange({ 0.0, 1000.0, 0.1 });
 			p.setSkewForCentre(100.0);
+			p.info.textConverter = parameter::pod::Time;
 			p.setDefaultValue(20.0);
 			data.add(std::move(p));
 		}
@@ -2146,6 +2179,7 @@ public:
 			DEFINE_PARAMETERDATA(gain_impl, ResetValue);
 			p.setRange({ -100.0, 0.0, 0.1 });
 			p.setSkewForCentre(-12.0);
+			p.info.textConverter = parameter::pod::Decibel;
 			p.setDefaultValue(0.0);
 			data.add(std::move(p));
 		}
@@ -2188,6 +2222,7 @@ public:
 	double resetValue = 0.0;
 
 	PolyData<sfloat, NumVoices> gainer;
+
 };
 
 template <int NV> class smoother: public mothernode,
@@ -2227,11 +2262,13 @@ public:
 		{
 			DEFINE_PARAMETERDATA(smoother, DefaultValue);
 			p.setDefaultValue(0.0);
+			p.info.textConverter = parameter::pod::NormalizedPercentage;
 			data.add(std::move(p));
 		}
 		{
 			DEFINE_PARAMETERDATA(smoother, SmoothingTime);
 			p.setRange({ 0.0, 2000.0, 0.1 });
+			p.info.textConverter = parameter::pod::Time;
 			p.setSkewForCentre(100.0);
 			p.setDefaultValue(100.0);
 			data.add(std::move(p));
@@ -2301,7 +2338,7 @@ public:
 
 template <typename T> struct snex_osc_base: public mothernode
 {
-	void initialise(NodeBase* n)
+	void initialise(ObjectWithValueTree* n)
 	{
 		if constexpr (prototypes::check::initialise<T>::value)
 			oscType.initialise(n);
@@ -2432,6 +2469,7 @@ template <int NV, typename T> struct snex_osc : public snex_osc_base<T>,
 			p.setRange({ 20.0, 20000.0, 0.1 });
 			p.setSkewForCentre(1000.0);
 			p.setDefaultValue(220.0);
+			p.info.textConverter = parameter::pod::Frequency;
 			data.add(std::move(p));
 		}
 
@@ -2839,6 +2877,7 @@ struct granulator: public data::base
         {
             parameter::data d("GrainSize", { 20.0, 800.0 });
             registerCallback<2>(d);
+			d.info.textConverter = parameter::pod::Time;
             d.setDefaultValue(80.0);
             l.add(d);
         }

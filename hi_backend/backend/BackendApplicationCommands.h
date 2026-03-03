@@ -102,6 +102,7 @@ public:
 		MenuFileExtractEmbeddeSnippetFiles,
 		MenuFileCreateRecoveryXml,
 		MenuSnippetClose,
+		MenuFileOpenAssetManager,
 		// --------------------------------
 		MenuFileSettings,
 		MenuToolsEditShortcuts,
@@ -133,6 +134,7 @@ public:
 		MenuExportCleanBuildDirectory,
 		MenuExportCleanDspNetworkFiles,
 		// --------------------------------------
+		MenuExportCreateAssetPayload,
 		MenuExportSampleDataForInstaller,
 		MenuExportCompileFilesInPool,
 		MenuExportCompileNetworksAsDll,
@@ -159,6 +161,7 @@ public:
 		MenuViewToggleSnippetBrowser,
 		MenuViewRotate,
 		MenuViewEnableGlobalLayoutMode,
+		MenuViewShowPluginPreview,
 		// -----------------------------
 		WorkspaceScript,
 		WorkspaceSampler,
@@ -208,9 +211,9 @@ public:
 		// HELP Menu
 		MenuHelpShowDocumentation  = 0x70000,
 		MenuFileBrowseExamples,
-		MenuHelpCheckVersion,
 		MenuHelpShowAboutPage,
-        
+		MenuHelpUpdateHise,
+
 		numCommands
 	};
 
@@ -307,7 +310,6 @@ public:
 		static void closeAllChains(BackendRootWindow *bpe);
 		
 		static void showAboutPage(BackendRootWindow * bpe);
-		static void checkVersion(BackendRootWindow *bpe);
 		static void plotModulator(CopyPasteTarget *currentCopyPasteTarget);
 		static void resolveMissingSamples(BackendRootWindow *bpe);
 		static void setCompileTimeOut(BackendRootWindow * bpe);
@@ -384,6 +386,8 @@ public:
 		static void showDocWindow(BackendRootWindow * bpe);
 		static void showNetworkDllInfo(BackendRootWindow * bpe);
 
+		static void copyUpdateInfo(BackendRootWindow* bpe);
+
 		static void createThirdPartyNode(BackendRootWindow* bpe);
 		static void restoreToDefault(BackendRootWindow * bpe);
 
@@ -403,6 +407,8 @@ public:
 
 		static void replaceScriptModules(BackendRootWindow* bpe);
 		static void checkLatency(BackendRootWindow* bpe);
+		static void showHiseAssetManager(BackendRootWindow* bpe);
+		static void createAssetPayload(BackendRootWindow* bpe);
 	};
 
 private:
@@ -434,6 +440,8 @@ struct XmlBackupFunctions
 	static void removeEditorStatesFromXml(XmlElement &xml);
 
 	static XmlElement* getFirstChildElementWithAttribute(XmlElement* parent, const String& attributeName, const String& value);
+
+	static void normalizePositionProperties(ValueTree& v);
 
 	static void addContentFromSubdirectory(XmlElement& xml, const File& fileToLoad);
 

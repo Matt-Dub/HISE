@@ -193,6 +193,7 @@ struct ScriptingObjects::ScriptFile::Wrapper
 	API_METHOD_WRAPPER_1(ScriptFile, getChildFile);
 	API_METHOD_WRAPPER_1(ScriptFile, createDirectory);
 	API_METHOD_WRAPPER_0(ScriptFile, getSize);
+	API_METHOD_WRAPPER_0(ScriptFile, getVersion);
 	API_METHOD_WRAPPER_0(ScriptFile, getBytesFreeOnVolume);
 	API_METHOD_WRAPPER_1(ScriptFile, setExecutePermission);
 	API_METHOD_WRAPPER_1(ScriptFile, startAsProcess);
@@ -218,6 +219,7 @@ struct ScriptingObjects::ScriptFile::Wrapper
 	API_METHOD_WRAPPER_1(ScriptFile, loadEncryptedObject);
 	API_METHOD_WRAPPER_0(ScriptFile, getRedirectedFolder);
 	API_METHOD_WRAPPER_1(ScriptFile, rename);
+	API_METHOD_WRAPPER_0(ScriptFile, isOnHardDisk);
 	API_METHOD_WRAPPER_1(ScriptFile, move);
 	API_METHOD_WRAPPER_1(ScriptFile, copy);
 	API_METHOD_WRAPPER_1(ScriptFile, copyDirectory);
@@ -226,6 +228,7 @@ struct ScriptingObjects::ScriptFile::Wrapper
 	API_METHOD_WRAPPER_1(ScriptFile, toReferenceString);
 	API_METHOD_WRAPPER_1(ScriptFile, getRelativePathFrom);
 	API_METHOD_WRAPPER_0(ScriptFile, getNumZippedItems);
+	API_METHOD_WRAPPER_0(ScriptFile, getZippedItemList);
 	API_VOID_METHOD_WRAPPER_2(ScriptFile, setReadOnly);
 	API_VOID_METHOD_WRAPPER_3(ScriptFile, extractZipFile);
 	API_VOID_METHOD_WRAPPER_0(ScriptFile, show);
@@ -259,6 +262,7 @@ ScriptingObjects::ScriptFile::ScriptFile(ProcessorWithScriptingContent* p, const
 	ADD_API_METHOD_1(getChildFile);
 	ADD_API_METHOD_1(createDirectory);
 	ADD_API_METHOD_0(getSize);
+	ADD_API_METHOD_0(getVersion);
 	ADD_API_METHOD_0(getHash);
 	ADD_API_METHOD_1(toString);
 	ADD_API_METHOD_0(isFile);
@@ -280,6 +284,7 @@ ScriptingObjects::ScriptFile::ScriptFile(ProcessorWithScriptingContent* p, const
     ADD_API_METHOD_0(loadAudioMetadata);
 	ADD_API_METHOD_0(loadAsBase64String);
 	ADD_API_METHOD_1(rename);
+	ADD_API_METHOD_0(isOnHardDisk);
 	ADD_API_METHOD_1(move);
 	ADD_API_METHOD_1(copy);
 	ADD_API_METHOD_1(copyDirectory);
@@ -289,6 +294,7 @@ ScriptingObjects::ScriptFile::ScriptFile(ProcessorWithScriptingContent* p, const
 	ADD_API_METHOD_0(getNonExistentSibling);
 	ADD_API_METHOD_3(extractZipFile);
 	ADD_API_METHOD_0(getNumZippedItems);
+	ADD_API_METHOD_0(getZippedItemList);
 	ADD_API_METHOD_2(setReadOnly);
 	ADD_API_METHOD_1(toReferenceString);
 	ADD_API_METHOD_1(getRelativePathFrom);
@@ -320,6 +326,16 @@ var ScriptingObjects::ScriptFile::createDirectory(String directoryName)
 int64 ScriptingObjects::ScriptFile::getSize()
 {	
 	return f.getSize();
+}
+
+String ScriptingObjects::ScriptFile::getVersion()
+{	
+	#if JUCE_LINUX
+		auto matches = RegexFunctions::getFirstMatch(R"((\d+)(.\d+)*)", f.getFileName());
+		return matches[0];
+	#else
+		return f.getVersion();
+	#endif	
 }
 
 int64 ScriptingObjects::ScriptFile::getBytesFreeOnVolume()
@@ -783,6 +799,11 @@ bool ScriptingObjects::ScriptFile::rename(String newName)
 	return f.moveFileTo(newFile);
 }
 
+bool ScriptingObjects::ScriptFile::isOnHardDisk()
+{	
+	return f.isOnHardDisk();
+}
+
 bool ScriptingObjects::ScriptFile::move(var target)
 {	
 	if (auto sf = dynamic_cast<ScriptFile*>(target.getObject()))
@@ -992,6 +1013,7 @@ void ScriptingObjects::ScriptFile::extractZipFile(var targetDirectory, bool over
 		data->setProperty("TotalBytesWritten", 0);
 		data->setProperty("Cancel", false);
 		data->setProperty("Target", tf.getFullPathName());
+		data->setProperty("ZipFile", safeThis->f.getFullPathName());
 		data->setProperty("CurrentFile", "");
 		data->setProperty("Error", "");
 		
@@ -1119,6 +1141,20 @@ int ScriptingObjects::ScriptFile::getNumZippedItems()
 {
 	juce::ZipFile zipFile(f);
 	return zipFile.getNumEntries();
+}
+
+var ScriptingObjects::ScriptFile::getZippedItemList()
+{
+	juce::ZipFile zipFile(f);
+	StringArray result;
+	
+	for (int i = 0; i < zipFile.getNumEntries(); ++i)
+	{
+			if (auto* entry = zipFile.getEntry(i))
+					result.add(entry->filename);
+	}
+	
+	return result;
 }
 
 void ScriptingObjects::ScriptFile::setReadOnly(bool shouldBeReadOnly, bool applyRecursively)
@@ -3165,7 +3201,12 @@ float ScriptingObjects::ScriptingModulator::getCurrentLevel()
 {
 	if (checkValidObject())
 	{
-		return m->getProcessor()->getDisplayValues().outL;
+		auto outValue = m->getProcessor()->getDisplayValues().outL;
+
+		if(m->getMode() == Modulation::Mode::PitchMode)
+			outValue = Modulation::PitchConverters::pitchFactorToOutputValue(outValue);
+
+		return outValue;
 	}
 	
 	return 0.f;
@@ -7714,7 +7755,7 @@ void ScriptingObjects::ScriptBackgroundTask::callOnBackgroundThread(var backgrou
 		currentTask = WeakCallbackHolder(getScriptProcessor(), this, backgroundTaskFunction, 1);
 		currentTask.incRefCount();
 		currentTask.addAsSource(this, "backgroundFunction");
-		startThread(8);
+		ThreadStarters::startHigh(this);
 	}
 }
 
@@ -7861,7 +7902,7 @@ void ScriptingObjects::ScriptBackgroundTask::runProcess(var command, var args, v
 		currentTask.clear();
 		childProcessData = new ChildProcessData(*this, command.toString(), args, logFunction);
 
-		startThread(8);
+		ThreadStarters::startHigh(this);
 	}
 }
 
@@ -10229,19 +10270,26 @@ void ScriptingObjects::ScriptBuilder::clear()
 	auto thisAsP = dynamic_cast<Processor*>(getScriptProcessor());
 
     auto mc = getScriptProcessor()->getMainController_();
-    SUSPEND_GLOBAL_DISPATCH(mc, "clear from builder");
-    MainController::ScopedBadBabysitter sb(mc);
 
-	mc->getProcessorChangeHandler().sendProcessorChangeMessage(mc->getMainSynthChain(), MainController::ProcessorChangeHandler::EventType::ClearBeforeRebuild, false);
+	SUSPEND_GLOBAL_DISPATCH(mc, "clear from builder");
+	ScopedPointer<MainController::ScopedBadBabysitter> sb;
 
-	MessageManager::callAsync([this]()
+#if USE_BACKEND
+	if (!CompileExporter::shouldSkipAudioDriverInitialisation())
 	{
-		getScriptProcessor()->getScriptingContent()->setIsRebuilding(true);
-	});
-	
+		sb = new MainController::ScopedBadBabysitter(mc);
 
-	Thread::getCurrentThread()->wait(500);
-	dynamic_cast<JavascriptProcessor*>(getScriptProcessor())->getScriptEngine()->extendTimeout(500);
+		mc->getProcessorChangeHandler().sendProcessorChangeMessage(mc->getMainSynthChain(), MainController::ProcessorChangeHandler::EventType::ClearBeforeRebuild, false);
+
+		MessageManager::callAsync([this]()
+		{
+			getScriptProcessor()->getScriptingContent()->setIsRebuilding(true);
+		});
+
+		Thread::getCurrentThread()->wait(500);
+		dynamic_cast<JavascriptProcessor*>(getScriptProcessor())->getScriptEngine()->extendTimeout(500);
+	}
+#endif
 
 	raw::Builder b(mc);
 
@@ -10462,6 +10510,325 @@ ScriptingObjects::ScriptErrorHandler::~ScriptErrorHandler()
 
 
 
+struct ScriptingObjects::ScriptingComplexGroupManager::Wrapper
+{
+	API_VOID_METHOD_WRAPPER_3(ScriptingComplexGroupManager, setLayerProperty);
+	API_METHOD_WRAPPER_2(ScriptingComplexGroupManager, getLayerProperty);
+	API_METHOD_WRAPPER_1(ScriptingComplexGroupManager, getLayerIndex);
+	API_METHOD_WRAPPER_1(ScriptingComplexGroupManager, getNumGroupsInLayer);
+	API_VOID_METHOD_WRAPPER_2(ScriptingComplexGroupManager, setActiveGroup);
+	API_VOID_METHOD_WRAPPER_1(ScriptingComplexGroupManager, createNoteMap);
+	API_METHOD_WRAPPER_2(ScriptingComplexGroupManager, isNoteNumberMapped);
+	API_VOID_METHOD_WRAPPER_3(ScriptingComplexGroupManager, setEnableGainTracking);
+	API_METHOD_WRAPPER_3(ScriptingComplexGroupManager, getCurrentPeak);
+	API_VOID_METHOD_WRAPPER_2(ScriptingComplexGroupManager, registerGroupStartCallback);
+	API_VOID_METHOD_WRAPPER_3(ScriptingComplexGroupManager, delayGroupEvent);
+	API_VOID_METHOD_WRAPPER_4(ScriptingComplexGroupManager, fadeInGroupEvent);
+	API_VOID_METHOD_WRAPPER_3(ScriptingComplexGroupManager, setFixedGroupEventLength);
+	API_VOID_METHOD_WRAPPER_3(ScriptingComplexGroupManager, addGroupEventStartOffset);
+	API_VOID_METHOD_WRAPPER_3(ScriptingComplexGroupManager, fadeOutGroupEvent);
+	API_VOID_METHOD_WRAPPER_3(ScriptingComplexGroupManager, setGroupVolume);
+};
 
+ScriptingObjects::ScriptingComplexGroupManager::ScriptingComplexGroupManager(ProcessorWithScriptingContent* pwsc, ModulatorSampler* sampler_) :
+	ConstScriptingObject(pwsc, 1),
+	sampler(sampler_)
+{
+	addConstant("IgnoreFlag", (int)ComplexGroupManager::IgnoreFlag);
+
+	ADD_API_METHOD_2(getLayerProperty);
+	ADD_API_METHOD_3(setLayerProperty);
+	ADD_API_METHOD_1(getLayerIndex);
+	ADD_API_METHOD_1(getNumGroupsInLayer);
+	ADD_API_METHOD_2(setActiveGroup);
+	ADD_API_METHOD_1(createNoteMap);
+	ADD_API_METHOD_2(isNoteNumberMapped);
+	ADD_API_METHOD_3(setEnableGainTracking);
+	ADD_API_METHOD_3(getCurrentPeak);
+	ADD_API_METHOD_2(registerGroupStartCallback);
+
+	ADD_API_METHOD_3(delayGroupEvent);
+	ADD_API_METHOD_4(fadeInGroupEvent);
+	ADD_API_METHOD_3(setFixedGroupEventLength);
+	ADD_API_METHOD_3(addGroupEventStartOffset);
+	ADD_API_METHOD_3(fadeOutGroupEvent);
+	ADD_API_METHOD_3(setGroupVolume);
+}
+
+void ScriptingObjects::ScriptingComplexGroupManager::setLayerProperty(var layerIdOrIndex, String propertyId, var value)
+{
+	auto idx = getLayerIndexInternal(layerIdOrIndex);
+
+	if(idx != -1)
+	{
+		auto c = getManager()->getDataTree().getChild(idx);
+
+		if(!ComplexGroupManager::Helpers::isValidId(propertyId))
+			reportScriptError("Illegal property " + propertyId);
+
+		auto v = ComplexGroupManager::Helpers::convertFromJS(Identifier(propertyId), value);
+		c.setProperty(Identifier(propertyId), v, nullptr);
+	}
+}
+
+juce::var ScriptingObjects::ScriptingComplexGroupManager::getLayerProperty(var layerIdOrIndex, String propertyId)
+{
+	auto idx = getLayerIndexInternal(layerIdOrIndex);
+
+	if (idx != -1)
+	{
+		auto c = getManager()->getDataTree().getChild(idx);
+
+		if (!ComplexGroupManager::Helpers::isValidId(propertyId))
+			reportScriptError("Illegal property " + propertyId);
+
+		auto v = c[propertyId];
+		return ComplexGroupManager::Helpers::convertToJS(c, Identifier(propertyId), sampler.get());
+	}
+
+	RETURN_IF_NO_THROW(var());
+}
+
+int ScriptingObjects::ScriptingComplexGroupManager::getLayerIndex(String layerId) const
+{
+	return getLayerIndexInternal(layerId);
+}
+
+int ScriptingObjects::ScriptingComplexGroupManager::getNumGroupsInLayer(int layerIndex)
+{
+	if(auto gm = getManager())
+	{
+		return gm->getNumGroupsInLayer((uint8)layerIndex);
+	}
+
+	return 0;
+}
+
+void ScriptingObjects::ScriptingComplexGroupManager::setActiveGroup(int layerIndex, int groupIndex)
+{
+	if (groupIndex == ComplexGroupManager::IgnoreFlag)
+		reportScriptError("cannot use IgnoreFlag here");
+
+	auto gi = bumpGroupIndexFromZeroBased(groupIndex);
+
+	if(auto gm = getManager())
+	{
+		gm->applyFilter((uint8)layerIndex, gi, sendNotificationAsync);
+	}
+}
+
+void ScriptingObjects::ScriptingComplexGroupManager::createNoteMap(var layerIdOrIndex)
+{
+	auto index = getLayerIndexInternal(layerIdOrIndex);
+
+	if(index != -1)
+	{
+		ModulatorSampler::SoundIterator iter(sampler.get());
+
+		VoiceBitMap<128, uint32> nm;
+
+		while(auto s = iter.getNextSound())
+		{
+			auto lv = getManager()->getLayerValue(s->getBitmask(), (uint8)index);
+
+			if(lv != 0 && lv != ComplexGroupManager::IgnoreFlag)
+			{
+				auto nr = s->getNoteRange();
+				
+				for(int i = nr.getStart(); i < nr.getEnd(); i++)
+					nm.setBit(i, true);
+			}
+		}
+
+		noteMaps[(uint8)index] = nm;
+	}
+}
+
+bool ScriptingObjects::ScriptingComplexGroupManager::isNoteNumberMapped(int layerIndex, int noteNumber) const
+{
+	auto x = noteMaps.find((uint8)layerIndex);
+
+	if(x == noteMaps.end())
+		reportScriptError("You need to call createNoteMap() with the given layer index before using this method");
+
+	const auto& vm = x->second;
+
+	if(isPositiveAndBelow(noteNumber, 128))
+		return vm[noteNumber];
+
+	return false;	
+}
+
+void ScriptingObjects::ScriptingComplexGroupManager::setEnableGainTracking(var layerIdOrIndex, int groupIndex, bool shouldBeActive)
+{
+	if(groupIndex == ComplexGroupManager::IgnoreFlag)
+		reportScriptError("Can't use this function with the ignore flag");
+
+	auto gi = bumpGroupIndexFromZeroBased(groupIndex);
+
+	auto idx = getLayerIndexInternal(layerIdOrIndex);
+
+	if(idx != -1)
+	{
+		gainTrackingGroups.push_back({ idx, (uint8)(groupIndex+1) });
+
+		ModulatorSampler::SoundIterator iter(sampler.get());
+
+		auto gm = getManager();
+
+		while(auto s = iter.getNextSound())
+		{
+			auto lv = (int)gm->getLayerValue(s->getBitmask(), (uint8)idx);
+
+			if(lv == gi)
+			{
+				for (int i = 0; i < s->getNumMultiMicSamples(); i++)
+					s->getReferenceToSound(i)->setIsReleaseSample(shouldBeActive);
+			}
+		}
+	}
+}
+
+float ScriptingObjects::ScriptingComplexGroupManager::getCurrentPeak(int layerIndex, int groupIndex, int eventId)
+{
+	auto gm = getManager();
+
+	auto gi = bumpGroupIndexFromZeroBased(groupIndex);
+
+	bool found = false;
+
+	for(const auto& cv: gainTrackingGroups)
+		found |= cv.first == layerIndex && cv.second == gi;
+
+	if(!found)
+		reportScriptError("You must call setEnableGainTracking with a matching layer & group index");
+
+	for(auto av: sampler->activeVoices)
+	{
+		if(av->getCurrentHiseEvent().getEventId() == eventId)
+		{
+			auto sustainSample = static_cast<ModulatorSamplerSound*>(av->getCurrentlyPlayingSound().get());
+
+			auto bm = sustainSample->getBitmask();
+			auto lv = gm->getLayerValue(bm, (uint8)layerIndex);
+
+			if(lv == gi)
+				return (double)sustainSample->getReferenceToSound()->getCurrentReleasePeak();
+		}
+	}
+
+	return 0.0;
+}
+
+void ScriptingObjects::ScriptingComplexGroupManager::registerGroupStartCallback(var layerIdOrIndex, var callback)
+{
+	auto idx = getLayerIndexInternal(layerIdOrIndex);
+
+	if(auto obj = dynamic_cast<WeakCallbackHolder::CallableObject*>(callback.getObject()))
+	{
+		if(!obj->isRealtimeSafe())
+		{
+			reportScriptError("This function only works with callable objects that are realtime safe");
+		}
+
+		auto nc = new GroupCallback(*this, callback);
+		getManager()->setVoiceStartCallback(idx, nc);
+		groupCallbacks.add(nc);
+	}
+}
+
+void ScriptingObjects::ScriptingComplexGroupManager::delayGroupEvent(int layerIndex, int groupIndex, double delayInSamples)
+{
+	if(auto gm = getManager())
+	{
+		auto gi = bumpGroupIndexFromZeroBased(groupIndex);
+		gm->delayEventByFilter((uint8)layerIndex, gi, delayInSamples);
+	}
+}
+
+void ScriptingObjects::ScriptingComplexGroupManager::fadeInGroupEvent(int layerIndex, int groupIndex, double fadeInTimeMs, double targetGainDb)
+{
+	if(auto gm = getManager())
+	{
+		auto gi = bumpGroupIndexFromZeroBased(groupIndex);
+		auto targetGain = Decibels::decibelsToGain(targetGainDb);
+
+		gm->fadeInEventByFilter((uint8)layerIndex, gi, fadeInTimeMs * 0.001, targetGain);
+	}
+}
+
+void ScriptingObjects::ScriptingComplexGroupManager::setFixedGroupEventLength(int layerIndex, int groupIndex, double numSamplesToPlayBeforeFadeout)
+{
+	if(auto gm = getManager())
+	{
+		auto gi = bumpGroupIndexFromZeroBased(groupIndex);
+		gm->setFixedLengthByFilter(layerIndex, gi, numSamplesToPlayBeforeFadeout);
+	}
+}
+
+void ScriptingObjects::ScriptingComplexGroupManager::addGroupEventStartOffset(int layerIndex, int groupIndex, double startOffset)
+{
+	if(auto gm = getManager())
+	{
+		auto gi = bumpGroupIndexFromZeroBased(groupIndex);
+		gm->addStartOffsetByFilter(layerIndex, gi, startOffset);
+	}
+}
+
+void ScriptingObjects::ScriptingComplexGroupManager::fadeOutGroupEvent(int layerIndex, int groupIndex, double fadeOutTimeMs)
+{
+	if(auto gm = getManager())
+	{
+		auto gi = bumpGroupIndexFromZeroBased(groupIndex);
+
+		for(auto av: sampler->activeVoices)
+		{
+			auto s = static_cast<ModulatorSamplerSound*>(av->getCurrentlyPlayingSound().get());
+
+			auto bm = s->getBitmask();
+			auto lv = gm->getLayerValue(bm, (uint8)layerIndex);
+
+			if(lv == gi)
+				av->setVolumeFade(fadeOutTimeMs * 0.001, 0.0);
+		}
+	}
+}
+
+void ScriptingObjects::ScriptingComplexGroupManager::setGroupVolume(int layerIndex, int groupIndex, double gainFactor)
+{
+	if(auto gm = getManager())
+	{
+		auto gi = bumpGroupIndexFromZeroBased(groupIndex);
+		gm->setGroupVolume((uint8)layerIndex, gi, gainFactor);
+	}
+}
+
+hise::ComplexGroupManager* ScriptingObjects::ScriptingComplexGroupManager::getManager() const
+{
+	if (sampler == nullptr)
+		return nullptr;
+
+	return sampler->getComplexGroupManager();
+}
+
+int ScriptingObjects::ScriptingComplexGroupManager::getLayerIndexInternal(const var& layerIdOrString) const
+{
+	if (auto gm = getManager())
+	{
+		if (layerIdOrString.isString())
+			return gm->getLayerIndex(layerIdOrString.toString());
+
+		if (layerIdOrString.isInt() || layerIdOrString.isInt64())
+		{
+			auto idx = (int)layerIdOrString;
+
+			if (isPositiveAndBelow(idx, gm->getNumLayers()))
+				return idx;
+		}
+	}
+
+	reportScriptError("Illegal layer index " + layerIdOrString.toString());
+	RETURN_IF_NO_THROW(-1);
+}
 
 } // namespace hise

@@ -69,6 +69,8 @@ public:
 		Colour highlightedTextColour;
 		Colour backgroundColour;
 		Colour textColour;
+		Colour modalBackgroundColour;
+		Colour itemColour3;
 		Font font;
 
 		int numColumns = 3;
@@ -294,7 +296,7 @@ private:
 	ScopedPointer<BetterLabel> noteLabel;
 	ScopedPointer<TagList> tagList;
 	ScopedPointer<ShapeButton> closeButton;
-	ScopedPointer<ShapeButton> favoriteButton;
+	ScopedPointer<TextButton> favoriteButton;
 	ScopedPointer<ModalWindow> modalInputWindow;
 
 	ScopedPointer<TextButton> saveButton;

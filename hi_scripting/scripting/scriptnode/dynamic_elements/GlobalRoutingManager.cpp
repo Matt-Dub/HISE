@@ -1007,7 +1007,6 @@ GlobalRoutingNodeBase::GlobalRoutingNodeBase(DspNetwork* n, ValueTree d) :
 	lastResult(Result::ok())
 {
 	globalRoutingManager = GlobalRoutingManager::Helpers::getOrCreate(n->getScriptProcessor()->getMainController_());
-
 	slotId.initialise(this);
 }
 
@@ -1093,7 +1092,7 @@ void GlobalRoutingNodeBase::initParameters()
 		auto ndb = new parameter::dynamic_base(p.callback);
 
 		newP->setDynamicParameter(ndb);
-		newP->valueNames = p.parameterNames;
+		newP->valueNames = p.getParameterNames().toStringArray();
 
 		addParameter(newP);
 	}
@@ -1466,7 +1465,7 @@ void GlobalCableNode::initParameters()
 		auto ndb = new parameter::dynamic_base(p.callback);
 
 		newP->setDynamicParameter(ndb);
-		newP->valueNames = p.parameterNames;
+		newP->valueNames = p.getParameterNames().toStringArray();
 
 		addParameter(newP);
 	}

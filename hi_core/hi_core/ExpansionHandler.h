@@ -113,6 +113,9 @@ public:
 
 		static String getExpansionTypeName(ExpansionType e);
 
+		static String getExpansionSpecificKey(MainController* mc, const File& expansionFolder);
+
+		static Identifier getExpansionSlug(const String& expansionName);
 	};
 
 	virtual Result encodeExpansion();
@@ -150,6 +153,8 @@ public:
 	String getWildcard() const;
 
 	ValueTree getPropertyValueTree();
+
+	Identifier getEncryptionKeyId() const;
 
 protected:
 
@@ -315,6 +320,8 @@ public:
 
 	void removeListener(Listener* l);
 
+	var getPropertiesFromHxi(const File& hxiFile);
+
 	bool installFromResourceFile(const File& f, const File& sampleDirectoryToUse);
 
 	File getExpansionTargetFolder(const File& resourceFile);
@@ -368,7 +375,7 @@ public:
 
 	double getTotalProgress() const;
 
-	String getEncryptionKey() const;
+	String getEncryptionKey(const Identifier& expansionName) const;
 
 	bool isEnabled() const noexcept;;
 
@@ -408,6 +415,12 @@ public:
 #endif
 	
 	Array<InitialisationError> initialisationErrors;
+
+	
+
+#if USE_BACKEND
+	Identifier addEncryptionKeyForExpansionToBeEncoded(Expansion* e, const String& expansionSpecificKey);
+#endif
 
 private:
 

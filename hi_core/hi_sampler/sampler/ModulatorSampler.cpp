@@ -557,16 +557,20 @@ void ModulatorSampler::restoreFromValueTree(const ValueTree &v)
 
 	auto groupData = v.getChildWithName(groupIds::Layers);
 
-	setUseComplexGroupManager(groupData.isValid());
-
-	if(auto gm = getComplexGroupManager())
+	if(groupData.isValid())
 	{
-		auto t = gm->getDataTree();
+		getSampleMap()->setStoreComplexLayers(false);
+		setUseComplexGroupManager(groupData.isValid());
 
-		ComplexGroupManager::ScopedUpdateDelayer sds(*gm);
+		if (auto gm = getComplexGroupManager())
+		{
+			auto t = gm->getDataTree();
 
-		for(auto c: groupData)
-			t.addChild(c.createCopy(), -1, nullptr);
+			ComplexGroupManager::ScopedUpdateDelayer sds(*gm);
+
+			for (auto c : groupData)
+				t.addChild(c.createCopy(), -1, nullptr);
+		}
 	}
 
 	TimestretchOptions newOptions;
@@ -616,9 +620,12 @@ ValueTree ModulatorSampler::exportAsValueTree() const
 		saveTable(getTableUnchecked(i), "Group" + String(i) + "Table");
 	}
 
-	if(auto gm = getComplexGroupManager())
+	if(!sampleMap->storeComplexLayers)
 	{
-		v.addChild(gm->getDataTree().createCopy(), -1, nullptr);
+		if(auto gm = getComplexGroupManager())
+		{
+			v.addChild(gm->getDataTree().createCopy(), -1, nullptr);
+		}
 	}
 
 	if (sampleMap->isUsingUnsavedValueTree())
@@ -1343,7 +1350,7 @@ void ModulatorSampler::preStartVoice(int voiceIndex, const HiseEvent& e)
 	else
 	{
 		// hack: the sample start value is normalized so we need to just flip the sign in order to tell startVoice to use a direct sample value
-		sampleStartModValue = -1.0f * static_cast<ModulatorSynthVoice*>(getVoice(voiceIndex))->getCurrentHiseEvent().getStartOffset();
+		sampleStartModValue = -1.0f * static_cast<ModulatorSynthVoice*>(getVoice(voiceIndex))->getCurrentHiseEvent().getStartOffset() * startOffsetMultiplier;
 		samplerDisplayValues.currentSampleStartPos = 0.0f;
 	}
 
@@ -1433,7 +1440,7 @@ void ModulatorSampler::handleRetriggeredNote(ModulatorSynthVoice *voice)
 
 void ModulatorSampler::noteOff(const HiseEvent &m)
 {
-	if (!oneShotEnabled)
+	if (!oneShotEnabled && !m.isIgnored())
 	{
 #if HISE_SAMPLER_ALLOW_RELEASE_START
 		if(soundsHaveReleaseStart)
@@ -1864,6 +1871,11 @@ bool ModulatorSampler::setCurrentGroupIndex(int currentIndex, int eventId)
 	{
 		return false;
 	}
+}
+
+void ModulatorSampler::setStartOffsetMultiplier(int multiplier)
+{
+	startOffsetMultiplier = multiplier;
 }
 
 void ModulatorSampler::setRRGroupVolume(int groupIndex, float gainValue)

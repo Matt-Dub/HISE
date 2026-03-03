@@ -456,6 +456,9 @@ public:
 		/** Shows a message box with an OK button and a icon defined by the type variable. */
 		void showMessageBox(String title, String markdownMessage, int type);
 
+		/** Shows a message box with an OK button and calls the callback after the user clicks OK. */
+		void showMessageBoxWithCallback(String title, String markdownMessage, int type, var callback);
+
 		/** Returns the millisecond value for the supplied tempo (HINT: Use "TempoSync" mode from Slider!) */
 		double getMilliSecondsForTempo(int tempoIndex) const;;
 
@@ -677,7 +680,7 @@ public:
 
         /** Returns a number as string in hexadecimal format (0xFFFFFFFF). */
 		String intToHexString(int value);
-
+		
 		/** Signals that the application should terminate. */
 		void quit();
 
@@ -1022,6 +1025,9 @@ public:
 
 		/** Sets the options for the release start behaviour. */
 		void setReleaseStartOptions(var newOptions);
+		
+		/** Internally multiply sample start offsets by set amount */
+		void setOffsetMultiplier(int multiplier);
 
 		/** Converts the user preset data of a audio waveform to a base 64 samplemap. */
 		String getAudioWaveformContentAsBase64(var presetObj);
@@ -1064,6 +1070,9 @@ public:
 
 		/** Clears the current samplemap. */
 		bool clearSampleMap();
+
+		/** Returns an object that can be used to control the complex group management of this sampler. */
+		var getComplexGroupManager();
 
 		// ============================================================================================================
 
@@ -1416,6 +1425,9 @@ public:
 		/** Throws an error message if the value is a string. */
 		void assertNoString(var value);
 
+		/** Throws the given error message if the condition isn't met. */
+		void assertWithMessage(bool condition, String errorMessage);
+
 		/** Throws an error message if the value is not a legal number (eg. string or array or infinity or NaN). */
 		void assertLegalNumber(var value);
 
@@ -1424,6 +1436,9 @@ public:
 
 		/** Starts a sampling session with the given ID. */
 		void startSampling(const String& sessionId);
+
+		/** Synchronously tests a callback of a given object for automated testing cycles. */
+		void testCallback(var obj, String callbackId, var argList);
 
 		/** Stores the current state of the given data into the current sampling session. */
 		void sample(const String& label, var dataToSample);
@@ -1532,6 +1547,12 @@ private:
 		/** Enables a high precision grid timer. */
 		void setEnableGrid(bool shouldBeEnabled, int tempoFactor);
 
+		/** Adds a multiplier to slow down the grid callbacks for this transport handler. */
+		void setLocalGridMultiplier(int factor);
+
+		/** Bypasses the grid callback for this transport handler. */
+		void setLocalGridBypassed(bool shouldBeBypassed);
+
         /** Sets the internal clock to stop when the external clock was stopped. */
         void stopInternalClockOnExternalStop(bool shouldStop);
         
@@ -1553,6 +1574,15 @@ private:
 		/** This will return true if the DAW is currently bouncing the audio to a file. You can use this in the transport change callback to modify your processing chain. */
 		bool isNonRealtime() const;
 
+		/** Returns the number of samples for the current grid duration. */
+		double getGridLengthInSamples() const;
+
+		/** Returns whether the transport has been started. */
+		bool isPlaying() const;
+
+		/** Returns the current grid position. */
+		int getGridPosition(int timestamp) const;
+
 	private:
 
 		static void onBypassUpdate(TransportHandler& handler, bool state);
@@ -1572,6 +1602,11 @@ private:
 		int gridIndex = 0;
 		int gridTimestamp = 0;
 		bool firstGridInPlayback = false;
+		int localGridMultiplier = 1;
+		int localBitShift = 0;
+		bool nextLocalIsFirst = false;
+		bool localBypassed = false;
+		int lastGridIndex = -1;
 
 		struct Wrapper;
 

@@ -337,6 +337,9 @@ namespace ScriptingObjects
 		/** Returns the size of the file in bytes. */
 		int64 getSize();
 		
+		/** If possible, this will try to create a version string for the given file. */
+		String getVersion();
+		
 		/** Returns the number of bytes free on the drive that this file lives on. */
 		int64 getBytesFreeOnVolume();
 
@@ -417,6 +420,9 @@ namespace ScriptingObjects
 
 		/** Renames the file. */
 		bool rename(String newName);
+		
+		/** True if this file is on a hard disk. This will fail if it's a network drive, but will still be true for removable hard-disks. */
+		bool isOnHardDisk();
 
 		/** Moves the file. The target isn't the directory to put it in, it's the actual file to create. */
 		bool move(var target);
@@ -447,6 +453,9 @@ namespace ScriptingObjects
 
 		/** Returns the number of items in the zip file. */
 		int getNumZippedItems();
+
+		/** Returns an array of the filenames of all entries in the zip file. */
+		var getZippedItemList();
 
 		/** Changes the read/write permission for the given file. */
 		void setReadOnly(bool shouldBeReadOnly, bool applyRecursively);
@@ -2508,7 +2517,9 @@ namespace ScriptingObjects
 
 		// =============================================================================================
 
-		Identifier getObjectName() const override { RETURN_STATIC_IDENTIFIER("DisplayBufferSource"); };
+		static Identifier getClassName() { RETURN_STATIC_IDENTIFIER("DisplayBufferSource"); }
+
+		Identifier getObjectName() const override { return getClassName(); };
 		bool objectDeleted() const override { return source.get() == nullptr; }
 		bool objectExists() const override { return source != nullptr; }
 
@@ -3252,7 +3263,103 @@ namespace ScriptingObjects
 		HiseMidiSequence::Ptr getSequence() const { return getPlayer()->getCurrentSequence(); }
 	};
 
-	
+	struct ScriptingComplexGroupManager: public ConstScriptingObject
+	{
+		ScriptingComplexGroupManager(ProcessorWithScriptingContent* pwsc, ModulatorSampler* sampler_);
+
+
+		static Identifier getClassName() { RETURN_STATIC_IDENTIFIER("ComplexGroupManager"); };
+		Identifier getObjectName() const override { return getClassName(); }
+
+		// ================================================================================ API Methods
+
+		/** Sets a layer property. */
+		void setLayerProperty(var layerIdOrIndex, String propertyId, var value);
+
+		/** Returns the value of a given layer property. */
+		var getLayerProperty(var layerIdOrIndex, String propertyId);
+
+		/** Returns the index of the given layer. */
+		int getLayerIndex(String layerId) const;
+
+		/** Returns the number of groups in this layer. */
+		int getNumGroupsInLayer(int layerIndex);
+
+		/** Sets the currently active group. */
+		void setActiveGroup(int layerIndex, int groupIndex);
+
+		/** Creates a note map for the given layer. */
+		void createNoteMap(var layerIdOrIndex);
+
+		/** Checks if the given note number has any samples mapped in this layer. */
+		bool isNoteNumberMapped(int layerIndex, int noteNumber) const;
+
+		/** Enables gain tracking of all samples that match the given layer and group. */
+		void setEnableGainTracking(var layerIdOrIndex, int groupIndex, bool shouldBeActive);
+
+		/** Returns the peak volume of the first sound that was started with the given event ID. */
+		float getCurrentPeak(int layerIndex, int groupIndex, int eventId);
+
+		/** Registers a callback that will be executed with each group index that was started. */
+		void registerGroupStartCallback(var layerIdOrIndex, var callback);
+
+		/** Delays the event that matches the given layer and group. */
+		void delayGroupEvent(int layerIndex, int groupIndex, double delayInSamples);
+
+		/** Adds a fade in to the event that matches the given layer and group. */
+		void fadeInGroupEvent(int layerIndex, int groupIndex, double fadeInTimeMs, double targetGainDb);
+
+		/** Sets the sample to fade out with the given fade-in time after a fixed length. */
+		void setFixedGroupEventLength(int layerIndex, int groupIndex, double numSamplesToPlayBeforeFadeout);
+
+		/** Adds a start offset to the event that matches the given layer and group. */
+		void addGroupEventStartOffset(int layerIndex, int groupIndex, double startOffsetSamples);
+
+		/** Fades out all voices that are playing the given layer / group. */
+		void fadeOutGroupEvent(int layerIndex, int groupIndex, double fadeOutTimeMs);
+
+		/** Sets the smoothed volume for the given layer / group. */
+		void setGroupVolume(int layerIndex, int groupIndex, double gainFactor);
+
+		// ================================================================================ API Methods
+
+	private:
+
+		struct GroupCallback: public ComplexGroupManager::VoiceStartCallback
+		{
+			GroupCallback(ScriptingComplexGroupManager& parent, const var& f):
+			  callback(parent.getScriptProcessor(), &parent, f, 1)
+			{}
+
+			void onVoiceStart(uint8 groupValue) final
+			{
+				args = groupValue == ComplexGroupManager::IgnoreFlag ? (int)ComplexGroupManager::IgnoreFlag : (int)(groupValue - 1);
+				callback.callSync(&args, 1, nullptr);
+			}
+			
+			var args;
+			WeakCallbackHolder callback;
+		};
+
+		OwnedArray<GroupCallback> groupCallbacks;
+
+		static uint8 bumpGroupIndexFromZeroBased(int groupIndex)
+		{
+			return uint8(groupIndex + ((uint8)groupIndex != ComplexGroupManager::IgnoreFlag));
+		}
+
+		std::vector<std::pair<uint8, uint8>> gainTrackingGroups;
+
+		std::map<uint8, VoiceBitMap<128, uint32>> noteMaps;
+
+		ComplexGroupManager* getManager() const;
+
+		int getLayerIndexInternal(const var& layerIdOrString) const;
+
+		struct Wrapper;
+
+		WeakReference<ModulatorSampler> sampler;
+	};
 };
 
 

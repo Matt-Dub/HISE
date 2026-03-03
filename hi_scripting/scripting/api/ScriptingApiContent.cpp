@@ -55,8 +55,9 @@
 namespace hise { using namespace juce;
 
 
-ValueTreeUpdateWatcher::ScopedDelayer::ScopedDelayer(ValueTreeUpdateWatcher* watcher_) :
-	watcher(watcher_)
+ValueTreeUpdateWatcher::ScopedDelayer::ScopedDelayer(ValueTreeUpdateWatcher* watcher_, bool forceMessageThread_) :
+	watcher(watcher_),
+    forceMessageThread(forceMessageThread_)
 {
 	if (watcher != nullptr)
 		watcher->delayCalls = true;
@@ -69,7 +70,19 @@ ValueTreeUpdateWatcher::ScopedDelayer::~ScopedDelayer()
 		watcher->delayCalls = false;
 
 		if (watcher->shouldCallAfterDelay)
-			watcher->callListener();
+		{
+			if (forceMessageThread)
+			{
+				SafeAsyncCall::callAsyncIfNotOnMessageThread<ValueTreeUpdateWatcher>(*watcher, [](ValueTreeUpdateWatcher& w)
+				{
+					w.callListener();
+				});
+			}
+			else
+			{
+				watcher->callListener();
+			}
+		}
 	}
 }
 
@@ -1022,7 +1035,7 @@ var ScriptComponent::getValue() const
 
 void ScriptingApi::Content::ScriptComponent::sendValueListenerMessage()
 {
-	if (valueListener != nullptr)
+	if (!valueListeners.isEmpty())
 	{
 		auto currentThread = getScriptProcessor()->getMainController_()->getKillStateHandler().getCurrentThread();
 
@@ -1036,7 +1049,12 @@ void ScriptingApi::Content::ScriptComponent::sendValueListenerMessage()
 		a[0] = var(this);
 		a[1] = getValue();
 		var::NativeFunctionArgs args(var(this), a, 2);
-		valueListener->call(nullptr, args, nullptr);
+				
+		for (int i = 0; i < valueListeners.size(); i++)
+		{
+			if (valueListeners[i] != nullptr)
+				valueListeners[i]->call(nullptr, args, nullptr);
+		}
 	}
 }
 
@@ -1047,10 +1065,7 @@ void ScriptingApi::Content::ScriptComponent::changed()
 	openTrack(pControlCallback);
 
 	if (!parent->asyncFunctionsAllowed())
-	{
-		debugToConsole(dynamic_cast<Processor*>(getScriptProcessor()), "Skipping changed() callback during onInit for " + getId());
 		return;
-	}
 
 	ScopedValueSetter<bool> svs(getScriptProcessor()->getMainController_()->getDeferNotifyHostFlag(), true);
 	
@@ -1973,7 +1988,13 @@ String ScriptComponent::getCSSFromLocalLookAndFeel()
 
 void ScriptComponent::attachValueListener(WeakCallbackHolder::CallableObject* obj)
 {
-	valueListener = obj;
+	for (int i = 0; i < valueListeners.size(); i++)
+	{
+		if (valueListeners[i] == nullptr)
+			valueListeners.remove(i--);
+	}	
+
+	valueListeners.add(obj);
 	sendValueListenerMessage();
 }
 
@@ -2369,7 +2390,7 @@ void ScriptingApi::Content::ScriptSlider::connectToModulatedParameter(String mod
 
 	if(auto p = ProcessorHelpers::getFirstProcessorWithName(getScriptProcessor()->getMainController_()->getMainSynthChain(), moduleId))
 	{
-		int parameterIndex;
+		int parameterIndex = -1;
 
 		if(parameterId.isInt())
 			parameterIndex = (int)parameterId;
@@ -2395,9 +2416,12 @@ void ScriptingApi::Content::ScriptSlider::connectToModulatedParameter(String mod
 			
 			getScriptProcessor()->setModulationDisplayQueryFunction(idx, p, mv);
 
-			if(auto gc = ProcessorHelpers::getFirstProcessorWithType<GlobalModulatorContainer>(p->getMainController()->getMainSynthChain()))
+			if(parameterIndex != -1)
 			{
-				setModulationData(gc->createMatrixModulationPopupData(p, parameterIndex));
+				if (auto gc = ProcessorHelpers::getFirstProcessorWithType<GlobalModulatorContainer>(p->getMainController()->getMainSynthChain()))
+				{
+					setModulationData(gc->createMatrixModulationPopupData(p, parameterIndex));
+				}
 			}
 		}
 		
@@ -4378,6 +4402,7 @@ struct ScriptingApi::Content::ScriptPanel::Wrapper
 	API_VOID_METHOD_WRAPPER_2(ScriptPanel, loadImage);
 	API_VOID_METHOD_WRAPPER_0(ScriptPanel, unloadAllImages);
 	API_METHOD_WRAPPER_1(ScriptPanel, isImageLoaded);
+	API_METHOD_WRAPPER_1(ScriptPanel, getImageSize);
 	API_VOID_METHOD_WRAPPER_1(ScriptPanel, setDraggingBounds);
 	API_VOID_METHOD_WRAPPER_2(ScriptPanel, setPopupData);
   API_VOID_METHOD_WRAPPER_3(ScriptPanel, setPanelValueWithUndo);
@@ -4488,6 +4513,7 @@ void ScriptingApi::Content::ScriptPanel::init()
 	ADD_API_METHOD_2(loadImage);
 	ADD_API_METHOD_0(unloadAllImages);
 	ADD_API_METHOD_1(isImageLoaded);
+	ADD_API_METHOD_1(getImageSize);
 	ADD_API_METHOD_1(setDraggingBounds);
 	ADD_API_METHOD_2(setPopupData);
 	ADD_API_METHOD_3(setPanelValueWithUndo);
@@ -4822,6 +4848,13 @@ bool ScriptingApi::Content::ScriptPanel::isImageLoaded(String prettyName)
 	return false;
 }
 
+var ScriptingApi::Content::ScriptPanel::getImageSize(String imageName)
+{
+	Image img = getLoadedImage(imageName);
+
+	return Array<var> (img.getWidth(), img.getHeight());
+}
+
 StringArray ScriptingApi::Content::ScriptPanel::getItemList() const
 {
 	String items = getScriptObjectProperty(PopupMenuItems).toString();
@@ -5135,6 +5168,37 @@ void ScriptingApi::Content::ScriptPanel::repaintWrapped()
 	{
 		repaint();
 	}
+}
+
+Result ScriptingApi::Content::ScriptPanel::testCallback(const String& callbackId, const Array<var>& args)
+{
+	if (callbackId == "setMouseCallback")
+	{
+		auto ok = MouseCallbackComponent::validateEventObject(args[0], getScriptObjectProperty(ScriptPanel::allowCallbacks).toString());
+
+		if (!ok.wasOk())
+			return ok;
+
+		return testWithThis(mouseRoutine, args);
+	}
+	if (callbackId == "setPaintRoutine")
+	{
+		var g(new ScriptingObjects::GraphicsObject(getScriptProcessor(), this));
+
+		Array<var> ga;
+		ga.add(g);
+
+		return testWithThis(paintRoutine, ga);
+
+	}
+	if (callbackId == "setTimerCallback")
+		return testWithThis(timerRoutine, args);
+	if (callbackId == "setLoadingCallback")
+		return testWithThis(loadRoutine, args);
+	if (callbackId == "setFileDropCallback")
+		return testWithThis(fileDropRoutine, args);
+
+	return ScriptComponent::testCallback(callbackId, args);
 }
 
 var ScriptingApi::Content::ScriptPanel::addChildPanel()
@@ -8335,7 +8399,8 @@ void ScriptingApi::Content::restoreFromValueTree(const ValueTree &v)
 
 			if (childType != components[i]->getObjectName())
 			{
-				debugError(dynamic_cast<Processor*>(getScriptProcessor()), "Type mismatch in preset");
+				const String message = "Type mismatch in preset: " + components[i]->name.toString() + ", found " + childTypeString + ", expecting " + components[i]->getObjectName();
+				debugError(dynamic_cast<Processor*>(getScriptProcessor()), message);
 			}
 		}
 		else
@@ -9269,7 +9334,8 @@ String ScriptingApi::Content::Helpers::createScriptVariableDeclaration(Reference
 		{
 			auto c = selection[i];
 
-			s << "const var " << c->name.toString() << " = Content.getComponent(\"" << c->name.toString() << "\");" << nl;;
+			s << "//! " << c->name.toString() << nl;
+			s << "const " << c->name.toString() << " = Content.getComponent(\"" << c->name.toString() << "\");" << nl;
 		}
 
 		s << nl;
@@ -9278,14 +9344,15 @@ String ScriptingApi::Content::Helpers::createScriptVariableDeclaration(Reference
 	}
 	else
 	{
-		s << "const var " << variableName << " = [";
+		s << "const " << variableName << " = [";
 
 		int length = s.length();
 
 		for (int i = 0; i < selection.size(); i++)
 		{
 			auto c = selection[i];
-
+			
+			s << "//! " << c->name.toString() << nl;
 			s << "Content.getComponent(\"" << c->name.toString() << "\")";
 
 			if (i != selection.size() - 1)
@@ -9521,16 +9588,19 @@ String ScriptingApi::Content::Helpers::createCustomCallbackDefinition(ReferenceC
 		auto c = selection[i];
 
 		auto name = c->getName();
+		String id = name.toString().removeCharacters(" \n\t\"\'!$%&/()");
 
 		String callbackName = "on" + name.toString() + "Control";
 
 		code << nl;
+		code << "//! " << name << nl;
+		code << "const " << id << " = Content.getComponent(\"" << name << "\");" << nl;
+		code << id << ".setControlCallback(" << callbackName << ");" << nl;
+		code << nl;
 		code << "inline function " << callbackName << "(component, value)" << nl;
 		code << "{" << nl;
 		code << "\t//Add your custom logic here..." << nl;
-		code << "};" << nl;
-		code << nl;
-		code << "Content.getComponent(\"" << name.toString() << "\").setControlCallback(" << callbackName << ");" << nl;
+		code << "}" << nl;
 
 	}
 

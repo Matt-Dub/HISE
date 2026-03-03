@@ -535,7 +535,7 @@ expHandler(mc->getExpansionHandler())
 
 	addAndMakeVisible(tagList = new TagList(mc, this));
 
-	addAndMakeVisible(favoriteButton = new ShapeButton("Show Favorites", Colours::white, Colours::white, Colours::white));
+	addAndMakeVisible(favoriteButton = new TextButton("Show Favorites"));
 	favoriteButton->addListener(this);
 
 	addAndMakeVisible(modalInputWindow = new ModalWindow(this));
@@ -1032,9 +1032,6 @@ void PresetBrowser::updateFavoriteButton()
 
 	auto path = getPresetBrowserLookAndFeel().createPresetBrowserIcons(on ? "favorite_on" : "favorite_off");
 
-
-	favoriteButton->setShape(path, false, true, true);
-
 	if (presetColumn == nullptr)
 		return;
 
@@ -1100,8 +1097,6 @@ void PresetBrowser::setHighlightColourAndFont(Colour c, Colour bgColour, Font f)
 	lf.backgroundColour = bgColour;
 	lf.font = f;
 	lf.highlightColour = c;
-
-	favoriteButton->setColours(c.withAlpha(0.7f), c.withAlpha(0.5f), c.withAlpha(0.6f));
 
 	setOpaque(bgColour.isOpaque());
 }
@@ -1292,6 +1287,8 @@ void PresetBrowser::setOptions(const Options& newOptions)
 	setHighlightColourAndFont(newOptions.highlightColour, newOptions.backgroundColour, newOptions.font);
 
 	getPresetBrowserLookAndFeel().textColour = newOptions.textColour;
+	getPresetBrowserLookAndFeel().modalBackgroundColour = newOptions.modalBackgroundColour;
+	getPresetBrowserLookAndFeel().itemColour3 = newOptions.itemColour3;
 	setNumColumns(newOptions.numColumns);
 	columnWidthRatios.clear();
 	columnWidthRatios.addArray(newOptions.columnWidthRatios);

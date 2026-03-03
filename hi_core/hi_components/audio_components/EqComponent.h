@@ -72,7 +72,7 @@ public:
 	struct LookAndFeelMethods
 	{
 		virtual ~LookAndFeelMethods() {};
-		virtual void drawFilterDragHandle(Graphics& g, FilterDragOverlay& o, int index, Rectangle<float> handleBounds, const DragData& d);
+		virtual void drawFilterDragHandle(Graphics& g, FilterGraph& fg, FilterDragOverlay& o, int index, Rectangle<float> handleBounds, const DragData& d);
 	};
 
 	struct Factory : public PathFactory
@@ -158,6 +158,12 @@ public:
 	bool shouldResetOnDoubleClick() const noexcept { return resetOnDoubleClick; }
 
 	void setResetOnDoubleClick(bool shouldReset) { resetOnDoubleClick = shouldReset; }
+
+	void setHandleSize(int newSize)
+	{
+		handleSize = newSize;
+		offset = newSize / 2;
+	}
 
 	void setAllowContextMenu(bool shouldAllow)
 	{
@@ -261,6 +267,7 @@ private:
 
 	bool allowContextMenu = true;
 	double gainRange = 24.0;
+	int handleSize = 24;
 
 	bool resetOnDoubleClick = false;
 	bool allowFilterResizing = true;

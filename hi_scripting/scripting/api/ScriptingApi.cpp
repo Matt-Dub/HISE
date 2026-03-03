@@ -1,3 +1,4 @@
+#include "ScriptingApi.h"
 /*  ===========================================================================
 *
 *   This file is part of HISE.
@@ -181,6 +182,14 @@ var ApiHelpers::convertStyleSheetProperty(const var& value, const String& type)
 	{
 		return var(String("#") + ApiHelpers::getColourFromVar(value).toDisplayString(true));
 	}
+	else if(type == "%")
+	{
+		return var(String((double)value * 100.0) + "%");
+	}
+	else if(type == "px" || type == "em" || type == "vh" || type == "deg")
+	{
+		return var(String((double)value) + type);
+	}
 
 	return value;
 }
@@ -220,6 +229,8 @@ Colour ApiHelpers::getColourFromVar(const var& value)
 
 	if (value.isInt64() || value.isInt())
 		colourValue = (int64)value;
+	else if (value.isDouble())
+		colourValue = (int64)(double)value;
 	else if (value.isString())
 	{
 		auto string = value.toString();
@@ -979,7 +990,7 @@ void ScriptingApi::Message::setStartOffset(int newStartOffset)
 	}
 
 	if (newStartOffset > UINT16_MAX)
-		reportScriptError("Max start offset is 65536 (2^16)");
+		reportScriptError("Max start offset is 65535 (2^16-1)");
 
 #endif
 
@@ -1247,6 +1258,7 @@ struct ScriptingApi::Engine::Wrapper
 	API_METHOD_WRAPPER_0(Engine, createMacroHandler);
 	API_METHOD_WRAPPER_0(Engine, getWavetableList);
 	API_VOID_METHOD_WRAPPER_3(Engine, showYesNoWindow);
+	API_VOID_METHOD_WRAPPER_4(Engine, showMessageBoxWithCallback);
 	API_VOID_METHOD_WRAPPER_1(Engine, addModuleStateToUserPreset);
 	API_VOID_METHOD_WRAPPER_0(Engine, rebuildCachedPools);
 	API_VOID_METHOD_WRAPPER_1(Engine, extendTimeOut);
@@ -1426,6 +1438,7 @@ parentMidiProcessor(dynamic_cast<ScriptBaseMidiProcessor*>(p))
 	ADD_API_METHOD_0(createExpansionHandler);
 	ADD_API_METHOD_1(createModulationMatrix);
 	ADD_API_METHOD_3(showYesNoWindow);
+	ADD_API_METHOD_4(showMessageBoxWithCallback);
 	ADD_API_METHOD_3(showMessageBox);
 	ADD_API_METHOD_1(getSystemTime);
 	ADD_API_METHOD_0(createLicenseUnlocker);
@@ -1997,6 +2010,33 @@ void ScriptingApi::Engine::showMessageBox(String title, String markdownMessage, 
 	});
 }
 
+void ScriptingApi::Engine::showMessageBoxWithCallback(String title, String markdownMessage, int type, var callback)
+{
+	static bool isMessageBoxOpen = false;
+
+	if (isMessageBoxOpen)
+		return;
+
+	isMessageBoxOpen = true;
+
+	auto p = getScriptProcessor();
+
+	WeakCallbackHolder cb(p, this, callback, 1);
+	cb.incRefCount();
+	
+	auto f = [markdownMessage, title, cb, type]() mutable
+	{
+		auto ok = PresetHandler::showMessageWindow(title, markdownMessage, (PresetHandler::IconType)type);
+
+		std::array<var, 1> args = { var(ok) };
+		cb.call({ var(ok) });
+		
+		isMessageBoxOpen = false;
+	};
+	
+	MessageManager::callAsync(f);	
+}
+
 void ScriptingApi::Engine::showYesNoWindow(String title, String markdownMessage, var callback)
 {
 	//auto p = dynamic_cast<JavascriptProcessor*>(getScriptProcessor());
@@ -2015,8 +2055,6 @@ void ScriptingApi::Engine::showYesNoWindow(String title, String markdownMessage,
 
 	MessageManager::callAsync(f);
 }
-
-
 
 String ScriptingApi::Engine::decodeBase64ValueTree(const String& b64Data)
 {
@@ -3620,6 +3658,10 @@ String ScriptingApi::Engine::doubleToString(double value, int digits)
     return String(value, digits);
 }
 
+String ScriptingApi::Engine::intToHexString(int value)
+{
+    return String::toHexString(value);
+}
 
 float ScriptingApi::Engine::getStringWidth(String text, String fontName, float fontSize, float fontSpacing)
 {
@@ -3632,11 +3674,6 @@ void ScriptingApi::Engine::quit()
     #if IS_STANDALONE_APP
     JUCEApplication::quit();
 	#endif
-}
-                
-String ScriptingApi::Engine::intToHexString(int value)
-{
-    return String::toHexString(value);
 }
 
 void ScriptingApi::Engine::undo()
@@ -3815,6 +3852,8 @@ struct ScriptingApi::Sampler::Wrapper
 	API_METHOD_WRAPPER_2(Sampler, setAllowReleaseStart);
 	API_VOID_METHOD_WRAPPER_2(Sampler, setGUISelection);
 	API_VOID_METHOD_WRAPPER_1(Sampler, setSortByRRGroup);
+	API_VOID_METHOD_WRAPPER_1(Sampler, setOffsetMultiplier);
+	API_METHOD_WRAPPER_0(Sampler, getComplexGroupManager);
 };
 
 
@@ -3877,6 +3916,9 @@ sampler(sampler_)
 	ADD_API_METHOD_0(getTimestretchOptions);
 	ADD_API_METHOD_0(getReleaseStartOptions);
 	ADD_API_METHOD_1(setReleaseStartOptions);
+
+	ADD_API_METHOD_1(setOffsetMultiplier);
+	ADD_API_METHOD_0(getComplexGroupManager);
 
 	sampleIds = SampleIds::Helpers::getAllIds();
 
@@ -4802,6 +4844,16 @@ void ScriptingApi::Sampler::setReleaseStartOptions(var data)
 #endif
 }
 
+void ScriptingApi::Sampler::setOffsetMultiplier(int multiplier)
+{
+		ModulatorSampler* s = dynamic_cast<ModulatorSampler*>(sampler.get());
+		
+		if (s == nullptr)
+			reportScriptError("Invalid sampler call");
+			
+		s->setStartOffsetMultiplier(multiplier);
+}
+
 String ScriptingApi::Sampler::getAudioWaveformContentAsBase64(var presetObj)
 {
 	auto fileName = presetObj.getProperty("data", "").toString();
@@ -5207,6 +5259,15 @@ bool ScriptingApi::Sampler::clearSampleMap()
 
 	s->killAllVoicesAndCall(f);
 	return true;
+}
+
+juce::var ScriptingApi::Sampler::getComplexGroupManager()
+{
+	if(checkValidObject())
+		return new ScriptingObjects::ScriptingComplexGroupManager(getScriptProcessor(), dynamic_cast<ModulatorSampler*>(sampler.get()));
+
+	reportScriptError("No valid sampler");
+	RETURN_IF_NO_THROW(var());
 }
 
 juce::ValueTree ScriptingApi::Sampler::convertJSONListToValueTree(var jsonSampleList)
@@ -5670,7 +5731,7 @@ int ScriptingApi::Synth::addMessageFromHolder(var messageHolder)
 void ScriptingApi::Synth::startTimer(double intervalInSeconds)
 {
 #if ENABLE_SCRIPTING_SAFE_CHECKS
-	if(intervalInSeconds < 0.004)
+	if(intervalInSeconds < 0.001)
 	{
 		reportScriptError("Go easy on the timer!");
 		return;
@@ -5813,7 +5874,7 @@ void ScriptingApi::Synth::setMacroControl(int macroIndex, float newValue)
 {
 	if(ModulatorSynthChain *chain = dynamic_cast<ModulatorSynthChain*>(owner))
 	{
-		if(macroIndex > 0 && macroIndex < 8)
+		if(macroIndex > 0 && macroIndex < 9)
 		{
 			chain->setMacroControl(macroIndex - 1, newValue, sendNotification);
 		}
@@ -6629,10 +6690,12 @@ struct ScriptingApi::Console::Wrapper
 	API_VOID_METHOD_WRAPPER_1(Console, assertIsObjectOrArray);
 	API_VOID_METHOD_WRAPPER_1(Console, assertLegalNumber);
 	API_VOID_METHOD_WRAPPER_1(Console, assertNoString);
+	API_VOID_METHOD_WRAPPER_2(Console, assertWithMessage);
 	API_VOID_METHOD_WRAPPER_0(Console, breakInDebugger);
 	API_VOID_METHOD_WRAPPER_0(Console, blink);
 	API_VOID_METHOD_WRAPPER_1(Console, startSampling);
 	API_VOID_METHOD_WRAPPER_2(Console, sample);
+	API_VOID_METHOD_WRAPPER_3(Console, testCallback);
 };
 
 ScriptingApi::Console::Console(ProcessorWithScriptingContent *p) :
@@ -6652,11 +6715,13 @@ startTime(0.0)
 	ADD_API_METHOD_1(assertIsDefined);
 	ADD_API_METHOD_1(assertIsObjectOrArray);
 	ADD_API_METHOD_1(assertLegalNumber);
+	ADD_API_METHOD_2(assertWithMessage);
 
 	ADD_API_METHOD_0(breakInDebugger);
 	ADD_API_METHOD_1(assertNoString);
 	ADD_API_METHOD_1(startSampling);
 	ADD_API_METHOD_2(sample);
+	ADD_API_METHOD_3(testCallback);
 
 	consoleProfile.setSourceType(DebugSession::ProfileDataSource::SourceType::Trace);
 	consoleProfile.setHolder(dynamic_cast<JavascriptProcessor*>(p), true);
@@ -6804,7 +6869,11 @@ void ScriptingApi::Console::assertEqual(var v1, var v2)
 	ignoreUnused(suspender);
 
 	if (v1 != v2)
-		reportScriptError("Assertion failure: values are unequal");
+	{
+		String error;
+		error << "Assertion failure: " << v1.toString() << " != " << v2.toString();
+		reportScriptError(error);
+	}
 }
 
 void ScriptingApi::Console::assertIsDefined(var v1)
@@ -6858,6 +6927,14 @@ void ScriptingApi::Console::assertNoString(var value)
 	}
 }
 
+void ScriptingApi::Console::assertWithMessage(bool condition, String errorMessage)
+{
+	if (!condition)
+	{
+		reportScriptError("Assertion failure: " + errorMessage);
+	}
+}
+
 void ScriptingApi::Console::assertLegalNumber(var value)
 {
 	if (!VarTypeHelpers::isNumeric(value))
@@ -6891,6 +6968,58 @@ void ScriptingApi::Console::startSampling(const String& sessionId)
 		dynamic_cast<JavascriptProcessor*>(getScriptProcessor())->addInplaceDebugValue(id, lineNumber, s->getTextForName(), s);
 	}
 #endif
+}
+
+struct TestHelpers
+{
+	static void replaceObjectWithId(var& obj)
+	{
+		if (obj.isArray())
+		{
+			for (auto& item : *obj.getArray())
+				replaceObjectWithId(item);
+		}
+		if (auto so = dynamic_cast<ConstScriptingObject*>(obj.getObject()))
+			obj = var(so->getObjectName().toString());
+	}
+
+	static String stringify(var argList)
+	{
+		replaceObjectWithId(argList);
+		return JSON::toString(argList, true);
+	}
+};
+
+void ScriptingApi::Console::testCallback(var obj, String callbackId, var argList)
+{
+	auto p = dynamic_cast<Processor*>(getScriptProcessor());
+
+	if (!getScriptProcessor()->getMainController_()->isFlakyThreadingAllowed())
+	{
+		debugToConsole(p, "warning: this should be only used in a testing setup");
+	}
+
+	
+
+	if (auto sc = dynamic_cast<ScriptingApi::Content::ScriptComponent*>(obj.getObject()))
+	{
+		debugToConsole(p, "BEGIN_CALLBACK_TEST " + sc->getDebugName() + "." + callbackId);
+
+		Array<var> args;
+
+		if (argList.isArray())
+			args.addArray(*argList.getArray());
+		else
+			args.add(argList);
+
+		auto ok = sc->testCallback(callbackId, args);
+
+		if (!ok.wasOk())
+			reportScriptError(ok.getErrorMessage());
+
+		debugToConsole(p, "END_CALLBACK_TEST");
+		debugToConsole(p, "CALLBACK_ARGS: >" + TestHelpers::stringify(argList));
+	}
 }
 
 void ScriptingApi::Console::sample(const String& label, var dataToSample)
@@ -7198,7 +7327,7 @@ var ScriptingApi::Colours::toHsl(var colour)
 int ScriptingApi::Colours::fromHsl(var hsl)
 {
 	if (hsl.isArray() && hsl.size() == 4)
-		return Colour().fromHSL(hsl[0], hsl[1], hsl[2], hsl[3]).getARGB();
+		return Colour().fromHSL((float)hsl[0], (float)hsl[1], (float)hsl[2], (uint8)(int)hsl[3]).getARGB();
 
 	return 0;
 }
@@ -7552,10 +7681,13 @@ void ScriptingApi::FileSystem::browseInternally(File f, bool forSaving, bool isD
 			
 		}
 
-		if (a.isObject())
+		if (!a.isObject())
 		{
-			wc.call(&a, 1);
+			File emptyFile;
+			a = var(new ScriptingObjects::ScriptFile(p_, emptyFile));
 		}
+			
+		wc.call(&a, 1);
 		
 		fileChooserIsOpen = false;
 	};
@@ -8227,6 +8359,11 @@ struct ScriptingApi::TransportHandler::Wrapper
 	API_VOID_METHOD_WRAPPER_0(TransportHandler, sendGridSyncOnNextCallback);
 	API_VOID_METHOD_WRAPPER_1(TransportHandler, setLinkBpmToSyncMode);
 	API_METHOD_WRAPPER_0(TransportHandler, isNonRealtime);
+	API_VOID_METHOD_WRAPPER_1(TransportHandler, setLocalGridMultiplier);
+	API_METHOD_WRAPPER_0(TransportHandler, getGridLengthInSamples);
+	API_VOID_METHOD_WRAPPER_1(TransportHandler, setLocalGridBypassed);
+	API_METHOD_WRAPPER_1(TransportHandler, getGridPosition);
+	API_METHOD_WRAPPER_0(TransportHandler, isPlaying);
 };
 
 ScriptingApi::TransportHandler::TransportHandler(ProcessorWithScriptingContent* sp) :
@@ -8256,6 +8393,11 @@ ScriptingApi::TransportHandler::TransportHandler(ProcessorWithScriptingContent* 
     ADD_API_METHOD_1(stopInternalClockOnExternalStop);
 	ADD_API_METHOD_1(setLinkBpmToSyncMode);
 	ADD_API_METHOD_0(isNonRealtime);
+	ADD_API_METHOD_1(setLocalGridMultiplier);
+	ADD_API_METHOD_0(getGridLengthInSamples);
+	ADD_API_METHOD_1(setLocalGridBypassed);
+	ADD_API_METHOD_1(getGridPosition);
+	ADD_API_METHOD_0(isPlaying);
 }
 
 ScriptingApi::TransportHandler::~TransportHandler()
@@ -8385,11 +8527,31 @@ void ScriptingApi::TransportHandler::onGridChange(int gridIndex_, uint16 timesta
 	gridTimestamp = timestamp;
 	firstGridInPlayback = firstGridInPlayback_;
 
+	if (firstGridInPlayback)
+		nextLocalIsFirst = true;
+
+	auto unsignedIndex = (uint32)gridIndex;
+	auto mask = (uint32)(localGridMultiplier - 1);
+	auto filtered = unsignedIndex & mask;
+
+	if((mask && filtered) || localBypassed)
+	{
+		return;
+	}
+
+	auto thisGridIndex = gridIndex >> localBitShift;
+
+	if(thisGridIndex != (lastGridIndex+1))
+		nextLocalIsFirst = true;
+
 	if (gridCallback != nullptr)
-		gridCallback->call(gridIndex, gridTimestamp, firstGridInPlayback);
+		gridCallback->call(thisGridIndex, gridTimestamp, nextLocalIsFirst);
 
 	if (gridCallbackAsync != nullptr)
-		gridCallbackAsync->call(gridIndex, gridTimestamp, firstGridInPlayback);
+		gridCallbackAsync->call(thisGridIndex, gridTimestamp, nextLocalIsFirst);
+
+	lastGridIndex = thisGridIndex;
+	nextLocalIsFirst = false;
 }
 
 void ScriptingApi::TransportHandler::setOnBeatChange(var sync, var f)
@@ -8458,6 +8620,36 @@ void ScriptingApi::TransportHandler::setEnableGrid(bool shouldBeEnabled, int tem
 	}
 }
 
+void ScriptingApi::TransportHandler::setLocalGridMultiplier(int factor)
+{
+	if (factor != 1 && !isPowerOfTwo(factor))
+		reportScriptError("factor must be power of two (or 1).");
+
+	factor = jlimit(1, 64, factor);
+
+	if(factor == 1)
+	{
+		localGridMultiplier = 1;
+		localBitShift = 0;
+	}
+	else
+	{
+		localGridMultiplier = factor;
+		localBitShift = log2(factor);
+	}
+}
+
+void ScriptingApi::TransportHandler::setLocalGridBypassed(bool shouldBeBypassed)
+{
+	if(shouldBeBypassed != localBypassed)
+	{
+		localBypassed = shouldBeBypassed;
+
+		if(!localBypassed)
+			nextLocalIsFirst = true;
+	}
+}
+
 void ScriptingApi::TransportHandler::startInternalClock(int timestamp)
 {
 	auto& clock = getMainController()->getMasterClock();
@@ -8506,6 +8698,28 @@ void ScriptingApi::TransportHandler::setLinkBpmToSyncMode(bool shouldPrefer)
 bool ScriptingApi::TransportHandler::isNonRealtime() const
 {
 	return getScriptProcessor()->getMainController_()->getSampleManager().isNonRealtime();
+}
+
+double ScriptingApi::TransportHandler::getGridLengthInSamples() const
+{
+	auto bpm = getMainController()->getBpm();
+	auto gridSpeed = getMainController()->getMasterClock().getCurrentClockGrid();
+	auto tf = TempoSyncer::getTempoFactor(gridSpeed);
+	auto sr = getMainController()->getMainSynthChain()->getSampleRate();
+	tf *= (float)localGridMultiplier;
+	return TempoSyncer::getTempoInSamples(bpm, sr, tf);
+}
+
+bool ScriptingApi::TransportHandler::isPlaying() const
+{
+	return getMainController()->getMasterClock().isPlaying();
+}
+
+int ScriptingApi::TransportHandler::getGridPosition(int timestamp) const
+{
+	auto ppq = getMainController()->getMasterClock().getPPQPos(timestamp);
+	return ppq;
+
 }
 
 void ScriptingApi::TransportHandler::onBypassUpdate(TransportHandler& handler, bool state)

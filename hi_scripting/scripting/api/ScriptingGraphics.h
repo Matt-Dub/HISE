@@ -115,7 +115,7 @@ namespace ScriptingObjects
 			return getProperty(id);
 		}
 
-		Ptr clone() override
+		Ptr clone() const override
 		{
 			return new ScriptRectangle(this->rectangle);
 		}
@@ -518,6 +518,9 @@ namespace ScriptingObjects
 		/** Returns the length of the path. */
 		var getLength();
 
+		/** Returns the size ratio W/H of the path. */
+		var getRatio();
+
 		/** Creates a fillable path using the provided strokeData (with optional dot. */
 		var createStrokedPath(var strokeData, var dotData);
 
@@ -831,6 +834,7 @@ namespace ScriptingObjects
 			public CustomKeyboardLookAndFeelBase,
 			public ScriptTableListModel::LookAndFeelMethods,
             public MatrixPeakMeter::LookAndFeelMethods,
+			public TableFloatingTileBase::LookAndFeelMethods,
 			public WaterfallComponent::LookAndFeelMethods,
 			public HiSlider::HoverPopupLookandFeel
 		{
@@ -844,6 +848,8 @@ namespace ScriptingObjects
 
 			void drawAlertBox(Graphics&, AlertWindow&, const Rectangle<int>& textArea, TextLayout&) override;
 
+			int getAlertWindowMargin() override;
+
 			Font getAlertWindowMessageFont() override;
 			Font getAlertWindowTitleFont() override;
 			Font getTextButtonFont(TextButton &, int) override;
@@ -852,6 +858,10 @@ namespace ScriptingObjects
 			Font getAlertWindowFont() override;;
 
 			MarkdownLayout::StyleData getAlertWindowMarkdownStyleData() override;
+
+			int getMenuWindowFlags();
+
+			void preparePopupMenuWindow(Component& newWindow) override;
 
 			void drawPopupMenuBackground(Graphics& g_, int width, int height) override;
 
@@ -896,6 +906,7 @@ namespace ScriptingObjects
 			void drawTableBackground(Graphics& g, TableEditor& te, Rectangle<float> area, double rulerPosition) override;
 			void drawTablePath(Graphics& g, TableEditor& te, Path& p, Rectangle<float> area, float lineThickness) override;
 			void drawTablePoint(Graphics& g, TableEditor& te, Rectangle<float> tablePoint, bool isEdge, bool isHover, bool isDragged) override;
+			void drawTableMidPoint(Graphics& g, TableEditor& te, Rectangle<float> midPoint, bool isHover, bool isDragged) override;
 			void drawTableRuler(Graphics& g, TableEditor& te, Rectangle<float> area, float lineThickness, double rulerPosition) override;
 
 			void drawScrollbar(Graphics& g, ScrollBar& scrollbar, int x, int y, int width, int height, bool isScrollbarVertical, int thumbStartPosition, int thumbSize, bool isMouseOver, bool isMouseDown) override;
@@ -934,9 +945,14 @@ namespace ScriptingObjects
 
 			void drawTableHeaderColumn(Graphics& g, TableHeaderComponent&, const String& columnName, int columnId, int width, int height, bool isMouseOver, bool isMouseDown, int columnFlags) override;
 
+			void drawTableRowBackground(Graphics& g, const TableFloatingTileBase::LookAndFeelData& d, int rowNumber, int width, int height, bool rowIsSelected, bool rowIsHovered) override;
+
+			void drawTableCell(Graphics& g, const TableFloatingTileBase::LookAndFeelData& d, const String& text, int rowNumber, int columnId, int width, int height, bool rowIsSelected, bool cellIsClicked, bool cellIsHovered) override;
+
             void getIdealPopupMenuItemSize(const String &text, bool isSeparator, int standardMenuItemHeight, int &idealWidth, int &idealHeight) override;
             
-			void drawFilterDragHandle(Graphics& g, FilterDragOverlay& o, int index, Rectangle<float> handleBounds, const FilterDragOverlay::DragData& d) override;
+			void drawFilterDragHandle(Graphics& g, FilterGraph& fg, FilterDragOverlay& o, int index, Rectangle<float> handleBounds, const FilterDragOverlay::DragData& d) override;
+
 			void drawFilterBackground(Graphics &g, FilterGraph& fg) override;
 			void drawFilterPath(Graphics& g, FilterGraph& fg, const Path& p) override;
 			void drawFilterGridLines(Graphics &g, FilterGraph& fg, const Path& gridPath) override;
@@ -1024,6 +1040,7 @@ namespace ScriptingObjects
 			void drawTableBackground(Graphics& g, TableEditor& te, Rectangle<float> area, double rulerPosition) override {};
 			void drawTablePath(Graphics& g, TableEditor& te, Path& p, Rectangle<float> area, float lineThickness) override;
 			void drawTablePoint(Graphics& g, TableEditor& te, Rectangle<float> tablePoint, bool isEdge, bool isHover, bool isDragged) override;
+			void drawTableMidPoint(Graphics& g, TableEditor& te, Rectangle<float> midPoint, bool isHover, bool isDragged) override;
 			void drawTableRuler(Graphics& g, TableEditor& te, Rectangle<float> area, float lineThickness, double rulerPosition) override;
 			void drawTableValueLabel(Graphics& g, TableEditor& te, Font f, const String& text, Rectangle<int> textBox) override;
 
@@ -1065,9 +1082,11 @@ namespace ScriptingObjects
 			void drawFilterBackground(Graphics& g, FilterGraph& fg) override;
 			void drawFilterPath(Graphics& g, FilterGraph& fg, const Path& p) override;
 			void drawFilterGridLines(Graphics& g, FilterGraph& fg, const Path& gridPath) override;
-			void drawFilterDragHandle(Graphics& g, FilterDragOverlay& o, int index, Rectangle<float> handleBounds, const FilterDragOverlay::DragData& d) override;
+			void drawFilterDragHandle(Graphics& g, FilterGraph& fg, FilterDragOverlay& o, int index, Rectangle<float> handleBounds, const FilterDragOverlay::DragData& d) override;
 
 		private:
+
+			void setCSSColourOrBlack(simple_css::StyleSheet::Ptr ss, const Identifier& id, Component& c, int colourId);
 
 			Rectangle<float> getTextLabelPopupArea(simple_css::StyleSheet::Ptr ss, Rectangle<float> fullBounds, const String& text);
 			void setupSliderPack(SliderPack& s);
@@ -1140,6 +1159,11 @@ namespace ScriptingObjects
 			void drawTablePoint(Graphics& g, TableEditor& te, Rectangle<float> tablePoint, bool isEdge, bool isHover, bool isDragged) override
 			{
 				CALL_LAF(drawTablePoint, g, te, tablePoint, isEdge, isHover, isDragged);
+			}
+
+			void drawTableMidPoint(Graphics& g, TableEditor& te, Rectangle<float> midPoint, bool isHover, bool isDragged) override
+			{
+				CALL_LAF(drawTableMidPoint, g, te, midPoint, isHover, isDragged);
 			}
 
 			void drawTableRuler(Graphics& g, TableEditor& te, Rectangle<float> area, float lineThickness, double rulerPosition) override
@@ -1250,9 +1274,9 @@ namespace ScriptingObjects
 				CALL_LAF(drawTableHeaderColumn, g, th, columnName, columnId, width, height, isMouseOver, isMouseDown, columnFlags);
 			}
 
-			void drawFilterDragHandle(Graphics& g, FilterDragOverlay& o, int index, Rectangle<float> handleBounds, const FilterDragOverlay::DragData& d) override
+			void drawFilterDragHandle(Graphics& g, FilterGraph& fg, FilterDragOverlay& o, int index, Rectangle<float> handleBounds, const FilterDragOverlay::DragData& d) override
 			{
-				CALL_LAF(drawFilterDragHandle, g, o, index, handleBounds, d);
+				CALL_LAF(drawFilterDragHandle, g, fg, o, index, handleBounds, d);
 			}
 			void drawFilterBackground(Graphics &g, FilterGraph& fg) override
 			{

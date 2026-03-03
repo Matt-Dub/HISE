@@ -141,7 +141,7 @@ void Processor::restoreFromValueTree(const ValueTree &previouslyExportedProcesso
 
 	const ValueTree &v = previouslyExportedProcessorState;
 
-	jassert(Identifier(v.getProperty("Type", String())) == getType());
+	jassert(Identifier(v.getProperty("Type", String()).toString().removeCharacters(" ")) == getType());
 
 	jassert(v.getProperty("ID", String()) == getId());
 	setBypassed(v.getProperty("Bypassed", false));
@@ -1088,7 +1088,7 @@ juce::String ProcessorHelpers::getTypedScriptVariableDeclaration(const Processor
 	String name = p->getId();
 	String id = name.removeCharacters(" \n\t\"\'!$%&/()");
 
-	code << "const var " << id << " = Synth.get" << typeName << "(\"" << name << "\");";
+	code << "const " << id << " = Synth.get" << typeName << "(\"" << name << "\");";
 
 	if (copyToClipboard)
 	{
@@ -1298,6 +1298,25 @@ int ProcessorHelpers::getParameterIndexFromProcessor(Processor* p, const Identif
 	}
 
 	return -1;
+}
+
+String ProcessorHelpers::getDisplayName(Processor* p)
+{
+	if (auto mc = dynamic_cast<ModulatorChain*>(p))
+		return mc->getDisplayName();
+
+	return p->getId();
+}
+
+void ProcessorHelpers::changeDisplayName(Processor* p, const String& newText)
+{
+	if (auto mc = dynamic_cast<ModulatorChain*>(p))
+		return mc->setDisplayName(newText);
+
+	if (p->getId() != newText)
+	{
+		p->setId(newText, sendNotification);
+	}
 }
 
 void AudioSampleProcessor::setLoadedFile(const String &fileName, bool loadThisFile/*=false*/, bool forceReload/*=false*/)

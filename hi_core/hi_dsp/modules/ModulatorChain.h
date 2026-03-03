@@ -33,6 +33,8 @@
 #ifndef ModulatorChainProcessor_H_INCLUDED
 #define ModulatorChainProcessor_H_INCLUDED
 
+namespace scriptnode { class NodeBase; }
+
 namespace hise { using namespace juce;
 
 
@@ -312,7 +314,7 @@ public:
 
 		bool manualExpansionPending = false;
 
-		
+		int numActiveVoices = 0;
 
 		Options options;
 		
@@ -341,13 +343,13 @@ public:
 		struct GainModulation: public ModulationDisplayValue::QueryFunction
 		{
 			bool onScaleDrag(Processor* p, bool isDown, float delta) override;
-			ModulationDisplayValue getDisplayValue(Processor* p, double v, NormalisableRange<double> nr) const override;
+			ModulationDisplayValue getDisplayValue(Processor* p, double v, NormalisableRange<double> nr, int /*displayIndex*/) const override;
 		};
 
 		struct PitchModulation: public ModulationDisplayValue::QueryFunction
 		{
 			bool onScaleDrag(Processor* p, bool isDown, float delta) override;
-			ModulationDisplayValue getDisplayValue(Processor* p, double v, NormalisableRange<double> nr) const override;
+			ModulationDisplayValue getDisplayValue(Processor* p, double v, NormalisableRange<double> nr, int /*displayIndex*/) const override;
 		};
 	};
 
@@ -363,7 +365,7 @@ public:
 			return modChain->onIntensityDrag(isDown, delta);
 		}
 
-		ModulationDisplayValue getDisplayValue(Processor* p, double pValue, NormalisableRange<double> nr) const override
+		ModulationDisplayValue getDisplayValue(Processor* p, double pValue, NormalisableRange<double> nr, int /*displayIndex*/) const override
 		{
 			auto modChain = dynamic_cast<ModulatorChain*>(p->getChildProcessor(P));
 			jassert(modChain != nullptr);
@@ -390,6 +392,25 @@ public:
 	FactoryType *getFactoryType() const override;;
 
 	Colour getColour() const override;;
+
+	void setDisplayName(const String& newDisplayName)
+	{
+		if(displayName != newDisplayName)
+		{
+			displayName = newDisplayName;
+			setId(getId(), sendNotificationAsync);
+		}
+	}
+
+	String getDisplayName() const 
+	{
+		if(displayName.isNotEmpty())
+			return displayName;
+
+		return getId();
+	}
+	
+	String displayName;
 
 	void setFactoryType(FactoryType *newFactoryType) override;;
 
@@ -490,6 +511,9 @@ public:
 	 *  shows the modulation output.
 	 */
 	void setInitialValue(float newInitialValue);
+
+	/** Call this whenever a bypassed mod is supposed to update the initial value of the mod chain. */
+	void updateInitialValueFromChildMods();
 
 	void changeChildModulatorMode(Processor* childMod, Modulation::Mode newMode, bool isBipolar)
 	{
@@ -664,6 +688,7 @@ public:
 			d.signal = typed->signalData.getWritePointer(0);
 			d.thisBlockSize = &typed->thisBlockSize;
 			d.constantValue = 0.0f;
+			d.resetFlag = typed->resetFlag;
 			return d;
 		}
 
@@ -731,6 +756,8 @@ public:
 		ModulatorChain& parent;
 		int thisBlockSize = 0;
 		int numConnections = 0;
+
+		scriptnode::modulation::ClearState resetFlag[NUM_POLYPHONIC_VOICES];
 
     } runtimeTargetSource;
 
@@ -852,50 +879,7 @@ public:
 			ValueToTextConverter vtc;
 		};
 
-		void updateModulationProperties(const ParameterProperties& pp, const ParameterInitData::QueryFunction& pf)
-		{
-			int idx = 0;
-
-			for(auto& mb: extraMods)
-			{
-				auto isUsed = pp.isUsed(idx);
-
-				mb->getChain()->setBypassed(!isUsed);
-				mb->setForceProcessing(isUsed);
-
-				if(isUsed)
-				{
-					auto parameterIndex = pp.getParameterIndex(idx);
-
-					if(parameterIndex != -1)
-					{
-						auto mode = Modulation::getModeFromModProperties(pp, parameterIndex);
-
-						auto zp = mode == Modulation::Mode::PanMode ? 0.5f : 0.0f;
-						mb->getChain()->setZeroPosition(zp);
-						mb->getChain()->setMode(Modulation::Mode::CombinedMode, sendNotificationAsync);
-
-						auto pd = pf(parameterIndex);
-
-						auto initialValue = pd.ir.convertTo0to1(pd.initValue, false);
-						mb->getChain()->setInitialValue(initialValue);
-
-						mb->getChain()->setTableValueConverter([pd](float v)
-						{
-							v = pd.ir.convertFrom0to1(v, false);
-
-							if(pd.vtc.active)
-								return pd.vtc.getTextForValue(v);
-							else
-								return String(v);
-						});
-					}
-				}
-
-				idx++;
-			}
-
-		}
+		void updateModulationProperties(const ParameterProperties& pp, const ParameterInitData::QueryFunction& pf);
 
 		ModulatorChain* getModulatorChain(int modulatorIndex) const
 		{
@@ -908,6 +892,10 @@ public:
 		}
 
 		int getExtraOffset() const { return extraOffset; }
+
+		int getNumExtraMods() const { return extraMods.size(); }
+
+		void updateModulationChainIdAndColour(Processor* parentProcessor, const scriptnode::modulation::ParameterProperties& data, const std::function<String(int)>& parameterIdFunction);
 
 	private:
 
@@ -945,7 +933,7 @@ public:
 		  self(c)
 		{};
 
-		ModulationDisplayValue getDisplayValue(Processor* p, double nv, NormalisableRange<double> nr) const override
+		ModulationDisplayValue getDisplayValue(Processor* p, double nv, NormalisableRange<double> nr, int /*displayIndex*/) const override
 		{
 			return self->getModulationDisplayValue(nv, nr);
 		}
@@ -959,6 +947,9 @@ public:
 	};
 
 private:
+
+	int unsavedEventId = -1;
+	std::array<int, NUM_POLYPHONIC_VOICES> eventIdToVoiceIndexMap;
 
 	std::vector<float> intensityValues;
 
@@ -1055,6 +1046,8 @@ private:
 	bool isVoiceStartChain;
 
 	float voiceOutputValue;
+
+	bool checkRelease = false;
 
 	JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ModulatorChain)
 };

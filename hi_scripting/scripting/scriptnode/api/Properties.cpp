@@ -789,6 +789,8 @@ void ExpressionPropertyComponent::Comp::Display::mouseDown(const MouseEvent& )
 
 		if (value.isInt64() || value.isInt())
 			colourValue = (int64)value;
+		else if (value.isDouble())
+			colourValue = (int64)(double)value;
 		else if (value.isString())
 		{
 			auto string = value.toString();
@@ -816,6 +818,7 @@ void PropertyHelpers::addMissingIdsForEditor(ValueTree& data, UndoManager* undoM
 		if(isRootParameter)
 		{
 			ids.add(PropertyIds::ExternalModulation);
+			ids.add(PropertyIds::ModColour);
 			ids.add(PropertyIds::Page);
 			ids.add(PropertyIds::SubGroup);
 		}
@@ -839,6 +842,9 @@ juce::PropertyComponent* PropertyHelpers::createPropertyComponent(ProcessorWithS
 
 	if (id == NodeColour)
 		return new ColourSelectorPropertyComponent(d, id, um);
+
+	if(id == ModColour)
+		return new HiseModulationColours::Selector(d, id, um);
 
 	if (id == MinValue || id == MaxValue || id == Value || id == DefaultValue)
 		return new SliderWithLimit(d, id, um);

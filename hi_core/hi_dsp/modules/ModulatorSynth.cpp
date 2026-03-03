@@ -411,7 +411,7 @@ void ModulatorSynth::synthTimerCallback(uint8 index, int numSamplesThisBlock)
 
 void ModulatorSynth::startSynthTimer(int index, double interval, int timeStamp)
 {
-	if (interval < 0.004)
+	if (interval < 0.001)
 	{
 		nextTimerCallbackTimes[index] = 0.0;
 		jassertfalse;
@@ -618,12 +618,16 @@ void ModulatorSynth::renderNextBlockWithModulators(AudioSampleBuffer& outputBuff
 						if(s.fadeInTimeSeconds != 0.0)
 						{
 							v->setVolumeFade(0.0, 0.0);
-							v->setVolumeFade(s.fadeInTimeSeconds, 1.0);
+							v->setVolumeFade(s.fadeInTimeSeconds, s.targetVolume);
 
 							if(s.fixedLengthSamples > 0.0)
 							{
 								v->setFadeOutAtUptime(s.fixedLengthSamples, s.fadeInTimeSeconds);
 							}
+						}
+						else if (s.targetVolume != 1.0)
+						{
+							v->setVolumeFade(0.0, s.targetVolume);
 						}
 					}
 
@@ -1350,13 +1354,17 @@ void ModulatorSynth::noteOn(const HiseEvent &m)
 					{
 						if(ss.fadeInTimeSeconds != 0.0)
 						{
-							v->setVolumeFade(0.0f, 0.0f);
-							v->setVolumeFade(ss.fadeInTimeSeconds, 1.0f);
+							v->setVolumeFade(0.0, 0.0f);
+							v->setVolumeFade(ss.fadeInTimeSeconds, ss.targetVolume);
 
 							if(ss.fixedLengthSamples > 0.0)
 							{
 								v->setFadeOutAtUptime(ss.fixedLengthSamples, ss.fadeInTimeSeconds);
 							}
+						}
+						else if(ss.targetVolume != 1.0)
+						{
+							v->setVolumeFade(0.0, ss.targetVolume);
 						}
 					}
 				}

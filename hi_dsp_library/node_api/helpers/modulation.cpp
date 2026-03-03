@@ -63,63 +63,80 @@ StringArray ParameterProperties::getModulationModeNames()
 		"Gain",
 		"Offset",	
 		"Pan", 
-		"Disabled"
+		"Pitch"
 	};
 }
 
 ParameterProperties::ParameterProperties()
 {
+	static_assert(NumMaxModulationParameterIndex < INT16_MAX, "go easy on the parameter index numbers");
+	static_assert(NumMaxModulationSources <= 128, "The number of modulation slots is limited to 128");
+
 	reset();
 }
 
 void ParameterProperties::reset()
 {
-	for(auto& m: modulationModes)
-		m = ParameterMode::Disabled;
-
+	modulationBlocksize = 0;
 	anyConnected = false;
-
-	for(auto& i: modulationConnectState)
-		i = 0;
-
-	for(auto& i: modulationToParameter)
-		i = -1;
-
-	for(auto& i: parameterToModulation)
-		i = -1;
-
 	numUsedModulationSlots = 0;
+
+	for(auto& m: modInfo)
+		m = {};
+
+	for(auto& p: parameterInfo)
+		p = {};
 }
 
-void ParameterProperties::setConnected(int parameterIndex, bool isConnected)
+void ParameterProperties::fromConnectionList(const ConnectionList& c)
 {
-	if(isPositiveAndBelow(parameterIndex, NumMaxModulationSlots))
-	{
-		auto mi = getModulationChainIndex(parameterIndex);
+	reset();
 
-		if(modulationModes[parameterIndex] != ParameterMode::Disabled)
+	if(c.size() < NumMaxModulationSources)
+	{
+		for (const auto& con : c)
 		{
-			modulationConnectState[mi] = isConnected ? 1 : 0;
+			setModulationMode(con.connectedParameterIndex, con.modulationMode);
+			setConnected(con.connectedParameterIndex, con.connectionMode == ConnectionMode::Parameter);
+			setColour(con.connectedParameterIndex, con.modColour);
+		}
+	}
+	else
+	{
+		// You're trying to create more modulation slots than possible.
+		jassertfalse;
+	}
+}
+
+void ParameterProperties::setConnected(int16 parameterIndex, bool isConnected)
+{
+	if(isPositiveAndBelow(parameterIndex, NumMaxModulationParameterIndex))
+	{
+		if(parameterInfo[parameterIndex].mode  != ParameterMode::Disabled)
+		{
+			auto mi = getModulationChainIndex(parameterIndex);
+			modInfo[mi].connectionMode = isConnected ? ConnectionMode::Parameter : ConnectionMode::ModulationNode;
 			anyConnected |= isConnected;
 		}
 	}
 }
 
-void ParameterProperties::setModulationMode(int parameterIndex, ParameterMode m)
+void ParameterProperties::setModulationMode(int16 parameterIndex, ParameterMode m)
 {
-	if(isPositiveAndBelow(parameterIndex, NumMaxModulationSlots))
+	if(isPositiveAndBelow(parameterIndex, NumMaxModulationParameterIndex))
 	{
 		if(m != ParameterMode::Disabled)
 		{
-			modulationModes[parameterIndex] = m;
-			parameterToModulation[parameterIndex] = numUsedModulationSlots;
-			modulationToParameter[numUsedModulationSlots] = parameterIndex;
+			parameterInfo[parameterIndex].mode = m;
+			parameterInfo[parameterIndex].modulationSlotIndex = numUsedModulationSlots;
+			modInfo[numUsedModulationSlots].parameterIndex = parameterIndex;
+
 			numUsedModulationSlots++;
 		}
 		else
 		{
 			// Cannot reset the modulation without messing up the chain order...
-			jassert(modulationModes[parameterIndex] == ParameterMode::Disabled);
+			jassert(parameterInfo[parameterIndex].mode == ParameterMode::Disabled);
 		}
 	}
 }
@@ -127,12 +144,13 @@ void ParameterProperties::setModulationMode(int parameterIndex, ParameterMode m)
 void ParameterProperties::fromValueTree(const ValueTree& v)
 {
 	jassert(v.getType() == PropertyIds::Network);
+
+	reset();
+
 	modulationBlocksize = (int)v.getProperty(PropertyIds::ModulationBlockSize, 0);
 
 	if(modulationBlocksize != 0)
-		modulationBlocksize = jlimit(8, 1024, nextPowerOfTwo(modulationBlocksize));
-
-	reset();
+		setModulationBlockSize(modulationBlocksize);
 
 	auto pTree = v.getChildWithName(PropertyIds::Node).getChildWithName(PropertyIds::Parameters);
 
@@ -142,29 +160,38 @@ void ParameterProperties::fromValueTree(const ValueTree& v)
 	{
 		auto idx = pTree.indexOf(c);
 
-		if(isPositiveAndBelow(idx, NumMaxModulationSlots))
+		if(isPositiveAndBelow(idx, NumMaxModulationParameterIndex))
 		{
 			auto n = c[PropertyIds::ExternalModulation];
 			auto isConnected = c.getChildWithName(PropertyIds::Connections).getNumChildren() > 0;
 
+			auto getColourFromVar = [](var value)
+			{
+				if(value.isVoid() || value.isUndefined())
+					return HiseModulationColours::ColourId::ExtraMod;
+
+				return static_cast<HiseModulationColours::ColourId>((int)value);
+			};
+
 			setModulationMode(idx, getModeFromVar(n));
 			setConnected(idx, isConnected);
+			setColour(idx, getColourFromVar(c[PropertyIds::ModColour]));
 		}
 	}
 }
 
-bool ParameterProperties::isUsed(int modulationIndex) const
+bool ParameterProperties::isUsed(int8 modulationIndex) const
 {
-	if(modulationIndex == -1)
+	if(!isPositiveAndBelow(modulationIndex, NumMaxModulationSources))
 		return false;
 
-	return modulationToParameter[modulationIndex] != -1;
+	return modInfo[modulationIndex].parameterIndex != -1;
 }
 
-bool ParameterProperties::isConnected(int modulationIndex) const
+bool ParameterProperties::isConnected(int8 modulationIndex) const
 {
 	if(anyConnected && isPositiveAndBelow(modulationIndex, numUsedModulationSlots))
-		return (bool)modulationConnectState[modulationIndex] && isUsed(modulationIndex);
+		return isUsed(modulationIndex) && modInfo[modulationIndex].connectionMode == ConnectionMode::Parameter;
 
 	return false;
 }
@@ -176,71 +203,119 @@ int ParameterProperties::getBlockSize(int fullBlocksize) const
 
 void ParameterProperties::writeToStream(OutputStream& output) const
 {
-	output.writeByte(58);
+	ConnectionInfo::List list;
+
+	for(int i = 0; i < numUsedModulationSlots; i++)
+	{
+		ConnectionInfo ni;
+		ni.connectedParameterIndex = modInfo[i].parameterIndex;
+		jassert(parameterInfo[ni.connectedParameterIndex].modulationSlotIndex == i);
+
+		ni.modulationMode = parameterInfo[ni.connectedParameterIndex].mode;
+		jassert(ni.modulationMode != ParameterMode::Disabled);
+
+		ni.modColour = modInfo[i].colour;
+		ni.connectionMode = modInfo[i].connectionMode;
+
+		list.push_back(ni);
+	}
+
+	ConnectionInfo::writeTo(list, output);
+
+	output.writeByte(ConnectionInfo::BeginMetadata);
 	output.writeCompressedInt(modulationBlocksize);
-	static_assert(sizeof(std::array<ParameterMode, NumMaxModulationSlots>) == 16, "not 16 byte");
-	output.write(modulationModes.data(), NumMaxModulationSlots);
-	output.write(modulationConnectState.data(), NumMaxModulationSlots);
 }
 
 void ParameterProperties::readFromStream(InputStream& input)
 {
-	auto ok = input.readByte();
+	auto list = ConnectionInfo::readFrom(input);
+	fromConnectionList(list);
 
-	if(ok == 58)
-	{
-		reset();
+	if(input.readByte() == ConnectionInfo::BeginMetadata)
 		modulationBlocksize = input.readCompressedInt();
-		ParameterMode modes[NumMaxModulationSlots];
-		input.read(modes, NumMaxModulationSlots);
-		char bf[NumMaxModulationSlots];
-		input.read(bf, NumMaxModulationSlots);
-			
-		for(int pi = 0; pi < NumMaxModulationSlots; pi++)
-		{
-			setModulationMode(pi, modes[pi]);
-			auto mi = getModulationChainIndex(pi);
-			setConnected(pi, bf[mi] == 1);
-		}
-	}
 }
 
-int ParameterProperties::getParameterIndex(int modulationIndex) const
+int16 ParameterProperties::getParameterIndex(int8 modulationIndex) const
 {
-	if(modulationIndex == -1 || numUsedModulationSlots == 0)
+	if(!isPositiveAndBelow(modulationIndex, NumMaxModulationSources) || numUsedModulationSlots == 0)
 		return -1;
 
-	auto pIndex = (int)modulationToParameter[modulationIndex];
+	auto pIndex = (int)modInfo[modulationIndex].parameterIndex;
 
 	if(pIndex == -1)
 		return -1;
 
-	jassert(pIndex != -1);
-	jassert(modulationIndex == (int)parameterToModulation[pIndex]);
+	jassert(modulationIndex == parameterInfo[pIndex].modulationSlotIndex);
 	return pIndex;
 }
 
-int ParameterProperties::getModulationChainIndex(int parameterIndex) const
+int8 ParameterProperties::getModulationChainIndex(int16 parameterIndex) const
 {
-	if(isPositiveAndBelow(parameterIndex, NumMaxModulationSlots) && numUsedModulationSlots > 0)
+	if(isPositiveAndBelow(parameterIndex, NumMaxModulationParameterIndex) && numUsedModulationSlots > 0)
 	{
-		auto mIndex = (int)parameterToModulation[parameterIndex];
+		auto mIndex = (int)parameterInfo[parameterIndex].modulationSlotIndex;
 
 		if(mIndex == -1)
 			return -1;
 
-		jassert(parameterIndex == (int)modulationToParameter[mIndex]);
+		jassert(parameterIndex == (int)modInfo[mIndex].parameterIndex);
 		return mIndex;
 	}
 
 	return -1;
 }
 
+bool ParameterProperties::isAnyConnected() const noexcept
+{
+	return anyConnected;
+}
+
+scriptnode::modulation::ParameterMode ParameterProperties::getParameterMode(int16 parameterIndex) const noexcept
+{
+	if (isPositiveAndBelow(parameterIndex, NumMaxModulationParameterIndex))
+		return parameterInfo[parameterIndex].mode;
+
+	return ParameterMode::Disabled;
+}
+
+void ParameterProperties::setColour(int16 parameterIndex, HiseModulationColours::ColourId newColour)
+{
+	if (isPositiveAndBelow(parameterIndex, NumMaxModulationParameterIndex))
+	{
+		auto mi = getModulationChainIndex(parameterIndex);
+
+		if (mi != -1)
+		{
+			if (parameterInfo[parameterIndex].mode != ParameterMode::Disabled)
+				modInfo[mi].colour = newColour;
+			else
+				modInfo[mi].colour = HiseModulationColours::ColourId::ExtraMod;
+		}
+	}
+}
+
+void ParameterProperties::setModulationBlockSize(int newBlockSize)
+{
+	modulationBlocksize = jlimit(8, 1024, nextPowerOfTwo(newBlockSize));
+}
+
+juce::Colour ParameterProperties::getModulationColour(int16 parameterIndex) const
+{
+	HiseModulationColours colours;
+
+	auto mi = getModulationChainIndex(parameterIndex);
+
+	if (mi != -1)
+		return colours.getColour(modInfo[mi].colour);
+
+	return colours.getColour(HiseModulationColours::ColourId::ExtraMod);
+}
+
 ParameterMode ParameterProperties::getModeFromVar(const var& value)
 {
 	auto n = value.toString();
 	auto mi = getModulationModeNames().indexOf(n);
-	return mi != -1 ? (ParameterMode)mi : ParameterMode::Disabled;
+	return mi != -1 ? static_cast<ParameterMode>(mi) : ParameterMode::Disabled;
 }
 
 

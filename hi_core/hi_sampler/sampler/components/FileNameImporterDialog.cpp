@@ -163,7 +163,7 @@ FileNameImporterDialog::FileNameImporterDialog (ModulatorSampler *sampler_, cons
 		relativeFileNames.add(File(fileNames[i]).getFileNameWithoutExtension());
 
 	setSeparator("_");
-    setSize (600, 400);
+    setSize (600, 600);
 
 	File recentSettingsFile = NativeFileHandler::getAppDataDirectory(nullptr).getChildFile("FileNameParserSettings.xml");
 

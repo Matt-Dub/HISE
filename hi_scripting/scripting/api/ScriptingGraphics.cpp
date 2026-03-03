@@ -1015,6 +1015,7 @@ struct ScriptingObjects::PathObject::Wrapper
 	API_METHOD_WRAPPER_1(PathObject, getBounds);
 	API_VOID_METHOD_WRAPPER_1(PathObject, setBounds);
 	API_METHOD_WRAPPER_0(PathObject, getLength);
+	API_METHOD_WRAPPER_0(PathObject, getRatio);
 	API_METHOD_WRAPPER_0(PathObject, toString);
 	API_METHOD_WRAPPER_0(PathObject, toBase64);
 	API_METHOD_WRAPPER_1(PathObject, getYAt);
@@ -1050,6 +1051,7 @@ ScriptingObjects::PathObject::PathObject(ProcessorWithScriptingContent* p) :
 	ADD_API_METHOD_1(getBounds);
 	ADD_API_METHOD_1(setBounds);
 	ADD_API_METHOD_0(getLength);
+	ADD_API_METHOD_0(getRatio);
 	ADD_API_METHOD_2(createStrokedPath);
 	ADD_API_METHOD_0(toString);
 	ADD_API_METHOD_0(toBase64);
@@ -1258,6 +1260,13 @@ var ScriptingObjects::PathObject::contains(var point)
 var ScriptingObjects::PathObject::getLength()
 {
 	return p.getLength(AffineTransform::scale(1.0f), 1.0f);
+}
+
+var ScriptingObjects::PathObject::getRatio()
+{
+	auto b = p.getBounds();
+
+	return b.getWidth() / b.getHeight();
 }
 
 var ScriptingObjects::PathObject::getBounds(var scaleFactor)
@@ -2532,12 +2541,8 @@ String ScriptingObjects::ScriptedLookAndFeel::loadStyleSheetFile(const String& f
 
 void ScriptingObjects::ScriptedLookAndFeel::setStyleSheetInternal(const String& cssCode)
 {
-	debugToConsole(dynamic_cast<Processor*>(getScriptProcessor()), "\tThe CSS renderer is still experimental, so use with precaution.");
-
 	currentStyleSheet = cssCode;
 	simple_css::Parser p(cssCode);
-
-    
 
 	auto ok = p.parse();
 
@@ -2596,6 +2601,7 @@ Array<Identifier> ScriptingObjects::ScriptedLookAndFeel::getAllFunctionNames()
 		"drawTableBackground",
 		"drawTablePath",
 		"drawTablePoint",
+		"drawTableMidPoint",
 		"drawTableRuler",
 		"drawScrollbar",
 		"drawMidiDropper",
@@ -2807,8 +2813,6 @@ var ScriptingObjects::ScriptedLookAndFeel::callDefinedFunction(const Identifier&
 
 	if (HiseJavascriptEngine::isJavascriptFunction(f))
 	{
-		int counter = 0;
-
 		if(auto sl = SimpleReadWriteLock::ScopedTryReadLock(getScriptProcessor()->getMainController_()->getJavascriptThreadPool().getLookAndFeelRenderLock()))
 		{
 			SimpleReadWriteLock::ScopedReadLock sl2(getScriptProcessor()->getMainController_()->getJavascriptThreadPool().getLookAndFeelRenderLock());
@@ -2925,33 +2929,36 @@ ScriptingObjects::ScriptedLookAndFeel::CSSLaf::CSSLaf(ScriptedLookAndFeel* paren
 	parent(parent_),
     dataCopy(data),
     additionalDataCopy(ad),
-	componentToStyle(c)
+	componentToStyle(simple_css::FlexboxComponent::Helpers::getComponentForStyleSheet(c))
 {
+	c = componentToStyle;
+
 	this->root.css.addIsolatedCollection(c, parent->currentStyleSheetFile, parent->css);
 	
-	simple_css::Selector id(simple_css::SelectorType::ID, data["id"].toString());
+	simple_css::FlexboxComponent::Helpers::writeSelectorsToProperties(*c, { String("#" + data["id"].toString()) }, true);
 
-	StringArray initIds;
-	initIds.add(id.toString());
+	auto classList = StringArray::fromTokens(ad["class"].toString(), " ", "");
 
-	initIds.addArray(StringArray::fromTokens(ad["class"].toString(), " ", ""));
-
-	initIds.sortNatural();
-	initIds.trim();
-	initIds.removeDuplicates(false);
-	initIds.removeEmptyStrings();
-
-	simple_css::FlexboxComponent::Helpers::writeSelectorsToProperties(*c, initIds);
+	if(!classList.isEmpty())
+		simple_css::FlexboxComponent::Helpers::setDynamicClasses(*c, classList);
 
 	if(auto ptr = root.css.getForComponent(c))
 	{
 		root.css.setAnimator(&root.animator);
         root.css.performAtRules(this);
         
-		auto cursor = ptr->getMouseCursor();
+		Component::callRecursive<Component>(c, [&](Component* child)
+		{
+			if(auto ss = root.css.getForComponent(child))
+			{
+				auto cursor = ss->getMouseCursor();
 
-		if(cursor != MouseCursor())
-			c->setMouseCursor(cursor);
+				if (cursor != MouseCursor())
+					child->setMouseCursor(cursor);
+			}
+
+			return false;
+		});
 
 		Component::SafePointer<Component> safe(c);
 
@@ -2961,42 +2968,41 @@ ScriptingObjects::ScriptedLookAndFeel::CSSLaf::CSSLaf(ScriptedLookAndFeel* paren
 			{
 				if(auto root = simple_css::CSSRootComponent::find(*safe.getComponent()))
 				{
-					if(auto ptr2 = root->css.getForComponent(safe.getComponent()))
+					if(v == Identifier("class"))
 					{
-						if(v == Identifier("class"))
+						if (auto ptr2 = root->css.getForComponent(safe.getComponent()))
 						{
-							auto t = StringArray::fromTokens(newValue.toString(), " ", "");
+							auto classList = StringArray::fromTokens(newValue.toString(), " ", "");
 
-							Array<var> classIds;
+							simple_css::FlexboxComponent::Helpers::setDynamicClasses(*safe.getComponent(), classList);
 
-							for(auto& c: t)
-								classIds.add(var(c));
-
-							safe->getProperties().set(v, classIds);
-                            root->css.clearCache(safe);
-                            
-                            if(auto ptr3 = root->css.getForComponent(safe.getComponent()))
-                            {
-	                            ptr3->copyVarProperties(ptr2);
-                            }
-                            
+							if (auto ptr3 = root->css.getForComponent(safe.getComponent()))
+							{
+								ptr3->copyVarProperties(ptr2);
+							}
 						}
-						else
-
-							ptr2->setPropertyVariable(v, newValue);
-						
-						safe->repaint();
 					}
+					else
+					{
+						root->css.setPropertyVariable(safe, v, newValue);
+					}
+
+					safe->repaint();
 				}
 			}
 		};
 
-		auto initProperty = [ptr](const ValueTree& v)
+		auto initProperty = [&](const ValueTree& v)
 		{
 			for(int i = 0; i < v.getNumProperties(); i++)
 			{
 				auto id = v.getPropertyName(i);
-				ptr->setPropertyVariable(id, v[id].toString());
+
+				if(id.toString() == "class")
+					continue;
+
+				root.css.setPropertyVariable(c, id, v[id]);
+				//ptr->setPropertyVariable(id, v[id].toString());
 			}
 		};
 
@@ -3005,6 +3011,8 @@ ScriptingObjects::ScriptedLookAndFeel::CSSLaf::CSSLaf(ScriptedLookAndFeel* paren
 
 		additionalPropertyUpdater.setCallback(parent->additionalProperties, {}, valuetree::AsyncMode::Asynchronously, updateProperty);
 		additionalComponentPropertyUpdater.setCallback(additionalDataCopy, {}, valuetree::AsyncMode::Asynchronously, updateProperty);
+
+		DBG(dataCopy.createXml()->createDocument(""));
 
 		colourUpdater.setCallback(dataCopy, { Identifier("bgColour"), Identifier("itemColour"), Identifier("itemColour2"), Identifier("textColour")}, 
 			valuetree::AsyncMode::Asynchronously, 
@@ -3017,25 +3025,28 @@ ScriptingObjects::ScriptedLookAndFeel::CSSLaf::CSSLaf(ScriptedLookAndFeel* paren
 
 				if(auto root = simple_css::CSSRootComponent::find(*safe.getComponent()))
 				{
-					if(auto ptr = root->css.getForComponent(safe.getComponent()))
-					{
-						ptr->setPropertyVariable(v, c);
-
-						if(auto sp = dynamic_cast<SliderPack*>(safe.getComponent()))
-						{
-							copyPropertiesToChildComponents(*root, *sp);
-						}
-						if(auto lb = dynamic_cast<ListBox*>(safe.getComponent()))
-						{
-							copyPropertiesToElementSelector(*root, *lb, simple_css::Selector(simple_css::ElementType::TableRow));
-							copyPropertiesToElementSelector(*root, *lb, simple_css::Selector(simple_css::ElementType::Scrollbar));
-						}
-
-						safe->repaint();
-					}
+					root->css.setPropertyVariable(safe, v, c);
+					safe->repaint();
 				}
 			}
 		});
+	}
+	else
+	{
+		auto p = const_cast<Processor*>(dynamic_cast<const Processor*>(content->getScriptProcessor()));
+
+		debugError(p, "CSS Error: can't find CSS for component " + data["id"].toString());
+		debugToConsole(p, "\tUse one of these CSS selectors to define a stylesheet for the base component: ");
+
+		auto selectors = simple_css::FlexboxComponent::Helpers::getClassSelectorFromComponentClass(c);
+		selectors.add(simple_css::FlexboxComponent::Helpers::getIdSelectorFromComponentClass(c));
+		selectors.add(simple_css::FlexboxComponent::Helpers::getTypeSelectorFromComponentClass(c));
+		selectors.add(simple_css::Selector(simple_css::SelectorType::All, ""));
+
+		for(auto s: selectors)
+		{
+			debugToConsole(p, "\t" + s.toString());
+		}
 	}
 }
 
@@ -3130,7 +3141,7 @@ void ScriptingObjects::ScriptedLookAndFeel::CSSLaf::drawFilterGridLines(Graphics
 	FilterGraph::LookAndFeelMethods::drawFilterGridLines(g, fg, gridPath);
 }
 
-void ScriptingObjects::ScriptedLookAndFeel::CSSLaf::drawFilterDragHandle(Graphics& g, FilterDragOverlay& o, int index,
+void ScriptingObjects::ScriptedLookAndFeel::CSSLaf::drawFilterDragHandle(Graphics& g, FilterGraph& fg, FilterDragOverlay& o, int index,
                                                                          Rectangle<float> handleBounds, const FilterDragOverlay::DragData& d)
 {
 	using namespace simple_css;
@@ -3196,7 +3207,18 @@ void ScriptingObjects::ScriptedLookAndFeel::CSSLaf::drawFilterDragHandle(Graphic
 		return;
 	}
 
-	FilterDragOverlay::LookAndFeelMethods::drawFilterDragHandle(g, o, index, handleBounds, d);
+	FilterDragOverlay::LookAndFeelMethods::drawFilterDragHandle(g, fg, o, index, handleBounds, d);
+}
+
+void ScriptingObjects::ScriptedLookAndFeel::CSSLaf::setCSSColourOrBlack(simple_css::StyleSheet::Ptr ss, const Identifier& id, Component& c, int colourId)
+{
+	if (c.isColourSpecified(colourId))
+	{
+		auto hex = "0x" + c.findColour(colourId).toDisplayString(true);
+		ss->setPropertyVariable(id, hex);
+	}
+	else
+		ss->setPropertyVariable(id, "transparent");
 }
 
 Rectangle<float> ScriptingObjects::ScriptedLookAndFeel::CSSLaf::getTextLabelPopupArea(simple_css::StyleSheet::Ptr ss,
@@ -3371,8 +3393,14 @@ void ScriptingObjects::ScriptedLookAndFeel::CSSLaf::drawTablePath(Graphics& g, T
 		auto currentState = Renderer::getPseudoClassFromComponent(&te);
 		root.stateWatcher.checkChanges(&te, ss, currentState);
 
-		setPathAsVariable(ss, p, "tablePath");
-		r.drawBackground(g, te.getLocalBounds().toFloat(), ss);
+		auto tb = te.getLocalBounds().toFloat();
+
+		auto copy = p;
+		copy.startNewSubPath(tb.getTopLeft());
+		copy.startNewSubPath(tb.getBottomRight());
+
+		setPathAsVariable(ss, copy, "tablePath");
+		r.drawBackground(g, tb, ss);
 
 		return;
 	}
@@ -3397,6 +3425,10 @@ void ScriptingObjects::ScriptedLookAndFeel::CSSLaf::drawTablePoint(Graphics& g, 
 		if(isDragged)
 			state |= (int)PseudoClassType::Active;
 
+		setCSSColourOrBlack(ss, "bgColour", te, TableEditor::ColourIds::bgColour);
+		setCSSColourOrBlack(ss, "itemColour", te, TableEditor::ColourIds::fillColour);
+		setCSSColourOrBlack(ss, "itemColour2", te, TableEditor::ColourIds::lineColour);
+		setCSSColourOrBlack(ss, "textColour", te, TableEditor::ColourIds::rulerColour);
 
 		r.setPseudoClassState(state, true);
 					
@@ -3405,6 +3437,36 @@ void ScriptingObjects::ScriptedLookAndFeel::CSSLaf::drawTablePoint(Graphics& g, 
 	}
 
 	TableEditor::LookAndFeelMethods::drawTablePoint(g, te, tablePoint, isEdge, isHover, isDragged);
+}
+
+void ScriptingObjects::ScriptedLookAndFeel::CSSLaf::drawTableMidPoint(Graphics& g, TableEditor& te, Rectangle<float> midPoint, bool isHover, bool isDragged)
+{
+	using namespace simple_css;
+
+	if (auto ss = root.css.getWithAllStates(&te, Selector(SelectorType::Class, ".tablemidpoint")))
+	{
+		Renderer r(&te, root.stateWatcher);
+
+		int state = 0;
+
+		if (isHover)
+			state |= (int)PseudoClassType::Hover;
+
+		if (isDragged)
+			state |= (int)PseudoClassType::Active;
+
+		setCSSColourOrBlack(ss, "bgColour", te, TableEditor::ColourIds::bgColour);
+		setCSSColourOrBlack(ss, "itemColour", te, TableEditor::ColourIds::fillColour);
+		setCSSColourOrBlack(ss, "itemColour2", te, TableEditor::ColourIds::lineColour);
+		setCSSColourOrBlack(ss, "textColour", te, TableEditor::ColourIds::rulerColour);
+
+		r.setPseudoClassState(state, true);
+
+		r.drawBackground(g, midPoint, ss);
+		return;
+	}
+
+	TableEditor::LookAndFeelMethods::drawTableMidPoint(g, te, midPoint, isHover, isDragged);
 }
 
 bool ScriptingObjects::ScriptedLookAndFeel::CSSLaf::drawPlayhead(Graphics& g, Component& c, double position,
@@ -3417,6 +3479,12 @@ bool ScriptingObjects::ScriptedLookAndFeel::CSSLaf::drawPlayhead(Graphics& g, Co
 		Renderer r(&c, root.stateWatcher);
 
 		ss->setPropertyVariable("playhead", String(position, 4));
+
+		setCSSColourOrBlack(ss, "bgColour", c, TableEditor::ColourIds::bgColour);
+		setCSSColourOrBlack(ss, "itemColour", c, TableEditor::ColourIds::fillColour);
+		setCSSColourOrBlack(ss, "itemColour2", c, TableEditor::ColourIds::lineColour);
+		setCSSColourOrBlack(ss, "textColour", c, TableEditor::ColourIds::rulerColour);
+
 		r.drawBackground(g, area, ss);
 
 		return true;
@@ -4009,7 +4077,12 @@ void ScriptingObjects::ScriptedLookAndFeel::Laf::drawAlertBox(Graphics& g_, Aler
 	{
 		auto obj = new DynamicObject();
 
-		obj->setProperty("area", ApiHelpers::getVarRectangle(useRectangleClass, w.getLocalBounds().toFloat()));
+		auto fullArea = w.getLocalBounds().toFloat();
+		auto margin = (float)getAlertWindowMargin();
+		auto contentArea = fullArea.reduced(margin);
+
+		obj->setProperty("area", ApiHelpers::getVarRectangle(useRectangleClass, contentArea));
+		obj->setProperty("bounds", ApiHelpers::getVarRectangle(useRectangleClass, fullArea));
 		obj->setProperty("title", w.getName());
 
 		addParentFloatingTile(w, obj);
@@ -4019,6 +4092,14 @@ void ScriptingObjects::ScriptedLookAndFeel::Laf::drawAlertBox(Graphics& g_, Aler
 	}
 
 	GlobalHiseLookAndFeel::drawAlertBox(g_, w, ta, tl);
+}
+
+int ScriptingObjects::ScriptedLookAndFeel::Laf::getAlertWindowMargin()
+{
+	if (functionDefined("drawAlertWindow"))
+		return 50;
+
+	return 0;
 }
 
 void ScriptingObjects::ScriptedLookAndFeel::Laf::getIdealPopupMenuItemSize(const String &text, bool isSeparator, int standardMenuItemHeight, int &idealWidth, int &idealHeight)
@@ -4051,7 +4132,7 @@ void ScriptingObjects::ScriptedLookAndFeel::Laf::getIdealPopupMenuItemSize(const
     GlobalHiseLookAndFeel::getIdealPopupMenuItemSize(text, isSeparator, standardMenuItemHeight, idealWidth, idealHeight);
 }
 
-void ScriptingObjects::ScriptedLookAndFeel::Laf::drawFilterDragHandle(Graphics& g_, FilterDragOverlay& o, int index, Rectangle<float> handleBounds, const FilterDragOverlay::DragData& d)
+void ScriptingObjects::ScriptedLookAndFeel::Laf::drawFilterDragHandle(Graphics& g_, FilterGraph& fg, FilterDragOverlay& o, int index, Rectangle<float> handleBounds, const FilterDragOverlay::DragData& d)
 {
 	if (functionDefined("drawFilterDragHandle"))
 	{
@@ -4071,17 +4152,17 @@ void ScriptingObjects::ScriptedLookAndFeel::Laf::drawFilterDragHandle(Graphics& 
 		obj->setProperty("gain", d.gain);
 		obj->setProperty("type", d.type);
 
-		setColourOrBlack(obj, "bgColour", o, FilterGraph::ColourIds::bgColour);
-		setColourOrBlack(obj, "itemColour1", o, FilterGraph::ColourIds::lineColour);
-		setColourOrBlack(obj, "itemColour2", o, FilterGraph::ColourIds::fillColour);
-		setColourOrBlack(obj, "itemColour3", o, FilterGraph::ColourIds::gridColour);
-		setColourOrBlack(obj, "textColour", o, FilterGraph::ColourIds::textColour);
+		setColourOrBlack(obj, "bgColour", fg, FilterGraph::ColourIds::bgColour);
+		setColourOrBlack(obj, "itemColour1", fg, FilterGraph::ColourIds::fillColour);
+		setColourOrBlack(obj, "itemColour2", fg, FilterGraph::ColourIds::lineColour);
+		setColourOrBlack(obj, "itemColour3", fg, FilterGraph::ColourIds::gridColour);
+		setColourOrBlack(obj, "textColour", fg, FilterGraph::ColourIds::textColour);
 
 		if (get()->callWithGraphics(g_, "drawFilterDragHandle", var(obj), &o))
 			return;
 	}
 
-	FilterDragOverlay::LookAndFeelMethods::drawFilterDragHandle(g_, o, index, handleBounds, d);
+	FilterDragOverlay::LookAndFeelMethods::drawFilterDragHandle(g_, fg, o, index, handleBounds, d);
 }
 
 
@@ -4127,8 +4208,8 @@ void ScriptingObjects::ScriptedLookAndFeel::Laf::drawFilterPath(Graphics& g_, Fi
 		obj->setProperty("pathArea", ApiHelpers::getVarRectangle(useRectangleClass, p.getBounds()));
 
 		setColourOrBlack(obj, "bgColour", fg, FilterGraph::ColourIds::bgColour);
-		setColourOrBlack(obj, "itemColour1", fg, FilterGraph::ColourIds::lineColour);
-		setColourOrBlack(obj, "itemColour2", fg, FilterGraph::ColourIds::fillColour);
+		setColourOrBlack(obj, "itemColour1", fg, FilterGraph::ColourIds::fillColour);
+		setColourOrBlack(obj, "itemColour2", fg, FilterGraph::ColourIds::lineColour);
 		setColourOrBlack(obj, "itemColour3", fg, FilterGraph::ColourIds::gridColour);
 		setColourOrBlack(obj, "textColour", fg, FilterGraph::ColourIds::textColour);
 
@@ -4284,11 +4365,28 @@ hise::MarkdownLayout::StyleData ScriptingObjects::ScriptedLookAndFeel::Laf::getA
 	return s;
 }
 
+int ScriptingObjects::ScriptedLookAndFeel::Laf::getMenuWindowFlags()
+{
+    return LookAndFeel_V2::getMenuWindowFlags()
+           & ~ComponentPeer::windowHasDropShadow;
+}
+
+void ScriptingObjects::ScriptedLookAndFeel::Laf::preparePopupMenuWindow(Component& newWindow)
+{
+	// Force the component to be non-opaque so it doesn't fill with white before drawing
+	if (functionDefined("drawPopupMenuBackground"))
+	{
+		newWindow.setOpaque(false);
+	}
+}
+
 void ScriptingObjects::ScriptedLookAndFeel::Laf::drawPopupMenuBackground(Graphics& g_, int width, int height)
 {
 	if (functionDefined("drawPopupMenuBackground"))
 	{
 		auto obj = new DynamicObject();
+		Rectangle<float> area(0.0f, 0.0f, (float)width, (float)height);
+		obj->setProperty("area", ApiHelpers::getVarRectangle(useRectangleClass, area));
 		obj->setProperty("width", width);
 		obj->setProperty("height", height);
 
@@ -4374,12 +4472,26 @@ void ScriptingObjects::ScriptedLookAndFeel::Laf::drawToggleButton(Graphics &g_, 
 		obj->setProperty("down", b.isMouseButtonDown(true));
 		obj->setProperty("value", b.getToggleState());
 
-		setColourOrBlack(obj, "bgColour", b, HiseColourScheme::ComponentOutlineColourId);
-		setColourOrBlack(obj, "itemColour1", b, HiseColourScheme::ComponentFillTopColourId);
-		setColourOrBlack(obj, "itemColour2", b, HiseColourScheme::ComponentFillBottomColourId);
-		setColourOrBlack(obj, "textColour", b, HiseColourScheme::ComponentTextColourId);
-
-		addParentFloatingTile(b, obj);
+		if (auto ft = b.findParentComponentOfClass<TableFloatingTileBase>())
+		{
+			auto d = ft->getLookAndFeelData();
+			obj->setProperty("bgColour", d.bgColour.getARGB());
+			obj->setProperty("itemColour1", d.itemColour1.getARGB());
+			obj->setProperty("itemColour2", d.itemColour2.getARGB());
+			obj->setProperty("itemColour3", ft->findPanelColour(FloatingTileContent::PanelColourId::itemColour3).getARGB());
+			obj->setProperty("textColour", d.textColour.getARGB());
+			obj->setProperty("parentType", d.parentType);
+			obj->setProperty("fontSize", d.f.getHeight());
+			obj->setProperty("font", d.f.getTypefaceName());
+		}
+		else
+		{
+			setColourOrBlack(obj, "bgColour", b, HiseColourScheme::ComponentOutlineColourId);
+			setColourOrBlack(obj, "itemColour1", b, HiseColourScheme::ComponentFillTopColourId);
+			setColourOrBlack(obj, "itemColour2", b, HiseColourScheme::ComponentFillBottomColourId);
+			setColourOrBlack(obj, "textColour", b, HiseColourScheme::ComponentTextColourId);
+			addParentFloatingTile(b, obj);
+		}
 
 		if (get()->callWithGraphics(g_, "drawToggleButton", var(obj), &b))
 			return;
@@ -4498,7 +4610,25 @@ void ScriptingObjects::ScriptedLookAndFeel::Laf::drawLinearSlider(Graphics &g, i
 			setColourOrBlack(obj, "textColour", *parentPack, Slider::trackColourId);
 		}
 
-		addParentFloatingTile(slider, obj);
+		if (auto ft = slider.findParentComponentOfClass<TableFloatingTileBase>())
+		{
+			auto d = ft->getLookAndFeelData();
+			obj->setProperty("bgColour", d.bgColour.getARGB());
+			obj->setProperty("itemColour1", d.itemColour1.getARGB());
+			obj->setProperty("itemColour2", d.itemColour2.getARGB());
+			obj->setProperty("itemColour3", ft->findPanelColour(FloatingTileContent::PanelColourId::itemColour3).getARGB());
+			obj->setProperty("textColour", d.textColour.getARGB());
+			obj->setProperty("parentType", d.parentType);
+			obj->setProperty("fontSize", d.f.getHeight());
+			obj->setProperty("font", d.f.getTypefaceName());
+
+			slider.setColour(Slider::textBoxOutlineColourId, Colours::transparentBlack);
+			slider.setTextBoxStyle(Slider::NoTextBox, true, 0, 0);
+		}
+		else
+		{
+			addParentFloatingTile(slider, obj);
+		}
 
 		if (get()->callWithGraphics(g, "drawLinearSlider", var(obj), &slider))
 			return;
@@ -4661,7 +4791,10 @@ void ScriptingObjects::ScriptedLookAndFeel::Laf::drawPresetBrowserBackground(Gra
 		obj->setProperty("bgColour", backgroundColour.getARGB());
 		obj->setProperty("itemColour", highlightColour.getARGB());
 		obj->setProperty("itemColour2", modalBackgroundColour.getARGB());
+		obj->setProperty("itemColour3", itemColour3.getARGB());
 		obj->setProperty("textColour", textColour.getARGB());
+		obj->setProperty("font", font.getTypefaceName());
+		obj->setProperty("fontSize", font.getHeight());
 
 		if (get()->callWithGraphics(g_, "drawPresetBrowserBackground", var(obj), p))
 			return;
@@ -4681,7 +4814,10 @@ void ScriptingObjects::ScriptedLookAndFeel::Laf::drawColumnBackground(Graphics& 
 		obj->setProperty("bgColour", backgroundColour.getARGB());
 		obj->setProperty("itemColour", highlightColour.getARGB());
 		obj->setProperty("itemColour2", modalBackgroundColour.getARGB());
+		obj->setProperty("itemColour3", itemColour3.getARGB());
 		obj->setProperty("textColour", textColour.getARGB());
+		obj->setProperty("font", font.getTypefaceName());
+		obj->setProperty("fontSize", font.getHeight());
 
 		if (get()->callWithGraphics(g_, "drawPresetBrowserColumnBackground", var(obj), nullptr))
 			return;
@@ -4704,7 +4840,10 @@ void ScriptingObjects::ScriptedLookAndFeel::Laf::drawListItem(Graphics& g_, Comp
 		obj->setProperty("bgColour", backgroundColour.getARGB());
 		obj->setProperty("itemColour", highlightColour.getARGB());
 		obj->setProperty("itemColour2", modalBackgroundColour.getARGB());
+		obj->setProperty("itemColour3", itemColour3.getARGB());
 		obj->setProperty("textColour", textColour.getARGB());
+		obj->setProperty("font", font.getTypefaceName());
+		obj->setProperty("fontSize", font.getHeight());
 
 		if (get()->callWithGraphics(g_, "drawPresetBrowserListItem", var(obj), nullptr))
 			return;
@@ -4722,7 +4861,10 @@ void ScriptingObjects::ScriptedLookAndFeel::Laf::drawSearchBar(Graphics& g_, Com
 		obj->setProperty("bgColour", backgroundColour.getARGB());
 		obj->setProperty("itemColour", highlightColour.getARGB());
 		obj->setProperty("itemColour2", modalBackgroundColour.getARGB());
+		obj->setProperty("itemColour3", itemColour3.getARGB());
 		obj->setProperty("textColour", textColour.getARGB());
+		obj->setProperty("font", font.getTypefaceName());
+		obj->setProperty("fontSize", font.getHeight());
 
 		auto p = new ScriptingObjects::PathObject(get()->getScriptProcessor());
 
@@ -4831,6 +4973,32 @@ void ScriptingObjects::ScriptedLookAndFeel::Laf::drawTablePoint(Graphics& g_, Ta
 	TableEditor::LookAndFeelMethods::drawTablePoint(g_, te, tablePoint, isEdge, isHover, isDragged);
 }
 
+void ScriptingObjects::ScriptedLookAndFeel::Laf::drawTableMidPoint(Graphics& g_, TableEditor& te, Rectangle<float> midPoint, bool isHover, bool isDragged)
+{
+	if (functionDefined("drawTableMidPoint"))
+	{
+		auto obj = new DynamicObject();
+
+		writeId(obj, &te);
+		obj->setProperty("midPoint", ApiHelpers::getVarRectangle(useRectangleClass, midPoint));
+		obj->setProperty("hover", isHover);
+		obj->setProperty("clicked", isDragged);
+		obj->setProperty("enabled", te.isEnabled());
+
+		setColourOrBlack(obj, "bgColour", te, TableEditor::ColourIds::bgColour);
+		setColourOrBlack(obj, "itemColour", te, TableEditor::ColourIds::fillColour);
+		setColourOrBlack(obj, "itemColour2", te, TableEditor::ColourIds::lineColour);
+		setColourOrBlack(obj, "textColour", te, TableEditor::ColourIds::rulerColour);
+
+		addParentFloatingTile(te, obj);
+
+		if (get()->callWithGraphics(g_, "drawTableMidPoint", var(obj), &te))
+			return;
+	}
+
+	TableEditor::LookAndFeelMethods::drawTableMidPoint(g_, te, midPoint, isHover, isDragged);
+}
+
 void ScriptingObjects::ScriptedLookAndFeel::Laf::drawTableRuler(Graphics& g_, TableEditor& te, Rectangle<float> area, float lineThickness, double rulerPosition)
 {
 	if (functionDefined("drawTableRuler"))
@@ -4877,11 +5045,56 @@ void ScriptingObjects::ScriptedLookAndFeel::Laf::drawScrollbar(Graphics& g_, Scr
 		obj->setProperty("vertical", isScrollbarVertical);
 		obj->setProperty("over", isMouseOver);
 		obj->setProperty("down", isMouseDown);
-		setColourOrBlack(obj, "bgColour",    scrollbar, ScrollBar::ColourIds::backgroundColourId);
-		setColourOrBlack(obj, "itemColour",  scrollbar, ScrollBar::ColourIds::thumbColourId);
-		setColourOrBlack(obj, "itemColour2", scrollbar, ScrollBar::ColourIds::trackColourId);
+		if (auto ft = scrollbar.findParentComponentOfClass<TableFloatingTileBase>())
+		{
+			auto d = ft->getLookAndFeelData();
+			obj->setProperty("bgColour", d.bgColour.getARGB());
+			obj->setProperty("itemColour1", d.itemColour1.getARGB());
+			obj->setProperty("itemColour2", d.itemColour2.getARGB());
+			obj->setProperty("itemColour3", ft->findPanelColour(FloatingTileContent::PanelColourId::itemColour3).getARGB());
+			obj->setProperty("textColour", d.textColour.getARGB());
+			obj->setProperty("parentType", d.parentType);
+			obj->setProperty("font", d.f.getTypefaceName());
+			obj->setProperty("fontSize", d.f.getHeight());
+		}
+		else
+		{
+			static const Identifier pb("PresetBrowser");
 
-		addParentFloatingTile(scrollbar, obj);
+			if (getIdOfParentFloatingTile(scrollbar) == pb)
+			{
+				obj->setProperty("bgColour", backgroundColour.getARGB());
+				obj->setProperty("itemColour1", highlightColour.getARGB());
+				obj->setProperty("itemColour2", modalBackgroundColour.getARGB());
+				obj->setProperty("itemColour3", itemColour3.getARGB());
+				obj->setProperty("textColour", textColour.getARGB());
+				obj->setProperty("parentType", pb.toString());
+			}
+			else
+			{
+				setColourOrBlack(obj, "bgColour",    scrollbar, ScrollBar::ColourIds::backgroundColourId);
+				setColourOrBlack(obj, "itemColour1",  scrollbar, ScrollBar::ColourIds::thumbColourId);
+				setColourOrBlack(obj, "itemColour2", scrollbar, ScrollBar::ColourIds::trackColourId);
+
+				if (auto vp = scrollbar.findParentComponentOfClass<juce::Viewport>())
+				{
+					auto id = vp->getComponentID();
+
+					// For Viewport mode, the ID is on the Viewport itself.
+					// For List/Table mode, the ID is on the parent ListBox.
+					if (id.isEmpty() && vp->getParentComponent() != nullptr)
+						id = vp->getParentComponent()->getComponentID();
+
+					if (id.isNotEmpty())
+						obj->setProperty("id", id);
+
+					if (vp->getProperties().contains("textColour"))
+						obj->setProperty("textColour", (int64)vp->getProperties()["textColour"]);
+				}
+
+				addParentFloatingTile(scrollbar, obj);
+			}
+		}
 
 		if (get()->callWithGraphics(g_, "drawScrollbar", var(obj), &scrollbar))
 			return;
@@ -5336,7 +5549,10 @@ void ScriptingObjects::ScriptedLookAndFeel::Laf::drawTableRowBackground(Graphics
 		obj->setProperty("bgColour", d.bgColour.getARGB());
 		obj->setProperty("itemColour", d.itemColour1.getARGB());
 		obj->setProperty("itemColour2", d.itemColour2.getARGB());
+		obj->setProperty("itemColour3", d.itemColour3.getARGB());
 		obj->setProperty("textColour", d.textColour.getARGB());
+		obj->setProperty("font", d.f.getTypefaceName());
+		obj->setProperty("fontSize", d.f.getHeight());
 
 		obj->setProperty("rowIndex", rowNumber);
 		obj->setProperty("selected", rowIsSelected);
@@ -5362,7 +5578,10 @@ void ScriptingObjects::ScriptedLookAndFeel::Laf::drawTableCell(Graphics& g_, con
 		obj->setProperty("bgColour", d.bgColour.getARGB());
 		obj->setProperty("itemColour", d.itemColour1.getARGB());
 		obj->setProperty("itemColour2", d.itemColour2.getARGB());
+		obj->setProperty("itemColour3", d.itemColour3.getARGB());
 		obj->setProperty("textColour", d.textColour.getARGB());
+		obj->setProperty("font", d.f.getTypefaceName());
+		obj->setProperty("fontSize", d.f.getHeight());
 
 		obj->setProperty("text", text);
 		obj->setProperty("rowIndex", rowNumber);
@@ -5393,10 +5612,15 @@ void ScriptingObjects::ScriptedLookAndFeel::Laf::drawTableHeaderBackground(Graph
 		obj->setProperty("bgColour", d.bgColour.getARGB());
 		obj->setProperty("itemColour", d.itemColour1.getARGB());
 		obj->setProperty("itemColour2", d.itemColour2.getARGB());
+		obj->setProperty("itemColour3", d.itemColour3.getARGB());
 		obj->setProperty("textColour", d.textColour.getARGB());
+		obj->setProperty("font", d.f.getTypefaceName());
+		obj->setProperty("fontSize", d.f.getHeight());
 
 		auto a = h.getLocalBounds();
 		obj->setProperty("area", ApiHelpers::getVarRectangle(useRectangleClass, a.toFloat()));
+
+		addParentFloatingTile(h, obj);
 
 		if (get()->callWithGraphics(g_, "drawTableHeaderBackground", var(obj), &h))
 			return;
@@ -5416,10 +5640,13 @@ void ScriptingObjects::ScriptedLookAndFeel::Laf::drawTableHeaderColumn(Graphics&
 		obj->setProperty("bgColour", d.bgColour.getARGB());
 		obj->setProperty("itemColour", d.itemColour1.getARGB());
 		obj->setProperty("itemColour2", d.itemColour2.getARGB());
+		obj->setProperty("itemColour3", d.itemColour3.getARGB());
 		obj->setProperty("textColour", d.textColour.getARGB());
+		obj->setProperty("font", d.f.getTypefaceName());
+		obj->setProperty("fontSize", d.f.getHeight());
 
 		obj->setProperty("text", columnName);
-		obj->setProperty("columnIndex", columnId);
+		obj->setProperty("columnIndex", h.getIndexOfColumnId(columnId, true));
 		obj->setProperty("hover", isMouseOver);
 		obj->setProperty("down", isMouseDown);
 
@@ -5430,11 +5657,76 @@ void ScriptingObjects::ScriptedLookAndFeel::Laf::drawTableHeaderColumn(Graphics&
 
 		obj->setProperty("area", ApiHelpers::getVarRectangle(useRectangleClass, a.toFloat()));
 
+		addParentFloatingTile(h, obj);
+
 		if (get()->callWithGraphics(g_, "drawTableHeaderColumn", var(obj), &h))
 			return;
 	}
 
 	drawDefaultTableHeaderColumn(g_, h, columnName, columnId, width, height, isMouseOver, isMouseDown, columnFlags);
+}
+
+void ScriptingObjects::ScriptedLookAndFeel::Laf::drawTableRowBackground(Graphics& g_, const TableFloatingTileBase::LookAndFeelData& d, int rowNumber, int width, int height, bool rowIsSelected, bool rowIsHovered)
+{
+	if (functionDefined("drawTableRowBackground"))
+	{
+		auto obj = new DynamicObject();
+
+		obj->setProperty("bgColour", d.bgColour.getARGB());
+		obj->setProperty("itemColour", d.itemColour1.getARGB());
+		obj->setProperty("itemColour2", d.itemColour2.getARGB());
+		obj->setProperty("itemColour3", d.itemColour3.getARGB());
+		obj->setProperty("textColour", d.textColour.getARGB());
+		obj->setProperty("font", d.f.getTypefaceName());
+		obj->setProperty("fontSize", d.f.getHeight());
+
+		obj->setProperty("rowIndex", rowNumber);
+		obj->setProperty("selected", rowIsSelected);
+		obj->setProperty("hover", rowIsHovered);
+		obj->setProperty("parentType", d.parentType);
+
+		Rectangle<int> a(0, 0, width, height);
+
+		obj->setProperty("area", ApiHelpers::getVarRectangle(useRectangleClass, a.toFloat()));
+
+		if (get()->callWithGraphics(g_, "drawTableRowBackground", var(obj), nullptr))
+			return;
+	}
+
+	TableFloatingTileBase::LookAndFeelMethods::drawTableRowBackground(g_, d, rowNumber, width, height, rowIsSelected, rowIsHovered);
+}
+
+void ScriptingObjects::ScriptedLookAndFeel::Laf::drawTableCell(Graphics& g_, const TableFloatingTileBase::LookAndFeelData& d, const String& text, int rowNumber, int columnId, int width, int height, bool rowIsSelected, bool cellIsClicked, bool cellIsHovered)
+{
+	if (functionDefined("drawTableCell"))
+	{
+		auto obj = new DynamicObject();
+
+		obj->setProperty("bgColour", d.bgColour.getARGB());
+		obj->setProperty("itemColour", d.itemColour1.getARGB());
+		obj->setProperty("itemColour2", d.itemColour2.getARGB());
+		obj->setProperty("itemColour3", d.itemColour3.getARGB());
+		obj->setProperty("textColour", d.textColour.getARGB());
+		obj->setProperty("font", d.f.getTypefaceName());
+		obj->setProperty("fontSize", d.f.getHeight());
+
+		obj->setProperty("text", text);
+		obj->setProperty("rowIndex", rowNumber);
+		obj->setProperty("columnIndex", columnId);
+		obj->setProperty("selected", rowIsSelected);
+		obj->setProperty("clicked", cellIsClicked);
+		obj->setProperty("hover", cellIsHovered);
+		obj->setProperty("parentType", d.parentType);
+
+		Rectangle<int> a(0, 0, width, height);
+
+		obj->setProperty("area", ApiHelpers::getVarRectangle(useRectangleClass, a.toFloat()));
+
+		if (get()->callWithGraphics(g_, "drawTableCell", var(obj), nullptr))
+			return;
+	}
+
+	TableFloatingTileBase::LookAndFeelMethods::drawTableCell(g_, d, text, rowNumber, columnId, width, height, rowIsSelected, cellIsClicked, cellIsHovered);
 }
 
 void ScriptingObjects::ScriptedLookAndFeel::Laf::drawMatrixPeakMeter(Graphics& g_, float* peakValues, float* maxPeaks, int numChannels, bool isVertical, float segmentSize, float paddingSize, Component* c)
@@ -5473,6 +5765,7 @@ void ScriptingObjects::ScriptedLookAndFeel::Laf::drawMatrixPeakMeter(Graphics& g
         setColourOrBlack(obj, "itemColour", *c, MatrixPeakMeter::ColourIds::peakColour);
         setColourOrBlack(obj, "itemColour2", *c, MatrixPeakMeter::ColourIds::trackColour);
         setColourOrBlack(obj, "textColour", *c, MatrixPeakMeter::ColourIds::maxPeakColour);
+        setColourOrBlack(obj, "itemColour3", *c, MatrixPeakMeter::ColourIds::overPeakColour);
 
         if (get()->callWithGraphics(g_, "drawMatrixPeakMeter", var(obj), c))
             return;
@@ -5607,7 +5900,7 @@ void ScriptingObjects::ScriptedLookAndFeel::Laf::drawModulationDragBackground(Gr
 			obj->setProperty("hoverSourceName", dd.sourceName);
 			obj->setProperty("hoverSourceIndex", dd.sourceIndex);
 			obj->setProperty("hoverMode", (int)dd.targetMode);
-			obj->setProperty("hoverValugetIntere", dd.intensityValue);
+			obj->setProperty("hoverValueIntensity", dd.intensityValue);
 			obj->setProperty("hoverText", dd.labelText);
 		}
 
@@ -5867,7 +6160,10 @@ void ScriptingObjects::ScriptedLookAndFeel::Laf::drawTag(Graphics& g_, Component
 		obj->setProperty("bgColour", backgroundColour.getARGB());
 		obj->setProperty("itemColour", highlightColour.getARGB());
 		obj->setProperty("itemColour2", modalBackgroundColour.getARGB());
+		obj->setProperty("itemColour3", itemColour3.getARGB());
 		obj->setProperty("textColour", textColour.getARGB());
+		obj->setProperty("font", font.getTypefaceName());
+		obj->setProperty("fontSize", font.getHeight());
 
 		if (get()->callWithGraphics(g_, "drawPresetBrowserTag", var(obj), nullptr))
 			return;
@@ -5888,7 +6184,10 @@ void ScriptingObjects::ScriptedLookAndFeel::Laf::drawModalOverlay(Graphics& g_, 
 		obj->setProperty("bgColour", backgroundColour.getARGB());
 		obj->setProperty("itemColour", highlightColour.getARGB());
 		obj->setProperty("itemColour2", modalBackgroundColour.getARGB());
+		obj->setProperty("itemColour3", itemColour3.getARGB());
 		obj->setProperty("textColour", textColour.getARGB());
+		obj->setProperty("font", font.getTypefaceName());
+		obj->setProperty("fontSize", font.getHeight());
 
 		if (l->callWithGraphics(g_, "drawPresetBrowserDialog", var(obj), nullptr))
 			return;

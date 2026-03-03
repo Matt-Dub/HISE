@@ -893,6 +893,9 @@ public:
         Processor& p;
     };
     
+	/** Call this from the baseclass whenever you want its editor to display a value change. */
+	void setOutputValue(float newValue);;
+
 protected:
 
 	/** Overwrite this method if you want to supply a custom symbol for the Processor. 
@@ -903,8 +906,7 @@ protected:
 
 	DisplayValues currentValues;
 
-	/** Call this from the baseclass whenever you want its editor to display a value change. */
-	void setOutputValue(float newValue);;
+	
 
 	/** Call this from the baseclass whenever you want its editor to display a input value change. 
 	*
@@ -1127,6 +1129,9 @@ public:
 
 	static int getParameterIndexFromProcessor(Processor* p, const Identifier& id);
 
+	static String getDisplayName(Processor* p);
+
+	static void changeDisplayName(Processor* p, const String& newText);
 };
 
 } // namespace hise

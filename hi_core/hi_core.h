@@ -151,6 +151,14 @@ If true, then the copy protection will be used
 #define USE_COPY_PROTECTION 0
 #endif
 
+/** Config: HISE_USE_UNLOCKER_FOR_EXPANSIONS
+ 
+ Enable this is if you want to prefilter the list of available expansions with the script unlocker.
+*/
+#ifndef HISE_USE_UNLOCKER_FOR_EXPANSIONS
+#define HISE_USE_UNLOCKER_FOR_EXPANSIONS 0
+#endif
+
 /** Config: USE_SCRIPT_COPY_PROTECTION
 
 	Uses the scripted layer to the JUCE unlock class for copy protection
@@ -206,7 +214,17 @@ This can be used to simulate an audio effect routing setup (when the appropriate
 
 */
 #ifndef FORCE_INPUT_CHANNELS
-#define FORCE_INPUT_CHANNELS USE_BACKEND
+#if USE_BACKEND
+// Only enable this by default in stereo builds, multichannel configurations should not process the input audio
+#if HISE_NUM_PLUGIN_CHANNELS == 2
+#define FORCE_INPUT_CHANNELS 1
+#else
+#define FORCE_INPUT_CHANNELS 0
+#endif
+#else
+// nope on compiled plugins
+#define FORCE_INPUT_CHANNELS 0
+#endif
 #endif
 
 /** Config: HI_DONT_SEND_ATTRIBUTE_UPDATES
