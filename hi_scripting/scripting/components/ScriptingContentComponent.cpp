@@ -563,34 +563,29 @@ void ScriptContentComponent::makeScreenshot(const File& target, Rectangle<float>
 {
 	WeakReference<ScriptContentComponent> safeThis(this);
 
-	auto f = [safeThis, target, area]()
+	SafeAsyncCall::callAsyncIfNotOnMessageThread<ScriptContentComponent>(*this, [target, area](ScriptContentComponent& st)
 	{
-		if (safeThis != nullptr)
+		ScriptingObjects::ScriptShader::ScopedScreenshotRenderer ssr;
+
+		auto sf = UnblurryGraphics::getScaleFactorForComponent(&st);
+
+		st.repaint();
+
+		auto img = st.createComponentSnapshot(area.toNearestInt(), true, sf);
+
+		juce::PNGImageFormat png;
+
+		target.deleteFile();
+
+		FileOutputStream fos(target);
+
+		auto ok = png.writeImageToStream(img, fos);
+
+		if (ok)
 		{
-			ScriptingObjects::ScriptShader::ScopedScreenshotRenderer ssr;
-
-			auto sf = UnblurryGraphics::getScaleFactorForComponent(safeThis.get());
-
-			safeThis->repaint();
-
-			auto img = safeThis->createComponentSnapshot(area.toNearestInt(), true, sf);
-
-			juce::PNGImageFormat png;
-
-			target.deleteFile();
-
-			FileOutputStream fos(target);
-
-			auto ok = png.writeImageToStream(img, fos);
-
-			if (ok)
-			{
-				debugToConsole(dynamic_cast<Processor*>(safeThis->processor), "Screenshot exported as " + target.getFullPathName());
-			}
+			debugToConsole(dynamic_cast<Processor*>(st.processor), "Screenshot exported as " + target.getFullPathName());
 		}
-	};
-
-	MessageManager::callAsync(f);
+	});
 }
 
 void ScriptContentComponent::visualGuidesChanged()
@@ -763,6 +758,21 @@ bool ScriptContentComponent::keyPressed(const KeyPress& k)
 	return false;
 }
 
+Component* ScriptContentComponent::getScriptComponentComponent(Point<int> pos)
+{
+	auto c = getComponentAt(pos.toFloat());
+
+	while (c != nullptr && c != this)
+	{
+		if (getScriptComponentFor(c) != nullptr)
+			return c;
+
+		c = c->getParentComponent();
+	}
+
+	return nullptr;
+}
+
 void ScriptContentComponent::processorDeleted(Processor* /*deletedProcessor*/)
 {
 	contentData->resetContentProperties();
@@ -885,6 +895,17 @@ Component* ScriptContentComponent::getComponentFor(ScriptingApi::Content::Script
 				return cw->getComponent();
 			}
 		}
+	}
+
+	return nullptr;
+}
+
+Component* ScriptContentComponent::getComponentForScriptComponentWithId(const Identifier& id)
+{
+	for (auto w : componentWrappers)
+	{
+		if (w->getScriptComponent()->getName() == id)
+			return w->getComponent();
 	}
 
 	return nullptr;

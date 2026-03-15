@@ -81,7 +81,7 @@ public:
 		Incompatible
 	};
 
-	void initialise(NodeBase* n)
+	void initialise(ObjectWithValueTree* n)
 	{
 		config.initialise(n);
 	}
@@ -539,7 +539,6 @@ private:
 
 public:
 
-	SN_VOICE_SETTER(mod_base, state);
 };
 
 }

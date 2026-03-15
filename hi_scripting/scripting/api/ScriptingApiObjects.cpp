@@ -1626,8 +1626,10 @@ ScriptingObjects::ScriptAudioFile::ScriptAudioFile(ProcessorWithScriptingContent
 	ADD_API_METHOD_0(getSampleRate);
 	ADD_API_METHOD_0(getCurrentlyLoadedFile);
 	ADD_API_METHOD_0(getCurrentlyDisplayedIndex);
-	ADD_API_METHOD_1(setDisplayCallback);
-	ADD_API_METHOD_1(setContentCallback);
+	ADD_TYPED_API_METHOD_1(setDisplayCallback, VarTypeChecker::Function);
+	ADD_CALLBACK_DIAGNOSTIC(displayCallback, setDisplayCallback, 0);
+	ADD_TYPED_API_METHOD_1(setContentCallback, VarTypeChecker::Function);
+	ADD_CALLBACK_DIAGNOSTIC(contentCallback, setContentCallback, 0);
 	ADD_API_METHOD_1(linkTo);
 	ADD_API_METHOD_3(loadBuffer);
 }
@@ -2101,8 +2103,10 @@ ScriptingObjects::ScriptTableData::ScriptTableData(ProcessorWithScriptingContent
 	ADD_API_METHOD_4(setTablePoint);
 	ADD_API_METHOD_1(getTableValueNormalised);
 	ADD_API_METHOD_0(getCurrentlyDisplayedIndex);
-	ADD_API_METHOD_1(setDisplayCallback);
-	ADD_API_METHOD_1(setContentCallback);
+	ADD_TYPED_API_METHOD_1(setDisplayCallback, VarTypeChecker::Function);
+	ADD_CALLBACK_DIAGNOSTIC(displayCallback, setDisplayCallback, 0);
+	ADD_TYPED_API_METHOD_1(setContentCallback, VarTypeChecker::Function);
+	ADD_CALLBACK_DIAGNOSTIC(contentCallback, setContentCallback, 0);
 	ADD_API_METHOD_1(setTablePointsFromArray);
 	ADD_API_METHOD_0(getTablePointsAsArray);
     ADD_API_METHOD_1(linkTo);
@@ -2238,8 +2242,10 @@ ScriptingObjects::ScriptSliderPackData::ScriptSliderPackData(ProcessorWithScript
 	ADD_API_METHOD_0(getNumSliders);
 	ADD_API_METHOD_3(setRange);
 	ADD_API_METHOD_0(getCurrentlyDisplayedIndex);
-	ADD_API_METHOD_1(setDisplayCallback);
-	ADD_API_METHOD_1(setContentCallback);
+	ADD_TYPED_API_METHOD_1(setDisplayCallback, VarTypeChecker::Function);
+	ADD_CALLBACK_DIAGNOSTIC(displayCallback, setDisplayCallback, 0);
+	ADD_TYPED_API_METHOD_1(setContentCallback, VarTypeChecker::Function);
+	ADD_CALLBACK_DIAGNOSTIC(contentCallback, setContentCallback, 0);
     ADD_API_METHOD_1(setUsePreallocatedLength);
     ADD_API_METHOD_1(linkTo);
 	ADD_API_METHOD_1(setAllValuesWithUndo);
@@ -3165,7 +3171,12 @@ float ScriptingObjects::ScriptingModulator::getCurrentLevel()
 {
 	if (checkValidObject())
 	{
-		return m->getProcessor()->getDisplayValues().outL;
+		auto outValue = m->getProcessor()->getDisplayValues().outL;
+
+		if(m->getMode() == Modulation::Mode::PitchMode)
+			outValue = Modulation::PitchConverters::pitchFactorToOutputValue(outValue);
+
+		return outValue;
 	}
 	
 	return 0.f;
@@ -5379,7 +5390,8 @@ ScriptingObjects::TimerObject::TimerObject(ProcessorWithScriptingContent *p) :
 	ADD_API_METHOD_0(isTimerRunning);
 	ADD_API_METHOD_1(startTimer);
 	ADD_API_METHOD_0(stopTimer);
-	ADD_API_METHOD_1(setTimerCallback);
+	ADD_TYPED_API_METHOD_1(setTimerCallback, VarTypeChecker::Function);
+	ADD_CALLBACK_DIAGNOSTIC(tc, setTimerCallback, 0);
 	ADD_API_METHOD_0(resetCounter);
 	ADD_API_METHOD_0(getMilliSecondsSinceCounterReset);
 }
@@ -6275,11 +6287,14 @@ ScriptingObjects::ScriptedMidiPlayer::ScriptedMidiPlayer(ProcessorWithScriptingC
 	ADD_API_METHOD_0(getTicksPerQuarter);
 	ADD_API_METHOD_0(getLastPlayedNotePosition);
 	ADD_API_METHOD_1(setAutomationHandlerConsumesControllerEvents);
-	ADD_API_METHOD_1(setSequenceCallback);
+	ADD_TYPED_API_METHOD_1(setSequenceCallback, VarTypeChecker::Function);
+	ADD_CALLBACK_DIAGNOSTIC(updateCallback, setSequenceCallback, 0);
 	ADD_API_METHOD_0(asMidiProcessor);
 	ADD_API_METHOD_1(setGlobalPlaybackRatio);
-	ADD_API_METHOD_2(setPlaybackCallback);
-	ADD_API_METHOD_1(setRecordEventCallback);
+	ADD_TYPED_API_METHOD_2(setPlaybackCallback, VarTypeChecker::Function, VarTypeChecker::Number);
+	ADD_CALLBACK_DIAGNOSTIC_RAW(setPlaybackCallback, WeakCallbackHolder::checkCallbackNumArgs<2>);
+	ADD_TYPED_API_METHOD_1(setRecordEventCallback, VarTypeChecker::Function);
+	ADD_CALLBACK_DIAGNOSTIC_RAW(setRecordEventCallback, WeakCallbackHolder::checkCallbackNumArgs<1>);
 	ADD_API_METHOD_1(setUseGlobalUndoManager);
 	ADD_API_METHOD_1(connectToMetronome);
 	ADD_API_METHOD_1(isSequenceEmpty);
@@ -6456,8 +6471,13 @@ void ScriptingObjects::ScriptedMidiPlayer::setRecordEventCallback(var recordEven
 {
 	if (auto co = dynamic_cast<WeakCallbackHolder::CallableObject*>(recordEventCallback.getObject()))
 	{
+#if USE_BACKEND
+		if (HiseJavascriptEngine::RootObject::RealtimeSafetyInfo::check(co, this, "MidiPlayer.setRecordEventCallback"))
+			reportScriptError("This callable object is not safe for audio-thread execution");
+#else
 		if (!co->isRealtimeSafe())
 			reportScriptError("This callable object is not realtime safe!");
+#endif
 
 		recordEventProcessor = nullptr;
 		recordEventProcessor = new ScriptEventRecordProcessor(*this, recordEventCallback);
@@ -6807,6 +6827,16 @@ void ScriptingObjects::ScriptedMidiPlayer::setPlaybackCallback(var newPlaybackCa
     
 	if (HiseJavascriptEngine::isJavascriptFunction(newPlaybackCallback))
 	{
+#if USE_BACKEND
+		if (isSync)
+		{
+			if (auto co = dynamic_cast<WeakCallbackHolder::CallableObject*>(newPlaybackCallback.getObject()))
+			{
+				if (HiseJavascriptEngine::RootObject::RealtimeSafetyInfo::check(co, this, "MidiPlayer.setPlaybackCallback"))
+					reportScriptError("Callback is not safe for synchronous audio-thread execution");
+			}
+		}
+#endif
 		playbackUpdater = new PlaybackUpdater(*this, newPlaybackCallback, isSync);
 	}
 }
@@ -7012,6 +7042,173 @@ juce::ValueTree ApiHelpers::getApiTree()
 		v = ValueTree::readFromData(XmlApi::apivaluetree_dat, XmlApi::apivaluetree_datSize);
 
 	return v;
+}
+
+static ApiHelpers::CallScope parseCallScopeString(const String& s)
+{
+	using CS = ApiHelpers::CallScope;
+
+	if (s == "safe")    return CS::Safe;
+	if (s == "warning") return CS::Warning;
+	if (s == "unsafe")  return CS::Unsafe;
+	if (s == "init")    return CS::Init;
+	return CS::Unknown;
+}
+
+static int callScopeSeverity(ApiHelpers::CallScope s)
+{
+	using CS = ApiHelpers::CallScope;
+	switch (s)
+	{
+		case CS::Unsafe:  return 3;
+		case CS::Init:    return 2;
+		case CS::Warning: return 1;
+		case CS::Safe:    return 0;
+		case CS::Unknown: return 0;
+		default:          return 0;
+	}
+}
+
+/** Greedy lookup HashMap — built once on first greedy query. */
+struct GreedyCallScopeMap
+{
+	/** For each method name, stores the resolved greedy CallScopeInfo.
+	 *
+	 *  Resolution rule:
+	 *  - Collect all CallScope values for *.methodName across all classes
+	 *  - If ANY are Safe: store Safe (ambiguous — don't warn)
+	 *  - If ALL are not-safe: store the worst-case scope
+	 *  - Severity: Unsafe (3) > Init (2) > Warning (1) > Unknown/Safe (0)
+	 */
+	HashMap<String, ApiHelpers::CallScopeInfo> map;
+	bool built = false;
+
+	void buildFromTree(const ValueTree& apiTree)
+	{
+		using CS = ApiHelpers::CallScope;
+
+		// Temporary: collect all scopes per method name
+		HashMap<String, Array<ApiHelpers::CallScopeInfo>> collector;
+
+		for (int i = 0; i < apiTree.getNumChildren(); i++)
+		{
+			auto classNode = apiTree.getChild(i);
+
+			for (int j = 0; j < classNode.getNumChildren(); j++)
+			{
+				auto methodNode = classNode.getChild(j);
+				auto methodName = methodNode.getProperty("name").toString();
+				auto scopeStr = methodNode.getProperty("callScope").toString();
+
+				if (methodName.isEmpty())
+					continue;
+
+				ApiHelpers::CallScopeInfo info;
+				info.scope = parseCallScopeString(scopeStr);
+				info.note = methodNode.getProperty("callScopeNote").toString();
+
+				if (!collector.contains(methodName))
+					collector.set(methodName, {});
+
+				collector.getReference(methodName).add(info);
+			}
+		}
+
+		// Resolve each method name using the forgiving greedy rule
+		HashMap<String, Array<ApiHelpers::CallScopeInfo>>::Iterator it(collector);
+
+		while (it.next())
+		{
+			const auto methodName = it.getKey();
+			const auto infos = it.getValue();
+
+			bool anySafe = false;
+			CS worstScope = CS::Unknown;
+			String worstNote;
+
+			for (const auto& info : infos)
+			{
+				if (info.scope == CS::Safe)
+				{
+					anySafe = true;
+					break;
+				}
+
+				if (callScopeSeverity(info.scope) > callScopeSeverity(worstScope))
+				{
+					worstScope = info.scope;
+					worstNote = info.note;
+				}
+			}
+
+			ApiHelpers::CallScopeInfo resolved;
+
+			if (anySafe)
+			{
+				resolved.scope = CS::Safe;
+			}
+			else
+			{
+				resolved.scope = worstScope;
+				resolved.note = worstNote;
+			}
+
+			map.set(methodName, resolved);
+		}
+
+		built = true;
+	}
+};
+
+static GreedyCallScopeMap& getGreedyMap()
+{
+	static GreedyCallScopeMap instance;
+
+	if (!instance.built)
+		instance.buildFromTree(ApiHelpers::getApiTree());
+
+	return instance;
+}
+
+ApiHelpers::CallScopeInfo ApiHelpers::getCallScope(const String& className, const String& methodName)
+{
+	using CS = CallScope;
+
+	if (className == "*")
+	{
+		// Greedy mode: use pre-built HashMap
+		auto& greedyMap = getGreedyMap();
+
+		if (greedyMap.map.contains(methodName))
+			return greedyMap.map[methodName];
+
+		// No match at all: non-API dynamic function dispatch
+		return { CS::Unsafe, {} };
+	}
+
+	// Exact mode: find class, then method
+	auto apiTree = getApiTree();
+	auto classNode = apiTree.getChildWithName(Identifier(className));
+
+	if (!classNode.isValid())
+		return { CS::Unknown, {} };
+
+	for (int i = 0; i < classNode.getNumChildren(); i++)
+	{
+		auto methodNode = classNode.getChild(i);
+
+		if (methodNode.getProperty("name").toString() == methodName)
+		{
+			auto scopeStr = methodNode.getProperty("callScope").toString();
+
+			CallScopeInfo info;
+			info.scope = parseCallScopeString(scopeStr);
+			info.note = methodNode.getProperty("callScopeNote").toString();
+			return info;
+		}
+	}
+
+	return { CS::Unknown, {} };
 }
 
 ScriptingObjects::ScriptBuffer::ScriptBuffer(ProcessorWithScriptingContent* p, int size):
@@ -7597,7 +7794,8 @@ ScriptingObjects::ScriptBackgroundTask::ScriptBackgroundTask(ProcessorWithScript
 	ADD_API_METHOD_2(setProperty);
 	ADD_API_METHOD_1(getProperty);
 	ADD_API_METHOD_3(runProcess);
-	ADD_API_METHOD_1(setFinishCallback);
+	ADD_TYPED_API_METHOD_1(setFinishCallback, VarTypeChecker::Function);
+	ADD_CALLBACK_DIAGNOSTIC(finishCallback, setFinishCallback, 0);
 	ADD_API_METHOD_1(callOnBackgroundThread);
 	ADD_API_METHOD_1(killVoicesAndCall);
 	ADD_API_METHOD_0(getProgress);
@@ -7714,7 +7912,7 @@ void ScriptingObjects::ScriptBackgroundTask::callOnBackgroundThread(var backgrou
 		currentTask = WeakCallbackHolder(getScriptProcessor(), this, backgroundTaskFunction, 1);
 		currentTask.incRefCount();
 		currentTask.addAsSource(this, "backgroundFunction");
-		startThread(8);
+		ThreadStarters::startHigh(this);
 	}
 }
 
@@ -7861,7 +8059,7 @@ void ScriptingObjects::ScriptBackgroundTask::runProcess(var command, var args, v
 		currentTask.clear();
 		childProcessData = new ChildProcessData(*this, command.toString(), args, logFunction);
 
-		startThread(8);
+		ThreadStarters::startHigh(this);
 	}
 }
 
@@ -8013,8 +8211,10 @@ ScriptingObjects::ScriptFFT::ScriptFFT(ProcessorWithScriptingContent* p) :
 	ADD_API_METHOD_2(prepare);
 	ADD_API_METHOD_1(setOverlap);
 	ADD_API_METHOD_1(process);
-	ADD_API_METHOD_2(setMagnitudeFunction);
-	ADD_API_METHOD_1(setPhaseFunction);
+	ADD_TYPED_API_METHOD_2(setMagnitudeFunction, VarTypeChecker::Function, VarTypeChecker::Number);
+	ADD_CALLBACK_DIAGNOSTIC(magnitudeFunction, setMagnitudeFunction, 0);
+	ADD_TYPED_API_METHOD_1(setPhaseFunction, VarTypeChecker::Function);
+	ADD_CALLBACK_DIAGNOSTIC(phaseFunction, setPhaseFunction, 0);
 	ADD_API_METHOD_1(setEnableSpectrum2D);
 	ADD_API_METHOD_1(setEnableInverseFFT);
 	ADD_API_METHOD_1(setSpectrum2DParameters);
@@ -8098,6 +8298,13 @@ void ScriptingObjects::ScriptFFT::setMagnitudeFunction(var newMagnitudeFunction,
 
 	if (HiseJavascriptEngine::isJavascriptFunction(newMagnitudeFunction))
 	{
+#if USE_BACKEND
+		if (auto co = dynamic_cast<WeakCallbackHolder::CallableObject*>(newMagnitudeFunction.getObject()))
+		{
+			if (HiseJavascriptEngine::RootObject::RealtimeSafetyInfo::check(co, this, "FFT.setMagnitudeFunction"))
+				reportScriptError("Callback is not safe for audio-thread execution");
+		}
+#endif
 		convertMagnitudesToDecibel = convertDb;
 		magnitudeFunction = WeakCallbackHolder(getScriptProcessor(), this, newMagnitudeFunction, 2);
 		magnitudeFunction.incRefCount();
@@ -8111,6 +8318,13 @@ void ScriptingObjects::ScriptFFT::setPhaseFunction(var newPhaseFunction)
 
 	if (HiseJavascriptEngine::isJavascriptFunction(newPhaseFunction))
 	{
+#if USE_BACKEND
+		if (auto co = dynamic_cast<WeakCallbackHolder::CallableObject*>(newPhaseFunction.getObject()))
+		{
+			if (HiseJavascriptEngine::RootObject::RealtimeSafetyInfo::check(co, this, "FFT.setPhaseFunction"))
+				reportScriptError("Callback is not safe for audio-thread execution");
+		}
+#endif
 		phaseFunction = WeakCallbackHolder(getScriptProcessor(), this, newPhaseFunction, 2);
 		phaseFunction.incRefCount();
 		reinitialise();
@@ -8950,6 +9164,8 @@ struct ScriptingObjects::GlobalCableReference::DummyTarget : public scriptnode::
 	GlobalCableReference& parent;
 };
 
+
+
 ScriptingObjects::GlobalCableReference::GlobalCableReference(ProcessorWithScriptingContent* ps, var c) :
 	ConstScriptingObject(ps, 0),
 	cable(c),
@@ -8964,8 +9180,10 @@ ScriptingObjects::GlobalCableReference::GlobalCableReference(ProcessorWithScript
 	ADD_API_METHOD_2(setRange);
 	ADD_API_METHOD_3(setRangeWithSkew);
 	ADD_API_METHOD_3(setRangeWithStep);
-	ADD_API_METHOD_2(registerCallback);
-	ADD_API_METHOD_1(registerDataCallback);
+	ADD_TYPED_API_METHOD_2(registerCallback, VarTypeChecker::Function, VarTypeChecker::Number);
+	ADD_CALLBACK_DIAGNOSTIC_RAW(registerCallback, WeakCallbackHolder::checkCallbackNumArgs<1>);
+	ADD_TYPED_API_METHOD_1(registerDataCallback, VarTypeChecker::Function);
+	ADD_CALLBACK_DIAGNOSTIC_RAW(registerDataCallback, WeakCallbackHolder::checkCallbackNumArgs<1>);
 	ADD_API_METHOD_1(deregisterCallback);
 	ADD_API_METHOD_3(connectToMacroControl);
     ADD_API_METHOD_2(connectToGlobalModulator);
@@ -9151,31 +9369,49 @@ struct ScriptingObjects::GlobalCableReference::Callback: public scriptnode::rout
 
 		auto ilf = dynamic_cast<WeakCallbackHolder::CallableObject*>(f.getObject());
 
-		if (ilf != nullptr && (!synchronous || ilf->isRealtimeSafe()))
+		if (ilf == nullptr && synchronous)
 		{
-			if (auto dobj = dynamic_cast<DebugableObjectBase*>(ilf))
-			{
-				id << dobj->getDebugName();
-				funcLocation = dobj->getLocation();
-			}
-
-			callback.incRefCount();
-			callback.setHighPriority();
-
-			if (auto c = getCableFromVar(parent.cable))
-			{
-				c->addTarget(this);
-			}
-
-			if (!synchronous)
-				start();
-			else
-				stop();
-		}
-		else
-		{
+			p.reportScriptError("Synchronous callbacks require an inline function");
 			stop();
+			return;
 		}
+
+		if (synchronous)
+		{
+#if USE_BACKEND
+			if (HiseJavascriptEngine::RootObject::RealtimeSafetyInfo::check(ilf, &p, "GlobalCable.registerCallback"))
+			{
+				p.reportScriptError("Callback is not safe for synchronous audio-thread execution");
+				stop();
+				return;
+			}
+#else
+			if (!ilf->isRealtimeSafe())
+			{
+				stop();
+				return;
+			}
+#endif
+		}
+
+		if (auto dobj = dynamic_cast<DebugableObjectBase*>(ilf))
+		{
+			id << dobj->getDebugName();
+			funcLocation = dobj->getLocation();
+		}
+
+		callback.incRefCount();
+		callback.setHighPriority();
+
+		if (auto c = getCableFromVar(parent.cable))
+		{
+			c->addTarget(this);
+		}
+
+		if (!synchronous)
+			start();
+		else
+			stop();
 	}
 
 	void timerCallback() override
@@ -9410,12 +9646,16 @@ struct ProcessorParameterTarget : public scriptnode::routing::GlobalRoutingManag
         return id;
     }
 
+	bool shouldBeCleanedUp() const override { return processor.get() == nullptr; }
+
     void sendValue(double v) override
     {
 		lastValue.set(v);
         auto newValue = jlimit(0.0f, 1.0f, (float)lastValue.advance());
         auto cv = targetRange.convertFrom0to1(newValue, true);
-        processor->setAttribute(parameterIndex, cv, sendNotification);
+
+		if(processor != nullptr)
+			processor->setAttribute(parameterIndex, cv, sendNotificationSync);
     }
 
     Path getTargetIcon() const override
@@ -10229,19 +10469,28 @@ void ScriptingObjects::ScriptBuilder::clear()
 	auto thisAsP = dynamic_cast<Processor*>(getScriptProcessor());
 
     auto mc = getScriptProcessor()->getMainController_();
-    SUSPEND_GLOBAL_DISPATCH(mc, "clear from builder");
-    MainController::ScopedBadBabysitter sb(mc);
 
-	mc->getProcessorChangeHandler().sendProcessorChangeMessage(mc->getMainSynthChain(), MainController::ProcessorChangeHandler::EventType::ClearBeforeRebuild, false);
+	SUSPEND_GLOBAL_DISPATCH(mc, "clear from builder");
+	ScopedPointer<MainController::ScopedBadBabysitter> sb;
 
-	MessageManager::callAsync([this]()
+#if USE_BACKEND
+	if (!CompileExporter::shouldSkipAudioDriverInitialisation())
 	{
-		getScriptProcessor()->getScriptingContent()->setIsRebuilding(true);
-	});
-	
+		sb = new MainController::ScopedBadBabysitter(mc);
 
-	Thread::getCurrentThread()->wait(500);
-	dynamic_cast<JavascriptProcessor*>(getScriptProcessor())->getScriptEngine()->extendTimeout(500);
+		mc->getProcessorChangeHandler().sendProcessorChangeMessage(mc->getMainSynthChain(), MainController::ProcessorChangeHandler::EventType::ClearBeforeRebuild, false);
+
+		auto sp = getScriptProcessor();
+
+		MessageManager::callAsync([sp]()
+		{
+			sp->getScriptingContent()->setIsRebuilding(true);
+		});
+
+		Thread::getCurrentThread()->wait(500);
+		dynamic_cast<JavascriptProcessor*>(getScriptProcessor())->getScriptEngine()->extendTimeout(500);
+	}
+#endif
 
 	raw::Builder b(mc);
 
@@ -10285,6 +10534,11 @@ void ScriptingObjects::ScriptBuilder::clear()
 		}
 	}
 
+	using GRM = scriptnode::routing::GlobalRoutingManager;
+
+	if (auto gm = GRM::Helpers::getOrCreate(mc))
+		gm->removeUnconnectedSlots(GRM::SlotBase::SlotType::Cable);
+
 	flushed = false;
 }
 
@@ -10296,12 +10550,14 @@ void ScriptingObjects::ScriptBuilder::flush()
 	{
 		flushed = true;
 
-		MessageManager::callAsync([this]()
+		auto sp = getScriptProcessor();
+
+		MessageManager::callAsync([sp]()
 		{
-			auto synthChain = getScriptProcessor()->getMainController_()->getMainSynthChain();
-			getScriptProcessor()->getScriptingContent()->setIsRebuilding(false);
+			auto synthChain = sp->getMainController_()->getMainSynthChain();
+			sp->getScriptingContent()->setIsRebuilding(false);
 			synthChain->sendRebuildMessage(true);
-			getScriptProcessor()->getMainController_()->getProcessorChangeHandler().sendProcessorChangeMessage(synthChain, MainController::ProcessorChangeHandler::EventType::RebuildModuleList, false);
+			sp->getMainController_()->getProcessorChangeHandler().sendProcessorChangeMessage(synthChain, MainController::ProcessorChangeHandler::EventType::RebuildModuleList, false);
 		});
 	}
 }
@@ -10462,6 +10718,328 @@ ScriptingObjects::ScriptErrorHandler::~ScriptErrorHandler()
 
 
 
+struct ScriptingObjects::ScriptingComplexGroupManager::Wrapper
+{
+	API_VOID_METHOD_WRAPPER_3(ScriptingComplexGroupManager, setLayerProperty);
+	API_METHOD_WRAPPER_2(ScriptingComplexGroupManager, getLayerProperty);
+	API_METHOD_WRAPPER_1(ScriptingComplexGroupManager, getLayerIndex);
+	API_METHOD_WRAPPER_1(ScriptingComplexGroupManager, getNumGroupsInLayer);
+	API_VOID_METHOD_WRAPPER_2(ScriptingComplexGroupManager, setActiveGroup);
+	API_VOID_METHOD_WRAPPER_1(ScriptingComplexGroupManager, createNoteMap);
+	API_METHOD_WRAPPER_2(ScriptingComplexGroupManager, isNoteNumberMapped);
+	API_VOID_METHOD_WRAPPER_3(ScriptingComplexGroupManager, setEnableGainTracking);
+	API_METHOD_WRAPPER_3(ScriptingComplexGroupManager, getCurrentPeak);
+	API_VOID_METHOD_WRAPPER_2(ScriptingComplexGroupManager, registerGroupStartCallback);
+	API_VOID_METHOD_WRAPPER_3(ScriptingComplexGroupManager, delayGroupEvent);
+	API_VOID_METHOD_WRAPPER_4(ScriptingComplexGroupManager, fadeInGroupEvent);
+	API_VOID_METHOD_WRAPPER_3(ScriptingComplexGroupManager, setFixedGroupEventLength);
+	API_VOID_METHOD_WRAPPER_3(ScriptingComplexGroupManager, addGroupEventStartOffset);
+	API_VOID_METHOD_WRAPPER_3(ScriptingComplexGroupManager, fadeOutGroupEvent);
+	API_VOID_METHOD_WRAPPER_3(ScriptingComplexGroupManager, setGroupVolume);
+};
 
+ScriptingObjects::ScriptingComplexGroupManager::ScriptingComplexGroupManager(ProcessorWithScriptingContent* pwsc, ModulatorSampler* sampler_) :
+	ConstScriptingObject(pwsc, 1),
+	sampler(sampler_)
+{
+	addConstant("IgnoreFlag", (int)ComplexGroupManager::IgnoreFlag);
+
+	ADD_API_METHOD_2(getLayerProperty);
+	ADD_API_METHOD_3(setLayerProperty);
+	ADD_API_METHOD_1(getLayerIndex);
+	ADD_API_METHOD_1(getNumGroupsInLayer);
+	ADD_API_METHOD_2(setActiveGroup);
+	ADD_API_METHOD_1(createNoteMap);
+	ADD_API_METHOD_2(isNoteNumberMapped);
+	ADD_API_METHOD_3(setEnableGainTracking);
+	ADD_API_METHOD_3(getCurrentPeak);
+	ADD_API_METHOD_2(registerGroupStartCallback);
+
+	ADD_API_METHOD_3(delayGroupEvent);
+	ADD_API_METHOD_4(fadeInGroupEvent);
+	ADD_API_METHOD_3(setFixedGroupEventLength);
+	ADD_API_METHOD_3(addGroupEventStartOffset);
+	ADD_API_METHOD_3(fadeOutGroupEvent);
+	ADD_API_METHOD_3(setGroupVolume);
+}
+
+void ScriptingObjects::ScriptingComplexGroupManager::setLayerProperty(var layerIdOrIndex, String propertyId, var value)
+{
+	auto idx = getLayerIndexInternal(layerIdOrIndex);
+
+	if(idx != -1)
+	{
+		auto c = getManager()->getDataTree().getChild(idx);
+
+		if(!ComplexGroupManager::Helpers::isValidId(propertyId))
+			reportScriptError("Illegal property " + propertyId);
+
+		auto v = ComplexGroupManager::Helpers::convertFromJS(Identifier(propertyId), value);
+		c.setProperty(Identifier(propertyId), v, nullptr);
+	}
+}
+
+juce::var ScriptingObjects::ScriptingComplexGroupManager::getLayerProperty(var layerIdOrIndex, String propertyId)
+{
+	auto idx = getLayerIndexInternal(layerIdOrIndex);
+
+	if (idx != -1)
+	{
+		auto c = getManager()->getDataTree().getChild(idx);
+
+		if (!ComplexGroupManager::Helpers::isValidId(propertyId))
+			reportScriptError("Illegal property " + propertyId);
+
+		auto v = c[propertyId];
+		return ComplexGroupManager::Helpers::convertToJS(c, Identifier(propertyId), sampler.get());
+	}
+
+	RETURN_IF_NO_THROW(var());
+}
+
+int ScriptingObjects::ScriptingComplexGroupManager::getLayerIndex(String layerId) const
+{
+	return getLayerIndexInternal(layerId);
+}
+
+int ScriptingObjects::ScriptingComplexGroupManager::getNumGroupsInLayer(int layerIndex)
+{
+	if(auto gm = getManager())
+	{
+		return gm->getNumGroupsInLayer((uint8)layerIndex);
+	}
+
+	return 0;
+}
+
+void ScriptingObjects::ScriptingComplexGroupManager::setActiveGroup(int layerIndex, int groupIndex)
+{
+	if (groupIndex == ComplexGroupManager::IgnoreFlag)
+		reportScriptError("cannot use IgnoreFlag here");
+
+	auto gi = bumpGroupIndexFromZeroBased(groupIndex);
+
+	if(auto gm = getManager())
+	{
+		gm->applyFilter((uint8)layerIndex, gi, sendNotificationAsync);
+	}
+}
+
+void ScriptingObjects::ScriptingComplexGroupManager::createNoteMap(var layerIdOrIndex)
+{
+	auto index = getLayerIndexInternal(layerIdOrIndex);
+
+	if(index != -1)
+	{
+		ModulatorSampler::SoundIterator iter(sampler.get());
+
+		VoiceBitMap<128, uint32> nm;
+
+		while(auto s = iter.getNextSound())
+		{
+			auto lv = getManager()->getLayerValue(s->getBitmask(), (uint8)index);
+
+			if(lv != 0 && lv != ComplexGroupManager::IgnoreFlag)
+			{
+				auto nr = s->getNoteRange();
+				
+				for(int i = nr.getStart(); i < nr.getEnd(); i++)
+					nm.setBit(i, true);
+			}
+		}
+
+		noteMaps[(uint8)index] = nm;
+	}
+}
+
+bool ScriptingObjects::ScriptingComplexGroupManager::isNoteNumberMapped(int layerIndex, int noteNumber) const
+{
+	auto x = noteMaps.find((uint8)layerIndex);
+
+	if(x == noteMaps.end())
+		reportScriptError("You need to call createNoteMap() with the given layer index before using this method");
+
+	const auto& vm = x->second;
+
+	if(isPositiveAndBelow(noteNumber, 128))
+		return vm[noteNumber];
+
+	return false;	
+}
+
+void ScriptingObjects::ScriptingComplexGroupManager::setEnableGainTracking(var layerIdOrIndex, int groupIndex, bool shouldBeActive)
+{
+	if(groupIndex == ComplexGroupManager::IgnoreFlag)
+		reportScriptError("Can't use this function with the ignore flag");
+
+	auto gi = bumpGroupIndexFromZeroBased(groupIndex);
+
+	auto idx = getLayerIndexInternal(layerIdOrIndex);
+
+	if(idx != -1)
+	{
+		gainTrackingGroups.push_back({ idx, (uint8)(groupIndex+1) });
+
+		ModulatorSampler::SoundIterator iter(sampler.get());
+
+		auto gm = getManager();
+
+		while(auto s = iter.getNextSound())
+		{
+			auto lv = (int)gm->getLayerValue(s->getBitmask(), (uint8)idx);
+
+			if(lv == gi)
+			{
+				for (int i = 0; i < s->getNumMultiMicSamples(); i++)
+					s->getReferenceToSound(i)->setIsReleaseSample(shouldBeActive);
+			}
+		}
+	}
+}
+
+float ScriptingObjects::ScriptingComplexGroupManager::getCurrentPeak(int layerIndex, int groupIndex, int eventId)
+{
+	auto gm = getManager();
+
+	auto gi = bumpGroupIndexFromZeroBased(groupIndex);
+
+	bool found = false;
+
+	for(const auto& cv: gainTrackingGroups)
+		found |= cv.first == layerIndex && cv.second == gi;
+
+	if(!found)
+		reportScriptError("You must call setEnableGainTracking with a matching layer & group index");
+
+	for(auto av: sampler->activeVoices)
+	{
+		if(av->getCurrentHiseEvent().getEventId() == eventId)
+		{
+			auto sustainSample = static_cast<ModulatorSamplerSound*>(av->getCurrentlyPlayingSound().get());
+
+			auto bm = sustainSample->getBitmask();
+			auto lv = gm->getLayerValue(bm, (uint8)layerIndex);
+
+			if(lv == gi)
+				return (double)sustainSample->getReferenceToSound()->getCurrentReleasePeak();
+		}
+	}
+
+	return 0.0;
+}
+
+void ScriptingObjects::ScriptingComplexGroupManager::registerGroupStartCallback(var layerIdOrIndex, var callback)
+{
+	auto idx = getLayerIndexInternal(layerIdOrIndex);
+
+	if(auto obj = dynamic_cast<WeakCallbackHolder::CallableObject*>(callback.getObject()))
+	{
+#if USE_BACKEND
+		if(HiseJavascriptEngine::RootObject::RealtimeSafetyInfo::check(obj, this, "ComplexGroupManager.registerGroupStartCallback"))
+			reportScriptError("This function only works with callable objects that are safe for audio-thread execution");
+#else
+		if(!obj->isRealtimeSafe())
+			reportScriptError("This function only works with callable objects that are realtime safe");
+#endif
+
+		auto nc = new GroupCallback(*this, callback);
+		getManager()->setVoiceStartCallback(idx, nc);
+		groupCallbacks.add(nc);
+	}
+}
+
+void ScriptingObjects::ScriptingComplexGroupManager::delayGroupEvent(int layerIndex, int groupIndex, double delayInSamples)
+{
+	if(auto gm = getManager())
+	{
+		auto gi = bumpGroupIndexFromZeroBased(groupIndex);
+		gm->delayEventByFilter((uint8)layerIndex, gi, delayInSamples);
+	}
+}
+
+void ScriptingObjects::ScriptingComplexGroupManager::fadeInGroupEvent(int layerIndex, int groupIndex, double fadeInTimeMs, double targetGainDb)
+{
+	if(auto gm = getManager())
+	{
+		auto gi = bumpGroupIndexFromZeroBased(groupIndex);
+		auto targetGain = Decibels::decibelsToGain(targetGainDb);
+
+		gm->fadeInEventByFilter((uint8)layerIndex, gi, fadeInTimeMs * 0.001, targetGain);
+	}
+}
+
+void ScriptingObjects::ScriptingComplexGroupManager::setFixedGroupEventLength(int layerIndex, int groupIndex, double numSamplesToPlayBeforeFadeout)
+{
+	if(auto gm = getManager())
+	{
+		auto gi = bumpGroupIndexFromZeroBased(groupIndex);
+		gm->setFixedLengthByFilter(layerIndex, gi, numSamplesToPlayBeforeFadeout);
+	}
+}
+
+void ScriptingObjects::ScriptingComplexGroupManager::addGroupEventStartOffset(int layerIndex, int groupIndex, double startOffset)
+{
+	if(auto gm = getManager())
+	{
+		auto gi = bumpGroupIndexFromZeroBased(groupIndex);
+		gm->addStartOffsetByFilter(layerIndex, gi, startOffset);
+	}
+}
+
+void ScriptingObjects::ScriptingComplexGroupManager::fadeOutGroupEvent(int layerIndex, int groupIndex, double fadeOutTimeMs)
+{
+	if(auto gm = getManager())
+	{
+		auto gi = bumpGroupIndexFromZeroBased(groupIndex);
+
+		for(auto av: sampler->activeVoices)
+		{
+			auto s = static_cast<ModulatorSamplerSound*>(av->getCurrentlyPlayingSound().get());
+
+			auto bm = s->getBitmask();
+			auto lv = gm->getLayerValue(bm, (uint8)layerIndex);
+
+			if(lv == gi)
+				av->setVolumeFade(fadeOutTimeMs * 0.001, 0.0);
+		}
+	}
+}
+
+void ScriptingObjects::ScriptingComplexGroupManager::setGroupVolume(int layerIndex, int groupIndex, double gainFactor)
+{
+	if(auto gm = getManager())
+	{
+		auto gi = bumpGroupIndexFromZeroBased(groupIndex);
+		gm->setGroupVolume((uint8)layerIndex, gi, gainFactor);
+	}
+}
+
+hise::ComplexGroupManager* ScriptingObjects::ScriptingComplexGroupManager::getManager() const
+{
+	if (sampler == nullptr)
+		return nullptr;
+
+	return sampler->getComplexGroupManager();
+}
+
+int ScriptingObjects::ScriptingComplexGroupManager::getLayerIndexInternal(const var& layerIdOrString) const
+{
+	if (auto gm = getManager())
+	{
+		if (layerIdOrString.isString())
+			return gm->getLayerIndex(layerIdOrString.toString());
+
+		if (layerIdOrString.isInt() || layerIdOrString.isInt64())
+		{
+			auto idx = (int)layerIdOrString;
+
+			if (isPositiveAndBelow(idx, gm->getNumLayers()))
+				return idx;
+		}
+	}
+
+	reportScriptError("Illegal layer index " + layerIdOrString.toString());
+	RETURN_IF_NO_THROW(-1);
+}
 
 } // namespace hise

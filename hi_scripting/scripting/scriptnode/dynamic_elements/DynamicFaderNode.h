@@ -59,12 +59,12 @@ struct dynamic
 		mode(PropertyIds::Mode, "Peak")
 	{};
 
-	void initialise(NodeBase* n)
+	void initialise(ObjectWithValueTree* n)
 	{
 		mode.initialise(n);
 		mode.setAdditionalCallback(BIND_MEMBER_FUNCTION_2(dynamic::updateMode), true);
 
-		parentNode = n;
+		parentNode = dynamic_cast<NodeBase*>(n);
 	}
 
 	void updateMode(Identifier, var newValue)
@@ -106,7 +106,8 @@ struct dynamic
 			addAndMakeVisible(audioEditor);
 			addAndMakeVisible(modeSelector);
 
-			modeSelector.initModes(dynamic::getAnalyserModes(), getObject()->obj.analyser.parentNode.get());
+			auto pn = getObject()->obj.analyser.parentNode.get();
+			modeSelector.initModes(dynamic::getAnalyserModes(), pn);
 
 			setSize(500, 128);
 			stop();
@@ -137,149 +138,11 @@ struct dynamic
 
 namespace faders
 {
-struct dynamic
-{
-	using NodeType = control::xfader<parameter::dynamic_list, dynamic>;
 
-	static constexpr int NumMaxFaders = 8;
+using NodeType = control::xfader<parameter::dynamic_list, dynamic>;
 
-	enum FaderMode
-	{
-		Switch,
-		Linear,
-		Overlap,
-		Squared,
-		RMS,
-        Cosine,
-        CosineHalf,
-		Harmonics,
-        Threshold
-	};
+using Editor = parameter::ui::multi_output_wrapper<faders::NodeType, control::xfader_editor>;
 
-	dynamic() :
-		mode(PropertyIds::Mode, "Linear")
-	{}
-
-	void initialise(NodeBase* n)
-	{
-		mode.initialise(n);
-		mode.setAdditionalCallback(BIND_MEMBER_FUNCTION_2(dynamic::updateMode), true);
-
-		if (n->getValueTree().getChildWithName(PropertyIds::SwitchTargets).getNumChildren() == 0)
-		{
-			n->setNodeProperty(PropertyIds::NumParameters, 2);
-		}
-	}
-
-	void updateMode(Identifier id, var newValue)
-	{
-		currentMode = (FaderMode)getFaderModes().indexOf(newValue.toString());
-	}
-
-	static StringArray getFaderModes()
-	{
-		return { "Switch", "Linear", "Overlap", "Squared", "RMS", "Cosine", "Cosine Half", "Harmonics", "Threshold" };
-	}
-
-	template <int Index> double getFadeValue(int numElements, double v)
-	{
-		switch (currentMode)
-		{
-		case FaderMode::Switch:		return sf.getFadeValue<Index>(numElements, v);
-		case FaderMode::Linear:		return lf.getFadeValue<Index>(numElements, v);
-		case FaderMode::Overlap:	return of.getFadeValue<Index>(numElements, v);
-		case FaderMode::Squared:	return qf.getFadeValue<Index>(numElements, v);
-		case FaderMode::RMS:		return rf.getFadeValue<Index>(numElements, v);
-		case FaderMode::Harmonics:  return hf.getFadeValue<Index>(numElements, v);
-        case FaderMode::Threshold:  return tr.getFadeValue<Index>(numElements, v);
-        case FaderMode::Cosine:     return cs.getFadeValue<Index>(numElements, v);
-        case FaderMode::CosineHalf: return ch.getFadeValue<Index>(numElements, v);
-		}
-
-		return 0.0;
-	}
-
-	NodePropertyT<String> mode;
-
-	FaderMode currentMode = FaderMode::Linear;
-
-	harmonics hf;
-	switcher sf;
-	linear lf;
-	rms rf;
-	overlap of;
-	squared qf;
-    threshold tr;
-    cosine cs;
-    cosine_half ch;
-
-	struct editor : public ScriptnodeExtraComponent<NodeType>
-	{
-		struct FaderGraph : public ScriptnodeExtraComponent<NodeType>
-		{
-			FaderGraph(NodeType* f, PooledUIUpdater* updater);
-
-			valuetree::RecursivePropertyListener graphRebuilder;
-
-			void paint(Graphics& g) override;
-
-			void setInputValue(double v);
-
-			template <int Index> Path createPath() const
-			{
-				int numPaths = getObject()->p.getNumParameters();
-				int numPixels = 256;
-
-				Path p;
-				p.startNewSubPath(0.0f, 0.0f);
-
-				if (numPixels > 0)
-				{
-					for (int i = 0; i < numPixels; i++)
-					{
-						double inputValue = (double)i / (double)numPixels;
-						auto output = (float)getObject()->fader.getFadeValue<Index>(numPaths, inputValue);
-
-						p.lineTo((float)i, -1.0f * output);
-					}
-				}
-
-				p.lineTo(numPixels - 1, 0.0f);
-				p.closeSubPath();
-
-				return p;
-			}
-
-			void rebuildFaderCurves();
-
-			void resized() override;
-
-			void timerCallback() override;
-
-			double inputValue = 0.0;
-
-			Array<Path> faderCurves;
-		};
-
-		editor(NodeType* v, PooledUIUpdater* updater_);;
-
-		void timerCallback() override
-		{
-			jassertfalse;
-		};
-
-		void resized() override;
-
-		static Component* createExtraComponent(void* obj, PooledUIUpdater* updater);
-
-		parameter::ui::dynamic_list_editor dragRow;
-
-		ComboBoxWithModeProperty faderSelector;
-
-		ScriptnodeComboBoxLookAndFeel plaf;
-		FaderGraph graph;
-	};
-};
 } // namespace faders
 
 namespace control 
@@ -287,108 +150,11 @@ namespace control
 
 	using dynamic_branch_base = branch_base<parameter::dynamic_list>;
 
-	struct branch_editor : public ScriptnodeExtraComponent<dynamic_branch_base>
-	{
-		branch_editor(dynamic_branch_base* t, PooledUIUpdater* u) :
-			ScriptnodeExtraComponent(t, u),
-			dragRow(&t->p, u)
-		{
-			addAndMakeVisible(dragRow);
-			setSize(512, 100);
-			start();
-		}
+	
 
-		static Component* createExtraComponent(void* typed, PooledUIUpdater* updater)
-		{
-			auto t = static_cast<dynamic_branch_base*>(typed);
-			return new branch_editor(t, updater);
-		}
-
-		void onNumParametersChange(const Identifier& id, const var& newValue)
-		{
-			if(auto h = findParentComponentOfClass<NodeComponent>())
-			{
-				auto numParameters = (int)newValue;
-
-				if(numParameters > 1)
-				{
-					auto pn = h->node.get();
-					auto indexParameter = pn->getParameterFromName("Index");
-					indexParameter->setRangeProperty(PropertyIds::MaxValue.toString(), numParameters - 1);
-				}
-			}
-		}
-
-		bool updaterInitialised = false;
-		valuetree::PropertyListener numParametersUpdater;
-
-		void timerCallback() override 
-		{
-			if(auto n = getObject())
-			{
-				auto pn = findParentComponentOfClass<NodeComponent>()->node.get();
+	using branch_editor_wrapped = parameter::ui::multi_output_wrapper<dynamic_branch_base, branch_editor>;
 
 
-				if (pn->getValueTree().getChildWithName(PropertyIds::SwitchTargets).getNumChildren() == 0)
-				{
-					pn->setNodeProperty(PropertyIds::NumParameters, 8);
-				}
-
-				if(!updaterInitialised)
-				{
-					auto npt = pn->getPropertyTree().getChildWithProperty(PropertyIds::ID, PropertyIds::NumParameters.toString());
-					numParametersUpdater.setCallback(npt, { PropertyIds::Value }, valuetree::AsyncMode::Asynchronously, VT_BIND_PROPERTY_LISTENER(onNumParametersChange));
-					updaterInitialised = true;
-				}
-			}
-
-			auto currentIndex = getObject()->getUIIndex();
-			auto numParameters = getObject()->getParameter().getNumParameters();
-
-			if(lastIndex != currentIndex || numParameters != numLastParameters)
-			{
-				lastIndex = currentIndex;
-				numLastParameters = numParameters;
-				repaint();
-			}
-		}
-
-		void paint(Graphics& g) override
-		{
-			if(numLastParameters > 0)
-			{
-				auto w = top.getWidth() / numLastParameters;
-
-				auto copy = top;
-
-				auto nc = findParentComponentOfClass<NodeComponent>()->getHeaderColour();
-
-				for(int i = 0; i < numLastParameters; i++)
-				{
-					auto s = copy.removeFromLeft(w).reduced(1).toFloat();
-
-					auto active = i == lastIndex;
-					
-					g.setColour(nc.withAlpha(active ? 1.0f : 0.1f));
-					g.fillRoundedRectangle(s, s.getHeight() / 2.0f);
-				}
-			}
-		}
-
-		int lastIndex = 0;
-		int numLastParameters = 0;
-
-		void resized() override
-		{
-			auto b = getLocalBounds();
-			top = b.removeFromBottom(10);
-			dragRow.setBounds(b);
-		}
-
-		Rectangle<int> top;
-
-		parameter::ui::dynamic_list_editor dragRow;
-	};
 
 }
 

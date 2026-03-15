@@ -529,6 +529,8 @@ struct HiseOSCSender: public OSCSender,
 
 		}
 
+		bool shouldBeCleanedUp() const override { return sender == nullptr; }
+
 		String getTargetId() const override
 		{
 			return "OSC Output";
@@ -1007,7 +1009,6 @@ GlobalRoutingNodeBase::GlobalRoutingNodeBase(DspNetwork* n, ValueTree d) :
 	lastResult(Result::ok())
 {
 	globalRoutingManager = GlobalRoutingManager::Helpers::getOrCreate(n->getScriptProcessor()->getMainController_());
-
 	slotId.initialise(this);
 }
 
@@ -1093,7 +1094,7 @@ void GlobalRoutingNodeBase::initParameters()
 		auto ndb = new parameter::dynamic_base(p.callback);
 
 		newP->setDynamicParameter(ndb);
-		newP->valueNames = p.parameterNames;
+		newP->valueNames = p.getParameterNames().toStringArray();
 
 		addParameter(newP);
 	}
@@ -1466,7 +1467,7 @@ void GlobalCableNode::initParameters()
 		auto ndb = new parameter::dynamic_base(p.callback);
 
 		newP->setDynamicParameter(ndb);
-		newP->valueNames = p.parameterNames;
+		newP->valueNames = p.getParameterNames().toStringArray();
 
 		addParameter(newP);
 	}
@@ -1677,7 +1678,7 @@ bool GlobalRoutingManager::Cable::cleanup()
 {
 	for (int i = 0; i < targets.size(); i++)
 	{
-		if (targets[i] == nullptr)
+		if (targets[i] == nullptr || targets[i]->shouldBeCleanedUp())
 			targets.remove(i--);
 	}
 

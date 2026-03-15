@@ -194,7 +194,7 @@ bool ModulatorChain::SpecialQueryFunctions::GainModulation::onScaleDrag(Processo
 }
 
 ModulationDisplayValue ModulatorChain::SpecialQueryFunctions::GainModulation::getDisplayValue(Processor* p, double v,
-	NormalisableRange<double> nr) const
+	NormalisableRange<double> nr, int ) const
 {
 	jassert(dynamic_cast<ModulatorSynth*>(p) != nullptr);
 	auto modChain = dynamic_cast<ModulatorChain*>(p->getChildProcessor(ModulatorSynth::InternalChains::GainModulation)); 
@@ -226,7 +226,7 @@ bool ModulatorChain::SpecialQueryFunctions::PitchModulation::onScaleDrag(Process
 }
 
 ModulationDisplayValue ModulatorChain::SpecialQueryFunctions::PitchModulation::getDisplayValue(Processor* p, double v,
-	NormalisableRange<double> nr) const
+	NormalisableRange<double> nr, int) const
 {
 	jassert(dynamic_cast<ModulatorSynth*>(p) != nullptr);
 	auto modChain = dynamic_cast<ModulatorChain*>(p->getChildProcessor(ModulatorSynth::InternalChains::PitchModulation));
@@ -326,9 +326,7 @@ ModulationDisplayValue ModulatorChain::getModulationDisplayValue(double pValue, 
 		}
 		case Modulation::PitchMode:
 		{
-			// Use SpecialQueryFunction::PitchModulation instead...
-			jassertfalse;
-			break;
+			return SpecialQueryFunctions::PitchModulation().getDisplayValue(const_cast<Processor*>(getParentProcessor()), pValue, nr, -1);
 		}
 		case Modulation::PanMode:
 		case Modulation::OffsetMode:
@@ -429,7 +427,7 @@ void ModulatorChain::setInternalAttribute(int i, float x)
 { jassertfalse; }
 
 float ModulatorChain::getAttribute(int i) const
-{ jassertfalse; return -1.0; }
+{ return -1.0; }
 
 float ModulatorChain::getCurrentMonophonicStartValue() const noexcept
 {
@@ -462,6 +460,24 @@ void ModulatorChain::applyMonoOnOutputValue(float monoValue)
 #endif
 }
 
+void ModulatorChain::updateInitialValueFromChildMods()
+{
+	auto iv = getInitialValue();
+
+	for(auto m: allModulators)
+	{
+		if(m->isBypassed())
+		{
+			auto mod = dynamic_cast<Modulation*>(m);
+			auto inactiveValue = m->getInactiveModValue();
+			m->setOutputValue(inactiveValue);
+			mod->applyModulationValue(inactiveValue, iv);
+		}
+	}
+
+	setInitialValue(iv);
+}
+
 void ModulatorChain::setInitialValue(float newInitialValue)
 {
 	if(getInitialValue() == newInitialValue)
@@ -482,7 +498,7 @@ void ModulatorChain::setInitialValue(float newInitialValue)
 		initialValue = { true, newInitialValue };
 		break;
 	case PitchMode:
-		initialValue = { true, PitchConverters::octaveRangeToPitchFactor(newInitialValue) };
+		initialValue = { true, newInitialValue };
 		break;
 	}
 }
@@ -668,16 +684,23 @@ void ModulatorChain::ModChainWithBuffer::prepareToPlay(double sampleRate, int sa
 
 	if (type == Type::Normal)
 		modBuffer.setMaxSize(samplesPerBlock);
+
+	jassert(numActiveVoices == 0);
 }
 
 void ModulatorChain::ModChainWithBuffer::handleHiseEvent(const HiseEvent& m)
 {
 	if (c->shouldBeProcessedAtAll())
 		c->handleHiseEvent(m);
+
+	if(m.isAllNotesOff())
+		numActiveVoices = 0;
 }
 
 void ModulatorChain::ModChainWithBuffer::resetVoice(int voiceIndex)
 {
+	numActiveVoices = jmax(numActiveVoices-1, 0);
+
 	if (c->hasActiveEnvelopesAtAll())
 	{
 		c->reset(voiceIndex);
@@ -694,6 +717,8 @@ void ModulatorChain::ModChainWithBuffer::stopVoice(int voiceIndex)
 
 void ModulatorChain::ModChainWithBuffer::startVoice(int voiceIndex)
 {
+	numActiveVoices++;
+
 	float firstDynamicValue = c->getInitialValueInternal();
 
 	
@@ -905,7 +930,9 @@ void ModulatorChain::ModChainWithBuffer::calculateMonophonicModulationValues(int
 		}
 		else
 		{
-			jassert(c->getMode() == Mode::CombinedMode);
+			jassert(c->getMode() == Mode::CombinedMode ||
+					c->getMode() == Mode::GainMode ||
+					c->getMode() == Mode::PitchMode);
 			FloatVectorOperations::fill(modBuffer.monoValues + startSample_cr, 1.0f, numSamples_cr);
 		}
 	}
@@ -1013,6 +1040,22 @@ void ModulatorChain::ModChainWithBuffer::calculateModulationValuesForCurrentVoic
 				if (useMonophonicData)
 				{
 					applyMonophonicValuesToVoiceInternal(voiceData + startSample_cr, monoData + startSample_cr, numSamples_cr);
+				}
+			}
+
+			if(c->checkRelease)
+			{
+				auto active = c->isPlaying(voiceIndex);
+
+				if(!active)
+				{
+					auto eventId = c->eventIdToVoiceIndexMap[voiceIndex];
+
+					if (isPositiveAndBelow(eventId, NUM_POLYPHONIC_VOICES))
+					{
+						c->eventIdToVoiceIndexMap[voiceIndex] = -1;
+						c->runtimeTargetSource.resetFlag[eventId] = scriptnode::modulation::ClearState::Reset;
+					}
 				}
 			}
 
@@ -1173,6 +1216,22 @@ float ModulatorChain::ModChainWithBuffer::getModValueForVoiceWithOffset(int star
 
 float ModulatorChain::ModChainWithBuffer::getOneModulationValue(int startSample) const
 {
+	if(numActiveVoices == 0)
+	{
+		ModIterator<Modulator> iter(c);
+
+		float m = 1.0f;
+
+		while(auto mod = iter.next())
+		{
+			auto mv = mod->getInactiveModValue();
+			m *= mv;
+		}
+
+		return m;
+	}
+		
+
 	// If you set this, you probably don't need this method...
 	jassert(!options.expandToAudioRate);
 
@@ -1213,6 +1272,9 @@ ModulatorChain::ModulatorChain(MainController *mc, const String &uid, int numVoi
 	isVoiceStartChain(false),
 	runtimeTargetSource(*this)
 {
+	for(auto& s: eventIdToVoiceIndexMap)
+		s = -1;
+
 	activeVoices.setRange(0, numVoices, false);
 
 	setMode(m, dontSendNotification);
@@ -1328,6 +1390,9 @@ void ModulatorChain::reset(int voiceIndex)
 void ModulatorChain::handleHiseEvent(const HiseEvent &m)
 {
 	jassert(shouldBeProcessedAtAll());
+
+	if(m.isNoteOn())
+		unsavedEventId = m.getEventId() % NUM_POLYPHONIC_VOICES;
 
 	EnvelopeModulator::handleHiseEvent(m);
 
@@ -1449,6 +1514,9 @@ float ModulatorChain::getConstantVoiceValue(int voiceIndex) const
 float ModulatorChain::startVoice(int voiceIndex)
 {
 	jassert(hasVoiceModulators());
+
+	eventIdToVoiceIndexMap[voiceIndex] = unsavedEventId;
+	runtimeTargetSource.resetFlag[unsavedEventId] = scriptnode::modulation::ClearState::Playing;
 
 	activeVoices.setBit(voiceIndex, true);
 
@@ -2112,7 +2180,117 @@ bool ModulatorChain::ExtraModulatorRuntimeTargetSource::addConnection(bool shoul
 	return true;
 }
 
+void ModulatorChain::ExtraModulatorRuntimeTargetSource::updateModulationChainIdAndColour(Processor* parentProcessor, const scriptnode::modulation::ParameterProperties& data, const std::function<String(int)>& parameterIdFunction)
+{
+#if USE_BACKEND
+	auto numExtra = getNumExtraMods();
+	auto numUsed = data.getNumUsed(numExtra);
 
+	for (int i = 0; i < numExtra; i++)
+	{
+		auto pIndex = data.getParameterIndex(i);
+		auto modChain = getModulatorChain(i);
+
+		String newId;
+		Colour newColour;
+
+		if (pIndex != -1 && i < numUsed)
+		{
+			newId = parameterIdFunction(pIndex);
+
+			if(!newId.isEmpty())
+				newId += " Mod";
+			else
+				newId = "Extra " + String(i+1);
+
+			newColour = data.getModulationColour(pIndex);
+		}
+		else
+		{
+			newId = "Extra " + String(i + 1);
+			newColour = HiseModulationColours().getColour(HiseModulationColours::ColourId::ExtraMod);
+		}
+
+		auto prevId = modChain->getId();
+
+		if (prevId != newId)
+			modChain->setDisplayName(newId);
+
+		if(modChain->getColour() != newColour)
+			modChain->setColour(newColour);
+	}
+#endif
+}
+
+void ModulatorChain::ExtraModulatorRuntimeTargetSource::updateModulationProperties(const ParameterProperties& pp, const ParameterInitData::QueryFunction& pf)
+{
+	int idx = 0;
+
+	for (auto& mb : extraMods)
+	{
+		auto isUsed = pp.isUsed(idx);
+
+		auto parent = mb->getChain()->getParentProcessor();
+		auto parameterIndex = pp.getParameterIndex(idx);
+		auto mode = Modulation::getModeFromModProperties(pp, parameterIndex);
+
+		if (auto ms = dynamic_cast<ModulatorSynth*>(parent))
+		{
+			mb->getChain()->checkRelease = (mode == Modulation::Mode::GainMode);
+		}
+
+		mb->getChain()->setBypassed(!isUsed);
+		mb->setForceProcessing(isUsed);
+
+		if (isUsed)
+		{
+			if (parameterIndex != -1)
+			{
+				if(mode == Modulation::Mode::PitchMode)
+				{
+					mb->getChain()->setZeroPosition(0.5f);
+					mb->getChain()->setMode(mode, sendNotificationAsync);
+					mb->getChain()->setInitialValue(mb->getChain()->getInitialValue());
+					mb->getChain()->setTableValueConverter(Modulation::getValueAsSemitone);
+					mb->setClampTo0To1(false);
+
+					
+
+				}
+				else
+				{
+					mb->setClampTo0To1(true);
+
+					auto zp = mode == Modulation::Mode::PanMode ? 0.5f : 0.0f;
+					mb->getChain()->setZeroPosition(zp);
+
+					// For some reason we'll force the CombinedMode....
+					auto modeToUse = mb->getChain()->checkRelease ? Modulation::Mode::GainMode :
+						Modulation::Mode::CombinedMode;
+
+					mb->getChain()->setMode(modeToUse, sendNotificationAsync);
+
+					auto pd = pf(parameterIndex);
+
+					auto initialValue = pd.ir.convertTo0to1(pd.initValue, false);
+					mb->getChain()->setInitialValue(initialValue);
+
+					mb->getChain()->setTableValueConverter([pd](float v)
+					{
+						v = pd.ir.convertFrom0to1(v, false);
+
+						if (pd.vtc.active)
+							return pd.vtc.getTextForValue(v);
+						else
+							return String(v);
+					});
+				}
+			}
+		}
+
+		idx++;
+	}
+}
 
 
 bool ModulatorChain::onIntensityDrag(bool isMouseDown, float delta)

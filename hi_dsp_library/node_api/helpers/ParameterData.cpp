@@ -88,7 +88,7 @@ bool RangeHelpers::isBypassIdentity(InvertableParameterRange d)
 
 bool RangeHelpers::isIdentity(InvertableParameterRange d)
 {
-	if (d.rng.start == 0.0 && d.rng.end == 1.0 && d.rng.skew == 1.0 && !d.inv)
+	if (d.rng.start == 0.0 && d.rng.end == 1.0 && d.rng.skew == 1.0 && d.rng.interval == 0.0 && !d.inv)
 		return true;
 
 	return false;
@@ -390,6 +390,66 @@ RangeHelpers::IdSet RangeHelpers::getIdSetForJSON(const var& obj)
 	return IdSet::scriptnode;
 }
 
+RangeHelpers::RangePresets::RangePresets()
+{
+	auto createDefaultRange = [&](const String & id, InvertableParameterRange d, double midPoint = -10000000.0, parameter::pod::TextValueConverters tc=parameter::pod::TextValueConverters::Undefined)
+	{
+		Preset p;
+		p.id = id;
+		p.nr = d;
+		p.textConverter = parameter::pod::getTextValueConverterNames()[(int)tc];
+		p.index = presets.size() + 1;
+
+		if (d.getRange().contains(midPoint))
+			p.nr.setSkewForCentre(midPoint);
+
+		presets.add(p);
+	};
+
+	createDefaultRange("0-1", { 0.0, 1.0 }, 0.5, parameter::pod::TextValueConverters::NormalizedPercentage);
+	createDefaultRange("Inverted 0-1", InvertableParameterRange().inverted(), -1.0, parameter::pod::TextValueConverters::NormalizedPercentage);
+	createDefaultRange("Decibel Gain", { -100.0, 0.0, 0.1 }, -12.0, parameter::pod::TextValueConverters::Decibel);
+	createDefaultRange("1-16 steps", { 1.0, 16.0, 1.0 });
+	createDefaultRange("Osc LFO", { 0.0, 10.0, 0.0, 1.0 }, parameter::pod::TextValueConverters::Frequency);
+	createDefaultRange("Osc Freq", { 20.0, 20000.0, 0.0 }, 1000.0, parameter::pod::TextValueConverters::Frequency);
+	createDefaultRange("Linear 0-20k Hz", { 0.0, 20000.0, 0.0 }, -1.0, parameter::pod::TextValueConverters::Frequency);
+	createDefaultRange("Freq Ratio Harmonics", { 1.0, 16.0, 1.0 });
+	createDefaultRange("Freq Ratio Detune Coarse", { 0.5, 2.0, 0.0 }, 1.0, parameter::pod::TextValueConverters::NormalizedPercentage);
+	createDefaultRange("Freq Ratio Detune Fine", { 1.0 / 1.1, 1.1, 0.0 }, 1.0);
+
+#if 0
+	ValueTree v("Ranges");
+
+	for (const auto& p : presets)
+		v.addChild(p.exportAsValueTree(), -1, nullptr);
+
+	auto xml = v.createXml();
+	fileToLoad.replaceWithText(xml->createDocument(""));
+#endif
+}
+
+
+
+RangeHelpers::RangePresets::~RangePresets()
+{
+
+}
+
+void RangeHelpers::RangePresets::Preset::restoreFromValueTree(const ValueTree& v)
+{
+	nr = RangeHelpers::getDoubleRange(v);
+	id = v[PropertyIds::ID].toString();
+	textConverter = v[PropertyIds::TextToValueConverter].toString();
+}
+
+juce::ValueTree RangeHelpers::RangePresets::Preset::exportAsValueTree() const
+{
+	ValueTree v("Range");
+	v.setProperty(PropertyIds::ID, id, nullptr);
+	RangeHelpers::storeDoubleRange(v, nr, nullptr);
+	return v;
+}
+
 namespace parameter
 {
 
@@ -430,18 +490,28 @@ namespace parameter
 		return p;
 	}
 
-	data data::withRange(InvertableParameterRange r)
+	scriptnode::parameter::data data::withRange(InvertableParameterRange r) const
 	{
 		data copy(*this);
 		copy.info.setRange(r);
 		return copy;
 	}
 
+	scriptnode::parameter::data data::withClonedParameters() const
+	{
+		data copy(*this);
+
+		if(parameterNames != nullptr)
+			copy.parameterNames = parameterNames->createCopy();
+
+		return copy;
+	}
+
 	hise::ValueToTextConverter data::getValueToTextConverter() const
 	{
-		if (!parameterNames.isEmpty())
+		if (parameterNames != nullptr)
 		{
-			return ValueToTextConverter::createForOptions(parameterNames);
+			return ValueToTextConverter::createForOptions(getParameterNames().toStringArray());
 		}
 
 		switch (info.textConverter)
@@ -461,8 +531,17 @@ namespace parameter
 
 	void data::setParameterValueNames(const StringArray& valueNames)
 	{
-		parameterNames = valueNames;
+		MemoryOutputStream mos;
 
+		for(const auto& sa: valueNames)
+			mos.writeString(sa);
+
+		mos.flush();
+
+		parameterNames = new RefCountedHeapBuffer((int)mos.getDataSize());
+
+		memcpy(parameterNames->getData(), mos.getData(), mos.getDataSize());
+		
 		if (valueNames.size() > 1)
 			setRange({ 0.0, (double)valueNames.size() - 1.0, 1.0 });
 	}
@@ -556,6 +635,7 @@ namespace parameter
 			"Pan",
 			"NormalizedPercentage",
 			"Decibel",
+			"Semitones",
 			"Undefined"
 		};
 	}

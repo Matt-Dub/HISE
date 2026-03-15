@@ -32,6 +32,7 @@ namespace TextEditorSettings
     DECLARE_ID(AutoAutocomplete);
     DECLARE_ID(ShowStickyLines);
     DECLARE_ID(FixWeirdTab);
+    DECLARE_ID(EnableCmdScrollFontResize);
 }
 
 namespace TextEditorShortcuts
@@ -51,6 +52,7 @@ namespace TextEditorShortcuts
 	DECLARE_ID(beautify);
     DECLARE_ID(goto_undo);
     DECLARE_ID(goto_redo);
+	DECLARE_ID(shadow_parse);
 }
 
 #undef DECLARE_ID

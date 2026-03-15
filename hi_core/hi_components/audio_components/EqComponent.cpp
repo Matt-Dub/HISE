@@ -623,6 +623,7 @@ void FilterDragOverlay::addFilterDragger(int index)
 		FilterDragComponent *dc = new FilterDragComponent(*this, index);
 		addAndMakeVisible(dc);
 		dc->setConstrainer(constrainer);
+		DocumentWindowWithEmbeddedPopupMenu::setSubComponentTargetId(dc, String(index));
 		dragComponents.add(dc);
 		selectDragger(dragComponents.size() - 1, dontSendNotification);
 	}
@@ -658,7 +659,7 @@ void FilterDragOverlay::updateFilters()
 
 	if (numFilters == 0)
 	{
-		filterGraph.repaint();
+		filterGraph.refreshAsync();
 	}
 }
 
@@ -1096,9 +1097,6 @@ void FilterDragOverlay::FilterDragComponent::mouseDrag(const MouseEvent& e)
 	jassert(xp == CurveEq::BandParameter::Freq);
 
 	xp = CurveEq::BandParameter::Freq;
-
-	float xvalue;
-	float yvalue;
 
 	if(yp == CurveEq::BandParameter::Q)
 	{

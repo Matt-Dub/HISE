@@ -43,6 +43,16 @@ public:
 
 	using SpecialParameters = flex_ahdsr_base::SpecialParameters;
 
+	enum InternalChains
+	{
+		AttackTimeChain = 0,
+		AttackLevelChain,
+		DecayTimeChain,
+		SustainLevelChain,
+		ReleaseTimeChain,
+		numInternalChains
+	};
+
 	enum EditorStates
 	{
 		AttackTimeChainShown = Processor::numEditorStates,
@@ -59,17 +69,18 @@ public:
 	void restoreFromValueTree(const ValueTree &v) override;;
 	ValueTree exportAsValueTree() const override;
 
-	Processor *getChildProcessor(int processorIndex) override { return nullptr; }
-	const Processor *getChildProcessor(int processorIndex) const override { return nullptr; }
-	int getNumChildProcessors() const override { return 0; };
-	int getNumInternalChains() const override {return 0;};
+	Processor *getChildProcessor(int processorIndex) override;
+	const Processor *getChildProcessor(int processorIndex) const override;
+	int getNumChildProcessors() const override { return numInternalChains; };
+	int getNumInternalChains() const override {return numInternalChains;};
 
 	float startVoice(int voiceIndex) override;	
 	void stopVoice(int voiceIndex) override;
 	void reset(int voiceIndex) override;;
 
+	void handleHiseEvent(const HiseEvent& m) override;
+
 	void calculateBlock(int startSample, int numSamples);;
-	
 
 	ProcessorEditorBody *createEditor(ProcessorEditor* parentEditor) override;
 
@@ -104,7 +115,7 @@ public:
 				auto numObjects = b->getNumDataObjects(ExternalData::DataType::DisplayBuffer);
 
 				for(int i = 0; i < numObjects; i++)
-					indexList.add(String("DisplayBuffer #" + (i+1)));
+					indexList.add(String("DisplayBuffer #" + String(i+1)));
 			}
 		};
 
@@ -138,6 +149,9 @@ public:
 
 			RETURN_DEFAULT_PROPERTY_ID(index, FlexPanelIds::CurvePointTolerance, "CurvePointTolerance");
 			RETURN_DEFAULT_PROPERTY_ID(index, FlexPanelIds::UseOneDimensionDrag, "UseOneDimensionDrag");
+            
+            jassertfalse;
+            return Identifier();
 		}
 
 		var getDefaultProperty(int index) const override
@@ -147,6 +161,9 @@ public:
 
 			RETURN_DEFAULT_PROPERTY(index, FlexPanelIds::CurvePointTolerance, 20);
 			RETURN_DEFAULT_PROPERTY(index, FlexPanelIds::UseOneDimensionDrag, true);
+            
+            jassertfalse;
+            return var();
 		}
 
 		Identifier getProcessorTypeId() const override { return FlexAhdsrEnvelope::getClassType(); }
@@ -176,6 +193,8 @@ private:
 
 	mutable PolyHandler polyHandler;
 	scriptnode::envelope::flex_ahdsr<NUM_POLYPHONIC_VOICES, parameter::list<parameter::empty, parameter::empty>, AttributeDragHandler> obj;
+
+	ModulatorChain::Collection internalChains;
 
 	JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FlexAhdsrEnvelope);
 	JUCE_DECLARE_WEAK_REFERENCEABLE(FlexAhdsrEnvelope);

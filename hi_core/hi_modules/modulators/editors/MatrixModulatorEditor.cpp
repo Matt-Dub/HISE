@@ -137,7 +137,7 @@ MatrixModulatorBody::MatrixModulatorBody(ProcessorEditor* parent):
 	valueSlider("Value"),
 	smoothingSlider("SmoothingTime"),
 	content(getMainController(),  dynamic_cast<MatrixModulator*>(getProcessor())->getMatrixTargetId(), false),
-	controller(getMainController(), *this),
+	controller(getMainController(), *this, false),
 	inputRangeEditor(createValueTreeFromRange(getProcessor(), true), getMainController()->getControlUndoManager()),
 	outputRangeEditor(createValueTreeFromRange(getProcessor(), false), getMainController()->getControlUndoManager()),
     editRangeButton("Edit value range"),
@@ -196,6 +196,8 @@ MatrixModulatorBody::MatrixModulatorBody(ProcessorEditor* parent):
 			true,
 			true,
 			true,
+			true,
+			true,
 			true
 		};
 
@@ -209,12 +211,16 @@ MatrixModulatorBody::MatrixModulatorBody(ProcessorEditor* parent):
 			allowed[(int)Presets::Pitch1Octave] = true;
 			allowed[(int)Presets::Pitch2Octaves] = true;
 			allowed[(int)Presets::Pitch1Semitone] = true;
+			allowed[(int)Presets::PitchOctaveStep] = true;
+			allowed[(int)Presets::PitchSemitoneStep] = true;
 		}
 		else
 		{
 			allowed[(int)Presets::Pitch1Octave] = false;
 			allowed[(int)Presets::Pitch2Octaves] = false;
 			allowed[(int)Presets::Pitch1Semitone] = false;
+			allowed[(int)Presets::PitchOctaveStep] = false;
+			allowed[(int)Presets::PitchSemitoneStep] = false;
 		}
 		
 		for(int i = 0; i < (int)Presets::numPresets; i++)
@@ -225,11 +231,7 @@ MatrixModulatorBody::MatrixModulatorBody(ProcessorEditor* parent):
 		if(auto r = m.show())
 		{
 			auto pr = (Presets)(r - 1);
-
 			auto rd = MatrixIds::Helpers::getRangePreset(pr);
-
-			auto um = getMainController()->getControlUndoManager();
-			auto set = RangeHelpers::IdSet::ScriptComponents;
 
 			if(auto gc = ProcessorHelpers::getFirstProcessorWithType<GlobalModulatorContainer>(getMainController()->getMainSynthChain()))
 			{
@@ -237,6 +239,10 @@ MatrixModulatorBody::MatrixModulatorBody(ProcessorEditor* parent):
 
 				gc->matrixProperties.rangeData[targetId] = rd;
 				gc->matrixProperties.sendChangeMessage(targetId);
+			} 
+			else
+			{
+				PresetHandler::showMessageWindow("No Global Modulator Container present", "You need to add at least a single global modulator container to use this method.  \n> The range values are not stored in this modulator but globally to allow multiple modulators share the same target.");
 			}
 			
 		}
@@ -345,6 +351,7 @@ void MatrixModulatorBody::updateValueSlider()
 	valueSlider.valueFromTextFunction = vtc;
 	valueSlider.textFromValueFunction = vtc;
 	valueSlider.updateText();
+	valueSlider.updateValue();
 
 	for(auto r: content.rows)
 	{

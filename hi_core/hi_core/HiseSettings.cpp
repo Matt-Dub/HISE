@@ -164,6 +164,7 @@ Array<juce::Identifier> HiseSettings::Scripting::getAllIds()
 
 	ids.add(EnableCallstack);
 	ids.add(EnableOptimizations);
+	ids.add(CallScopeWarnings);
 	ids.add(GlobalScriptPath);
 	ids.add(CompileTimeout);
 	ids.add(CodeFontSize);
@@ -172,6 +173,8 @@ Array<juce::Identifier> HiseSettings::Scripting::getAllIds()
 	ids.add(RecompileOnFileChange);
 	ids.add(EnableMousePositioning);
     ids.add(WarnIfUndefinedParameters);
+	ids.add(RestApiPort);
+	ids.add(AutoStartRestServer);
 
 	return ids;
 }
@@ -314,7 +317,11 @@ Array<juce::Identifier> HiseSettings::SnexWorkbench::getAllIds()
 		P_();
 
 		P(HiseSettings::Project::WindowsStaticLibFolder);
-		D("If you need to link a static library on Windows, supply the absolute path to the folder here. Unfortunately, relative paths do not work well with the VS Linker");
+		D("If you need to link a static library on Windows, supply the absolute path to the folder here. This will be used for both the plugin compilation and DLL network compilation.  \n");
+		D("> Usually you need to supply an absolute path here because the VS linker doesn't work well with relative paths, but you can use the `%ADDITIONAL_SOURCE_CODE%` wildcard to point to the additional source code directory of your project which is the preferred location for static libraries.  \n");
+		D("Once you've supplied a folder here, it assumes that there are two subfolders called `/Debug_x64` and `/Release_x64` which contain all static libraries that should be linked during compilation. Note that the compile flags for the library (static runtime, debug configuration etc.) must match the compiler settings for the entire project otherwise you'll get subtle linker issues.  \n");
+		D("> Example: If the relative path to the static libraries from your additional source code folder is `my_lib/Debug_x64/my_lib1.lib` and `my_lib/Release_x64/mylib1.lib`, then you need to use `%ADDITIONAL_SOURCE_CODE%/my_lib` as value here.  \n");
+		D("You also make sure that both folders (Debug and Release) contain the same amount of .lib files that are linked (so that the debug / release workflow is consistent).");
 		P_();
 
 		P(HiseSettings::Project::OSXStaticLibs);
@@ -391,7 +398,8 @@ Array<juce::Identifier> HiseSettings::SnexWorkbench::getAllIds()
 		D("- Script-encrypted expansions");
 		D("- Full expansions that contain the entire instrument");
 		D("- Custom expansions that uses a custom C++ class");
-		D("> If you use a custom expansion, you will need to implement `ExpansionHandler::createCustomExpansion()` in your project's C++ code");
+		D("If you use a custom expansion, you will need to implement `ExpansionHandler::createCustomExpansion()` in your project's C++ code");
+		D("> Note that you need to restart HISE for this setting to take effect.");
 		P_();
 
 		P(HiseSettings::Project::EncryptionKey);
@@ -554,12 +562,6 @@ Array<juce::Identifier> HiseSettings::SnexWorkbench::getAllIds()
 		D("There should be at least the following directories inside: \"share\", \"lib\", \"include\"");
 		P_();
 
-		P(HiseSettings::Compiler::ExportSetup);
-		D("If this is ticked the system is ready for export.  ");
-		D("Starting with HISE 4.0.1 this will be deactivated by default until the export setup wizard has been executed once.");
-		D("> Nobody prevents you from ticking the box here in order to bypass the export wizard...");
-		P_();
-
         P(HiseSettings::Compiler::FaustExternalEditor);
         D("If enabled, the edit button in the faust node will launch an external editor for ");
         D("editing the faust source files. If disabled, it will use a FaustCodeEditor floating tile");
@@ -592,6 +594,16 @@ Array<juce::Identifier> HiseSettings::SnexWorkbench::getAllIds()
 		P(HiseSettings::Scripting::EnableOptimizations);
 		D("Enables some compiler optimizations like constant folding or dead code removal for the HiseScript compiler");
 		D("> This setting is baked into a plugin when you compile it");
+		P_();
+
+		P(HiseSettings::Scripting::CallScopeWarnings);
+		D("Controls compile-time analysis of audio-thread safety for inline functions and MIDI callbacks.");
+		D("- **Unset**: No analysis (default). No overhead.");
+		D("- **Unsafe**: Same as Unset. Explicit opt-out when overriding a per-script directive.");
+		D("- **Warn**: Analyzes API calls inside inline functions and MIDI callbacks. Logs warnings to the console when potentially unsafe calls are detected.");
+		D("- **Strict**: Same analysis as Warn, but also prevents compilation when unsafe calls are found in audio-thread contexts.");
+		D("> This only affects the HISE IDE. Exported plugins have zero overhead regardless of this setting.");
+		D("> Per-script override: use `#strict`, `#warn`, or `#unsafe` at the top of a script to override this setting for that processor.");
 		P_();
 
 		P(HiseSettings::Scripting::EnableMousePositioning);
@@ -661,6 +673,17 @@ Array<juce::Identifier> HiseSettings::SnexWorkbench::getAllIds()
 		P(HiseSettings::Scripting::EnableDebugMode);
 		D("This enables the debug logger which creates a log file containing performance issues and system specifications.");
 		D("It's the same functionality as found in the compiled plugins.");
+		P_();
+
+		P(HiseSettings::Scripting::RestApiPort);
+		D("The port number for the REST API server used for AI agent integration.");
+		D("The server can be started/stopped via Tools > Toggle REST API Server.");
+		D("> Default port is 1900. Change this if you have a port conflict.");
+		P_();
+
+		P(HiseSettings::Scripting::AutoStartRestServer);
+		D("If enabled, the REST API server will automatically start when HISE is launched.");
+		D("> This is useful for AI agent integration workflows where you want the server always available.");
 		P_();
 
 		P(HiseSettings::Other::UseOpenGL);
@@ -952,7 +975,6 @@ juce::StringArray HiseSettings::Data::getOptionsFor(const Identifier& id)
 		id == Compiler::RebuildPoolFiles ||
 		id == Compiler::Support32BitMacOS ||
         id == Compiler::FaustExternalEditor ||
-		id == Compiler::ExportSetup ||
 		id == Project::SupportMonoFX ||
 		id == Project::EnableMidiInputFX ||
         id == Project::EnableMidiOut ||
@@ -977,12 +999,16 @@ juce::StringArray HiseSettings::Data::getOptionsFor(const Identifier& id)
 		id == Scripting::RecompileOnFileChange ||
 		id == Scripting::SaveConnectedFilesOnCompile ||
         id == Scripting::WarnIfUndefinedParameters ||
+		id == Scripting::AutoStartRestServer ||
 		id == Scripting::EnableMousePositioning)
 
 	    return { "Yes", "No" };
 
+	if (id == Scripting::CallScopeWarnings)
+		return { "Unset", "Unsafe", "Warn", "Strict" };
+
 	if (id == Compiler::VisualStudioVersion)
-		return { "Visual Studio 2017", "Visual Studio 2022" };
+		return { "Visual Studio 2022", "Visual Studio 2026" };
 
 	if(id == Other::GlobalHiseScaleFactor)
 	{
@@ -1197,7 +1223,6 @@ var HiseSettings::Data::getDefaultSetting(const Identifier& id) const
 	else if (id == Project::VST3Support)			return "Yes";
 	else if (id == Project::UseRawFrontend)			return "No";
 	else if (id == Project::CompileWithPerfetto)	return "No";
-	else if (id == Compiler::ExportSetup)			return "No";
 	else if (id == Project::CompileWithDebugSymbols) return "No";
 	else if (id == Project::ProjectType) return "Instrument";
 	else if (id == Project::ExpansionType)			return "Disabled";
@@ -1219,13 +1244,16 @@ var HiseSettings::Data::getDefaultSetting(const Identifier& id) const
 	else if (id == Scripting::CodeFontSize)			return 17.0;
 	else if (id == Scripting::EnableCallstack)		return "No";
 	else if (id == Scripting::EnableOptimizations)	return "No";
+	else if (id == Scripting::CallScopeWarnings)	return "Unset";
 	else if (id == Scripting::EnableMousePositioning) return "Yes";
 	else if (id == Scripting::CompileTimeout)		return 5.0;
 	else if (id == Scripting::SaveConnectedFilesOnCompile) return "No";
+	else if (id == Scripting::RestApiPort)			return 1900;
+	else if (id == Scripting::AutoStartRestServer)	return "No";
 #if HISE_USE_VS2022
 	else if (id == Compiler::VisualStudioVersion)	return "Visual Studio 2022";
 #else
-	else if (id == Compiler::VisualStudioVersion)	return "Visual Studio 2017";
+	else if (id == Compiler::VisualStudioVersion)	return "Visual Studio 2026";
 #endif
 
 #if JUCE_MAC
@@ -1352,6 +1380,13 @@ juce::Result HiseSettings::Data::checkInput(const Identifier& id, const var& new
 	if (id == Scripting::GlobalScriptPath && !File(newValue.toString()).isDirectory())
 		return Result::fail("The global script folder is not a valid directory");
 
+	if (id == Scripting::RestApiPort)
+	{
+		int port = (int)newValue;
+		if (port < 1024 || port > 65535)
+			return Result::fail("REST API port must be between 1024 and 65535");
+	}
+
 	return Result::ok();
 }
 
@@ -1377,7 +1412,9 @@ void HiseSettings::Data::settingWasChanged(const Identifier& id, const var& newV
 	else if (id == Other::UseOpenGL)
 		PresetHandler::showMessageWindow("Reopen HISE window", "Restart HISE (or reopen this window) in order to apply the new Graphics setting", PresetHandler::IconType::Info);
 	else if (id == Other::EnableAutosave || id == Other::AutosaveInterval)
-		mc->getAutoSaver().updateAutosaving();
+	{
+		BACKEND_ONLY(dynamic_cast<BackendProcessor*>(mc)->getAutoSaver().updateAutosaving());
+	}
 	else if (id == Other::AudioThreadGuardEnabled)
 		mc->getKillStateHandler().enableAudioThreadGuard(newValue);
 	else if (id == Other::GlobalHiseScaleFactor)
@@ -1389,6 +1426,8 @@ void HiseSettings::Data::settingWasChanged(const Identifier& id, const var& newV
 	}
 		
 	else if (id == Scripting::EnableOptimizations)
+		mc->compileAllScripts();
+	else if (id == Scripting::CallScopeWarnings)
 		mc->compileAllScripts();
 	else if (id == Scripting::EnableDebugMode)
 		newValue ? mc->getDebugLogger().startLogging() : mc->getDebugLogger().stopLogging();

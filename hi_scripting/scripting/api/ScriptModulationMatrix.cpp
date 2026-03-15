@@ -41,10 +41,10 @@ ScriptingApi::Content::ScriptSlider::MatrixCableConnection::QueryFunction::Query
 {}
 
 ModulationDisplayValue ScriptingApi::Content::ScriptSlider::MatrixCableConnection::QueryFunction::getDisplayValue(
-	Processor* p, double nv, NormalisableRange<double> nr) const
+	Processor* p, double nv, NormalisableRange<double> nr, int displayIndex) const
 {
 	if(connection != nullptr)
-		return connection->getDisplayValue(nv, nr);
+		return connection->getDisplayValue(nv, nr, displayIndex);
 
 	return {};
 }
@@ -321,7 +321,7 @@ SimpleRingBuffer::Ptr ScriptingApi::Content::ScriptSlider::MatrixCableConnection
 }
 
 ModulationDisplayValue ScriptingApi::Content::ScriptSlider::MatrixCableConnection::getDisplayValue(double nv,
-	NormalisableRange<double> nr)
+	NormalisableRange<double> nr, int displayIndex)
 {
 	ModulationDisplayValue mv;
 
@@ -339,28 +339,46 @@ ModulationDisplayValue ScriptingApi::Content::ScriptSlider::MatrixCableConnectio
 		
 	for(auto s: scaleTargets)
 	{
-		auto i = s->intensity;
-		auto a = 1.0f - i;
-		normValue *= a + i * s->lastModValue;
-		min = jmin(min, a * sv);
+		if(displayIndex == -1 || s->sourceIndex == displayIndex)
+		{
+			auto i = s->intensity;
+
+			min = jmin(min, (1.0f - i) * sv);
+
+			if (s->auxTarget != nullptr)
+				i *= s->auxTarget->getAuxValue();
+
+			auto a = 1.0f - i;
+			normValue *= a + i * s->lastModValue;
+		}
 	}
 		
 	mv.scaledValue = normValue;
 
 	for(auto a: addTargets)
 	{
-		auto modValue = a->lastModValue;
-		max += a->intensity;
-
-		if(a->tm == modulation::TargetMode::Bipolar)
+		if(displayIndex == -1 || a->sourceIndex == displayIndex)
 		{
-			modValue *= 2.0;
-			modValue -= 1.0;
-			min -= a->intensity;
-		}
+			auto modValue = a->lastModValue;
+			max += a->intensity;
 
-		modValue *= a->intensity;
-		mv.addValue += modValue;
+			if (a->tm == modulation::TargetMode::Bipolar)
+			{
+				modValue *= 2.0;
+				modValue -= 1.0;
+				min -= a->intensity;
+			}
+
+			auto thisIntensity = a->intensity;
+
+			if(a->auxTarget != nullptr)
+			{
+				thisIntensity *= a->auxTarget->getAuxValue();
+			}
+
+			modValue *= thisIntensity;
+			mv.addValue += modValue;
+		}
 	}
 
 	if(min > max)
@@ -549,8 +567,10 @@ ScriptModulationMatrix::ScriptModulationMatrix(ProcessorWithScriptingContent* p,
 	ADD_API_METHOD_3(connect);
 	ADD_API_METHOD_1(fromBase64);
 	ADD_API_METHOD_0(toBase64);
-	ADD_API_METHOD_1(setConnectionCallback);
-	ADD_API_METHOD_2(setEditCallback);
+	ADD_TYPED_API_METHOD_1(setConnectionCallback, VarTypeChecker::Function);
+	ADD_CALLBACK_DIAGNOSTIC(connectionCallback, setConnectionCallback, 0);
+	ADD_TYPED_API_METHOD_2(setEditCallback, VarTypeChecker::ComplexType, VarTypeChecker::Function);
+	ADD_CALLBACK_DIAGNOSTIC(editCallback, setEditCallback, 1);
 	ADD_API_METHOD_0(getSourceList);
 	ADD_API_METHOD_0(getTargetList);
 	ADD_API_METHOD_1(getTargetId);
@@ -559,8 +579,10 @@ ScriptModulationMatrix::ScriptModulationMatrix(ProcessorWithScriptingContent* p,
 	ADD_API_METHOD_1(clearAllConnections);
 
 	ADD_API_METHOD_1(setCurrentlySelectedSource);
-	ADD_API_METHOD_1(setSourceSelectionCallback);
-	ADD_API_METHOD_1(setDragCallback);
+	ADD_TYPED_API_METHOD_1(setSourceSelectionCallback, VarTypeChecker::Function);
+	ADD_CALLBACK_DIAGNOSTIC(sourceSelectionCallback, setSourceSelectionCallback, 0);
+	ADD_TYPED_API_METHOD_1(setDragCallback, VarTypeChecker::Function);
+	ADD_CALLBACK_DIAGNOSTIC(dragCallback, setDragCallback, 0);
 
 	ADD_API_METHOD_1(setMatrixModulationProperties);
 	ADD_API_METHOD_0(getMatrixModulationProperties);
@@ -868,12 +890,12 @@ void ScriptModulationMatrix::setCurrentlySelectedSource(String sourceId)
 {
 	auto idx = sourceList.indexOf(sourceId);
 
-	if(idx != -1 && container != nullptr)
+	if(container != nullptr)
 	{
 		if(!container->matrixProperties.selectableSources)
 			reportScriptError("Selectable sources are disabled");
 
-		container->currentMatrixSourceBroadcaster.sendMessage(sendNotificationSync, idx);
+		container->setExlusiveMatrixSource(idx, sendNotificationAsync);
 	}
 }
 
@@ -883,12 +905,11 @@ void ScriptModulationMatrix::setSourceSelectionCallback(var newCallback)
 
 	if(HiseJavascriptEngine::isJavascriptFunction(newCallback))
 	{
-		if(!container->matrixProperties.selectableSources)
-			reportScriptError("Selectable sources are disabled");
-
 		sourceSelectionCallback = WeakCallbackHolder(getScriptProcessor(), this, newCallback, 1);
 		sourceSelectionCallback.incRefCount();
 		sourceSelectionCallback.setThisObject(this);
+
+		container->matrixProperties.selectableSources = true;
 
 		container->currentMatrixSourceBroadcaster.addListener(*this, [](ScriptModulationMatrix& m, int idx)
 		{
@@ -899,7 +920,10 @@ void ScriptModulationMatrix::setSourceSelectionCallback(var newCallback)
 			}
 		});
 	}
-	
+	else
+	{
+		container->matrixProperties.selectableSources = false;
+	}
 }
 
 void ScriptModulationMatrix::setDragCallback(var newDragCallback)
@@ -1013,7 +1037,7 @@ var ScriptModulationMatrix::getModulationDataFromQueryFunction (const QueryObjec
 			if(nr.getRange().contains (midPos))
 			    nr.setSkewForCentre (midPos);
 			
-			auto mv = p.qf->getDisplayValue(p.p.get(), nv, nr);
+			auto mv = p.qf->getDisplayValue(p.p.get(), nv, nr, -1);
 
 			DynamicObject::Ptr obj = new DynamicObject();
 			mv.storeToJSON(obj.get());

@@ -65,8 +65,8 @@ static const unsigned char projectTemplate_jucer_lines[] = R"(
   </MAINGROUP>
   <EXPORTFORMATS>
     <%VS_VERSION% targetFolder="Builds/%TARGET_FOLDER%" vstLegacyFolder="%VSTSDK_FOLDER%" vst3Folder="%VSTSDK3_FOLDER%" aaxFolder="%AAX_PATH%" 
-            IPP1ALibrary="%IPP_1A%" extraDefs="%PLUGIN_CHANNEL_AMOUNT%&#10;%EXTRA_DEFINES_WIN%&#10;%PERFETTO_INCLUDE_WIN%" extraCompilerFlags="/bigobj /cgthreads8 %MSVC_WARNINGS% %PERFETTO_COMPILER_FLAGS_WIN%&#10;/arch:AVX&#10;"
-            extraLinkerFlags="%FFT_LINKER_FLAGS%">
+            IPP1ALibrary="%IPP_1A%" extraDefs="%PLUGIN_CHANNEL_AMOUNT%&#10;%EXTRA_DEFINES_WIN%&#10;%PERFETTO_INCLUDE_WIN%" extraCompilerFlags="/bigobj /cgthreads8 %MSVC_WARNINGS% %PERFETTO_COMPILER_FLAGS_WIN%&#10;"
+            extraLinkerFlags="%FFT_LINKER_FLAGS%%WIN_STATIC_LIBS%">
       <CONFIGURATIONS>
         <CONFIGURATION name="Debug" winWarningLevel="1" generateManifest="1" winArchitecture="x64"
                        isDebug="1" optimisation="1" targetName="%NAME% Debug" headerPath ="%FFT_HEADER_PATH%&#10;%FAUST_HEADER_PATH%"
@@ -88,6 +88,7 @@ static const unsigned char projectTemplate_jucer_lines[] = R"(
         <MODULEPATH id="juce_audio_devices" path="%JUCE_PATH%"/>
         <MODULEPATH id="juce_audio_formats" path="%JUCE_PATH%"/>
         <MODULEPATH id="juce_audio_processors" path="%JUCE_PATH%"/>
+        <MODULEPATH id="juce_audio_processors_headless" path="%JUCE_PATH%"/>
         <MODULEPATH id="juce_audio_plugin_client" path="%JUCE_PATH%"/>
         <MODULEPATH id="juce_product_unlocking" path="%JUCE_PATH%"/>
         <MODULEPATH id="juce_audio_utils" path="%JUCE_PATH%"/>
@@ -110,15 +111,15 @@ static const unsigned char projectTemplate_jucer_lines[] = R"(
       </MODULEPATHS>
     </%VS_VERSION%>
     <XCODE_MAC targetFolder="Builds/MacOSX"  vstLegacyFolder="%VSTSDK_FOLDER%" vst3Folder="%VSTSDK3_FOLDER%"  aaxFolder="%AAX_PATH%" extraCompilerFlags="-Wno-reorder -Wno-inconsistent-missing-override  -fno-aligned-allocation -ffp-contract=off"
-               extraLinkerFlags="%OSX_STATIC_LIBS%" extraDefs="%PLUGIN_CHANNEL_AMOUNT%&#10;%EXTRA_DEFINES_OSX%&#10;%PERFETTO_INCLUDE_MACOS%" hardenedRuntime="0" hardenedRuntimeOptions="com.apple.security.cs.allow-jit,com.apple.security.cs.allow-unsigned-executable-memory,com.apple.security.device.audio-input" xcodeValidArchs="%ARM_ARCH%"  externalLibraries="%BEATPORT_LIB_MACOS%">
+               extraLinkerFlags="%OSX_STATIC_LIBS%" extraDefs="%PLUGIN_CHANNEL_AMOUNT%&#10;%EXTRA_DEFINES_OSX%&#10;%PERFETTO_INCLUDE_MACOS%" hardenedRuntime="0" hardenedRuntimeOptions="com.apple.security.cs.allow-jit,com.apple.security.cs.allow-unsigned-executable-memory,com.apple.security.device.audio-input" xcodeValidArchs="%ARM_ARCH%"  externalLibraries="%BEATPORT_LIB_MACOS%;%OSX_EXTERNAL_LIBRARIES%">
                 
       <CONFIGURATIONS>
         <CONFIGURATION name="Debug" osxSDK="default" osxCompatibility="10.9 SDK" osxArchitecture="%MACOS_ARCHITECTURE%"
                        isDebug="1" optimisation="1" enablePluginBinaryCopyStep="%COPY_PLUGIN%" targetName="%NAME% Debug" headerPath="%FAUST_HEADER_PATH%"
-                       libraryPath="%AAX_DEBUG_LIB%;%BEATPORT_DEBUG_LIB%" cppLibType="libc++"/>
+                       libraryPath="%AAX_DEBUG_LIB%;%BEATPORT_DEBUG_LIB%;%OSC_STATIC_LIB_FOLDER_DEBUG%" cppLibType="libc++"/>
         <CONFIGURATION name="Release" osxSDK="default" osxCompatibility="10.9 SDK" osxArchitecture="%MACOS_ARCHITECTURE%"
                        isDebug="0" optimisation="3" enablePluginBinaryCopyStep="%COPY_PLUGIN%" targetName="%NAME%" headerPath="%FAUST_HEADER_PATH%"
-                       libraryPath="%AAX_RELEASE_LIB%;%BEATPORT_RELEASE_LIB%" cppLibType="libc++" linkTimeOptimisation="%LINK_TIME_OPTIMISATION%"
+                       libraryPath="%AAX_RELEASE_LIB%;%BEATPORT_RELEASE_LIB%;%OSC_STATIC_LIB_FOLDER_RELEASE%" cppLibType="libc++" linkTimeOptimisation="%LINK_TIME_OPTIMISATION%"
                        %STRIP_SYMBOLS_MACOS%/>
       </CONFIGURATIONS>
       <MODULEPATHS>
@@ -133,6 +134,7 @@ static const unsigned char projectTemplate_jucer_lines[] = R"(
         <MODULEPATH id="juce_core" path="%JUCE_PATH%"/>
         <MODULEPATH id="juce_audio_utils" path="%JUCE_PATH%"/>
         <MODULEPATH id="juce_audio_processors" path="%JUCE_PATH%"/>
+        <MODULEPATH id="juce_audio_processors_headless" path="%JUCE_PATH%"/>
         <MODULEPATH id="juce_audio_plugin_client" path="%JUCE_PATH%"/>
         <MODULEPATH id="juce_audio_formats" path="%JUCE_PATH%"/>
         <MODULEPATH id="juce_audio_devices" path="%JUCE_PATH%"/>
@@ -180,6 +182,7 @@ static const unsigned char projectTemplate_jucer_lines[] = R"(
         <MODULEPATH id="juce_core" path="%JUCE_PATH%"/>
         <MODULEPATH id="juce_audio_utils" path="%JUCE_PATH%"/>
         <MODULEPATH id="juce_audio_processors" path="%JUCE_PATH%"/>
+        <MODULEPATH id="juce_audio_processors_headless" path="%JUCE_PATH%"/>
         <MODULEPATH id="juce_audio_plugin_client" path="%JUCE_PATH%"/>
         <MODULEPATH id="juce_audio_formats" path="%JUCE_PATH%"/>
         <MODULEPATH id="juce_audio_devices" path="%JUCE_PATH%"/>
@@ -222,6 +225,7 @@ static const unsigned char projectTemplate_jucer_lines[] = R"(
         <MODULEPATH id="juce_core" path="%JUCE_PATH%"/>
         <MODULEPATH id="juce_audio_utils" path="%JUCE_PATH%"/>
         <MODULEPATH id="juce_audio_processors" path="%JUCE_PATH%"/>
+        <MODULEPATH id="juce_audio_processors_headless" path="%JUCE_PATH%"/>
         <MODULEPATH id="juce_audio_plugin_client" path="%JUCE_PATH%"/>
         <MODULEPATH id="juce_audio_formats" path="%JUCE_PATH%"/>
         <MODULEPATH id="juce_audio_devices" path="%JUCE_PATH%"/>
@@ -263,6 +267,7 @@ static const unsigned char projectTemplate_jucer_lines[] = R"(
     <MODULE id="juce_audio_formats" showAllCode="1" useLocalCopy="0"/>
     <MODULE id="juce_audio_plugin_client" showAllCode="1" useLocalCopy="0"/>
     <MODULE id="juce_audio_processors" showAllCode="1" useLocalCopy="0"/>
+    <MODULE id="juce_audio_processors_headless" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
     <MODULE id="juce_audio_utils" showAllCode="1" useLocalCopy="0"/>
     <MODULE id="juce_core" showAllCode="1" useLocalCopy="0"/>
     <MODULE id="juce_cryptography" showAllCode="1" useLocalCopy="0"/>
@@ -281,7 +286,7 @@ static const unsigned char projectTemplate_jucer_lines[] = R"(
   <JUCEOPTIONS JUCE_QUICKTIME="disabled" USE_BACKEND="disabled" USE_FRONTEND="enabled" USE_RAW_FRONTEND="%USE_RAW_FRONTEND%" HI_EXPORT_DSP_LIBRARY="disabled" HISE_ENABLE_MIDI_INPUT_FOR_FX="%ENABLE_MIDI_INPUT_FX%" PROCESS_SOUND_GENERATORS_IN_FX_PLUGIN="%PROCESS_SOUND_GENERATORS_IN_FX_PLUGIN%" HISE_MIDIFX_PLUGIN="%HISE_MIDIFX_PLUGIN%" USE_COPY_PROTECTION="%USE_COPY_PROTECTION%" IS_STANDALONE_APP="disabled"
                FRONTEND_IS_PLUGIN="%FRONTEND_IS_PLUGIN%" USE_CUSTOM_FRONTEND_TOOLBAR="%USE_CUSTOM_FRONTEND_TOOLBAR%" IS_STANDALONE_FRONTEND="%IS_STANDALONE_FRONTEND%"  USE_GLITCH_DETECTION = "enabled" ENABLE_PLOTTER="disabled" ENABLE_SCRIPTING_SAFE_CHECKS="disabled"
                ENABLE_ALL_PEAK_METERS="disabled" USE_SPLASH_SCREEN="%USE_SPLASH_SCREEN%" HISE_OVERWRITE_OLD_USER_PRESETS="%OVERWRITE_OLD_USER_PRESETS%" HI_SUPPORT_MONO_CHANNEL_LAYOUT="%SUPPORT_MONO%" HI_SUPPORT_FULL_DYNAMICS_HLAC="%SUPPORT_FULL_DYNAMICS%" ENABLE_CONSOLE_OUTPUT="disabled" HI_ENABLE_LEGACY_CPU_SUPPORT="%LEGACY_CPU_SUPPORT%" HISE_INCLUDE_FAUST="%HISE_INCLUDE_FAUST%" HISE_USE_SYSTEM_APP_DATA_FOLDER="%USE_GLOBAL_APP_FOLDER%"  HISE_INCLUDE_RLOTTIE="enabled" HLAC_MEASURE_DECODING_PERFORMANCE="disabled" HLAC_DEBUG_LOG="disabled" HLAC_INCLUDE_TEST_SUITE="disabled" STANDALONE_STREAMING="disabled"
-                 JUCE_ASSERTION_FIRFILTER="disabled" JUCE_WEB_BROWSER="disabled" JUCE_USE_CURL="disabled" JUCE_DSP_USE_INTEL_MKL="disabled" JUCE_DSP_USE_SHARED_FFTW="disabled" JUCE_DSP_USE_STATIC_FFTW="%USE_STATIC_FFTW%"  HISE_USE_CUSTOM_EXPANSION_TYPE="%USE_CUSTOM_EXPANSION_TYPE%" READ_ONLY_FACTORY_PRESETS="%READ_ONLY_FACTORY_PRESETS%"  JUCE_HEADLESS_PLUGIN_CLIENT="%JUCE_HEADLESS_PLUGIN_CLIENT%" HISE_INCLUDE_LORIS="%HISE_INCLUDE_LORIS%"/>
+                 JUCE_ASSERTION_FIRFILTER="disabled" JUCE_VST3_CAN_REPLACE_VST2="disabled" JUCE_WEB_BROWSER="disabled" JUCE_USE_CURL="enabled" JUCE_DSP_USE_INTEL_MKL="disabled" JUCE_DSP_USE_SHARED_FFTW="disabled" JUCE_DSP_USE_STATIC_FFTW="%USE_STATIC_FFTW%"  HISE_USE_CUSTOM_EXPANSION_TYPE="%USE_CUSTOM_EXPANSION_TYPE%" READ_ONLY_FACTORY_PRESETS="%READ_ONLY_FACTORY_PRESETS%"  JUCE_HEADLESS_PLUGIN_CLIENT="%JUCE_HEADLESS_PLUGIN_CLIENT%" HISE_INCLUDE_LORIS="%HISE_INCLUDE_LORIS%"/>
          
 </JUCERPROJECT>)";
 

@@ -322,7 +322,7 @@ void SampleEditHandler::SampleEditingActions::selectAllSamples(SampleEditHandler
 
 	while (auto sound = sIter.getNextSound())
 	{
-		auto matchesDisplay = thisIndex[sound->getBitmask() - 1];
+		auto matchesDisplay = thisIndex[(int)(sound->getBitmask() - 1)];
 
 		
 
@@ -1167,7 +1167,12 @@ void SampleEditHandler::SampleEditingActions::automapUsingMetadata(ModulatorSamp
 				if (id == SampleIds::FileName)
 					continue;
 
-				sounds[i]->setSampleProperty(id, metadata[id], true);
+				auto v = (int)metadata[id];
+
+				if(id == SampleIds::LoopEnd)
+					v++;
+
+				sounds[i]->setSampleProperty(id, v, true);
 			}
 		}
 	}

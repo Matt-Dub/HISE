@@ -103,7 +103,7 @@ void OpaqueNode::connectToRuntimeTarget(bool add, const runtime_target::connecti
 void OpaqueNode::createParameters(ParameterDataList& l)
 {
 	for (const auto& p : ParameterIterator(*this))
-		l.add(p);
+		l.add(p.withClonedParameters());
 }
 
 void OpaqueNode::initExternalData(ExternalDataHolder* externalDataHolder)
@@ -127,12 +127,6 @@ void OpaqueNode::initExternalData(ExternalDataHolder* externalDataHolder)
 	ExternalData::forEachType(initAll);
 }
 
-void OpaqueNode::setExternalPtr(void* externPtr)
-{
-	callDestructor();
-
-	object.setExternalPtr(externPtr);
-}
 
 void OpaqueNode::callDestructor()
 {

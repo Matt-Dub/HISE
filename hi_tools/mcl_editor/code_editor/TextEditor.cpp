@@ -180,6 +180,7 @@ void TextEditor::setNewTokenCollectionForAllChildren(Component* any, const Ident
 void TextEditor::setReadOnly(bool shouldBeReadOnly)
 {
 	readOnly = shouldBeReadOnly;
+	caret.setVisible(!readOnly);
 }
 
 void TextEditor::setShowNavigation(bool shouldShowNavigation)
@@ -581,6 +582,22 @@ void TextEditor::setEnableAutocomplete(bool shouldBeEnabled)
 {
 	autocompleteEnabled = shouldBeEnabled;
 	currentAutoComplete = nullptr;
+}
+
+void TextEditor::setDiffLines(const std::map<int, LineDiff::ChangeType>& diffLineIndexes)
+{
+	difflines.clear();
+
+	for (const auto& a : diffLineIndexes)
+	{
+		auto t = a.second;
+
+		auto np = new DiffLine(CodeDocument::Position(getDocument(), a.first - 1, 0), t);
+		np->first.setPositionMaintained(true);
+		difflines.add(np);
+	}
+
+	repaint();
 }
 
 LanguageManager* TextEditor::getLanguageManager()
@@ -2155,6 +2172,40 @@ void mcl::TextEditor::paintOverChildren (Graphics& g)
         
         g.fillRect(titleArea.removeFromTop(10.0f));
     }
+
+	for (const auto df : difflines)
+	{
+		auto row = df->first.getLineNumber();
+
+		auto x = document.getBoundsOnRow(row, { 0, 1 }, GlyphArrangementArray::OutOfBoundsMode::ReturnLastCharacter).getRectangle(0);
+		x = x.withHeight(document.getRowHeight()).reduced(0.0f, 2.0f);
+		x = x.transformedBy(transform).withWidth(getWidth());
+
+		x = x.withX(0.0f);
+
+		Colour c;
+
+
+		switch (df->second)
+		{
+		case LineDiff::ChangeType::Added:
+			c = Colour(HISE_OK_COLOUR);
+
+			break;
+		case LineDiff::ChangeType::Modified:
+			c = Colour(HISE_WARNING_COLOUR);
+			break;
+		case LineDiff::ChangeType::Removed:
+			c = Colour(HISE_ERROR_COLOUR);
+			x = x.removeFromTop(5.0).translated(0.0f, -2.5f);
+			break;
+		}
+
+		g.setColour(c.withAlpha(0.05f));
+		g.fillRect(x);
+		g.setColour(c);
+		g.fillRect(x.removeFromLeft(3.0f));
+	}
 }
 
 void mcl::TextEditor::mouseDown (const MouseEvent& e)
@@ -2164,9 +2215,6 @@ void mcl::TextEditor::mouseDown (const MouseEvent& e)
 
     tokenSelection.clear();
     
-	if (readOnly)
-		return;
-
 	closeAutocomplete(true, {}, {});
 
 	for (auto ps : currentParameterSelection)
@@ -2185,7 +2233,7 @@ void mcl::TextEditor::mouseDown (const MouseEvent& e)
     {
         return;
     }
-    else if (e.mods.isRightButtonDown() || e.mods.isMiddleButtonDown())
+    else if ((e.mods.isRightButtonDown() || e.mods.isMiddleButtonDown()) && !readOnly)
     {
 		PopupLookAndFeel pplaf;
 		PopupMenu menu;
@@ -2268,6 +2316,7 @@ void mcl::TextEditor::mouseDown (const MouseEvent& e)
 			LineBreaks,
             AutoAutocomplete,
             ShowStickyLines,
+            EnableCmdScrollFontResize,
 			BackgroundParsing,
             FixWeirdTab,
 			Preprocessor,
@@ -2300,6 +2349,7 @@ void mcl::TextEditor::mouseDown (const MouseEvent& e)
 		menu.addItem(LineBreaks, "Enable line breaks", true, linebreakEnabled);
         menu.addItem(AutoAutocomplete, "Autoshow Autocomplete", true, showAutocompleteAfterDelay);
         menu.addItem(ShowStickyLines, "Show sticky lines on top", true, showStickyLines);
+        menu.addItem(EnableCmdScrollFontResize, "Enable Cmd+Scroll font resize", true, enableCmdScrollFontResize);
         
 		menu.addSeparator();
 
@@ -2342,6 +2392,9 @@ void mcl::TextEditor::mouseDown (const MouseEvent& e)
             case ShowStickyLines:
                 FullEditor::saveSetting(this, TextEditorSettings::ShowStickyLines, !showStickyLines);
                 break;
+            case EnableCmdScrollFontResize:
+                FullEditor::saveSetting(this, TextEditorSettings::EnableCmdScrollFontResize, !enableCmdScrollFontResize);
+                break;
         }
 
       
@@ -2379,14 +2432,12 @@ void mcl::TextEditor::mouseDown (const MouseEvent& e)
     selections.add (index);
     document.setSelections (selections, true);
 
-	grabKeyboardFocusAndActivateTokenBuilding();
+	if(!readOnly)
+		grabKeyboardFocusAndActivateTokenBuilding();
 }
 
 void mcl::TextEditor::mouseDrag (const MouseEvent& e)
 {
-	if (readOnly)
-		return;
-
 	if (e.mods.isX1ButtonDown())
 		return;
 
@@ -2433,9 +2484,6 @@ void mcl::TextEditor::mouseDrag (const MouseEvent& e)
 void mcl::TextEditor::mouseDoubleClick (const MouseEvent& e)
 {
 	if (e.mods.isX1ButtonDown() || e.mods.isX2ButtonDown())
-		return;
-
-	if (readOnly)
 		return;
 
     if (e.getNumberOfClicks() == 2)
@@ -2512,9 +2560,7 @@ void mcl::TextEditor::mouseDoubleClick (const MouseEvent& e)
 
 void mcl::TextEditor::mouseWheelMove(const MouseEvent& e, const MouseWheelDetails& d)
 {
-
-
-	if (e.mods.isCommandDown())
+	if (e.mods.isCommandDown() && enableCmdScrollFontResize)
 	{
 		auto factor = 1.0f + (float)d.deltaY / 5.0f;
 
@@ -2634,6 +2680,16 @@ void TextEditor::setDeactivatedLines(const SparseSet<int>& lines)
 
 bool mcl::TextEditor::keyPressed (const KeyPress& key)
 {
+	if(readOnly)
+	{
+		// allowed actions: copy, select all.
+
+		if (key == KeyPress ('a', ModifierKeys::commandModifier, 0)) return expand (TextDocument::Target::document);
+		if (key == KeyPress('c', ModifierKeys::commandModifier, 0)) return copy();
+		return false;
+	}
+		
+
     autocompleteTimer.abortAutocomplete();
 
 	tooltipManager.clearDisplay();
@@ -3243,54 +3299,65 @@ bool mcl::TextEditor::keyPressed (const KeyPress& key)
 
 	if (keyMatchesId(key, TextEditorShortcuts::comment_line)) // "Cmd + #"
 	{
-		bool anythingCommented = false;
-		bool anythingUncommented = false;
+		// Collect all unique line numbers from all selections
+		SparseSet<int> linesToProcess;
 
 		for (auto s : document.getSelections())
 		{
-			auto thisOne = languageManager->isLineCommented(document, s);
-
-			anythingCommented |= thisOne;
-			anythingUncommented |= !thisOne;
+			auto oriented = s.oriented();
+			for (int line = oriented.head.x; line <= oriented.tail.x; line++)
+			{
+				linesToProcess.addRange({line, line + 1});
+			}
 		}
 
-		if (anythingUncommented && anythingCommented)
+		if (linesToProcess.isEmpty())
 			return false;
 
-		Array<CodeDocument::Position> positions;
+		// Check non-empty lines with Visual Studio Code behaviour:
+		// If ANY line is not commented → comment ALL lines
+		// If ALL lines are commented → uncomment ALL lines
+		bool hasUncommentedLine = false;
 
-		for (auto s : document.getSelections())
+		for (int i = 0; i < linesToProcess.getNumRanges(); i++)
 		{
-			positions.add(s.toCodePosition(document.getCodeDocument()));
+			auto range = linesToProcess.getRange(i);
+			for (int line = range.getStart(); line < range.getEnd(); line++)
+			{
+				if (!document.getLine(line).containsNonWhitespaceChars())
+					continue;
+
+				Selection lineSelection(line, 0, line, 0);
+				if (!languageManager->isLineCommented(document, lineSelection))
+				{
+					hasUncommentedLine = true;
+					break;
+				}
+			}
+			if (hasUncommentedLine)
+				break;
 		}
 
-		for (auto& p : positions)
-			p.setPositionMaintained(true);
+		// Save original selections for restoration
+		Array<Selection> originalSelections = document.getSelections();
 
-		nav({}, TextDocument::Target::line, TextDocument::Direction::forwardCol);
-		nav({}, TextDocument::Target::firstnonwhitespace, TextDocument::Direction::backwardCol);
+		// Process each line (toggleCommentForLine skips empty lines internally)
+		bool shouldComment = hasUncommentedLine;
 
-		if (anythingUncommented)
+		for (int i = 0; i < linesToProcess.getNumRanges(); i++)
 		{
-			languageManager->toggleCommentForLine(this, true);
-
-			
-		}
-		else
-		{
-			languageManager->toggleCommentForLine(this, false);
-
-			
-		}
-
-		Array<Selection> newSelection;
-
-		for (auto p : positions)
-		{
-			newSelection.add(Selection::fromCodePosition(p));
+			auto range = linesToProcess.getRange(i);
+			for (int line = range.getStart(); line < range.getEnd(); line++)
+			{
+				Selection lineSel(line, 0, line, 0);
+				document.setSelections({lineSel}, false);
+				nav({}, TextDocument::Target::line, TextDocument::Direction::forwardCol);
+				nav({}, TextDocument::Target::firstnonwhitespace, TextDocument::Direction::backwardCol);
+				languageManager->toggleCommentForLine(this, shouldComment);
+			}
 		}
 
-		document.setSelections(newSelection, false);
+		document.setSelections(originalSelections, false);
 		return true;
 	}
     if (key == KeyPress ('x', ModifierKeys::commandModifier, 0))

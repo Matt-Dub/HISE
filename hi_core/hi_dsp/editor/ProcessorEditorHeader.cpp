@@ -187,7 +187,7 @@ ProcessorEditorHeader::ProcessorEditorHeader(ProcessorEditor *p) :
 
 	balanceSlider->addListener(this);
 
-	this->idLabel->setText(getProcessor()->getId(), dontSendNotification);
+	this->idLabel->setText(ProcessorHelpers::getDisplayName(getProcessor()), dontSendNotification);
 	this->typeLabel->setText(getProcessor()->getName(), dontSendNotification);
 	
 	
@@ -514,7 +514,8 @@ void ProcessorEditorHeader::paintOverChildren(Graphics& g)
 
 		if(mc != nullptr)
 		{
-			float outputValue = mod->getValueForTextConverter(mod->getOutputValue());
+			auto outputValue = mod->getOutputValue();
+			outputValue = mod->getValueForTextConverter(outputValue);
 			auto v = mc->getTableValueConverter()(outputValue);
 
 			g.setColour(Colours::white.withAlpha(0.35f));
@@ -998,7 +999,8 @@ void ProcessorEditorHeader::createProcessorFromPopup(Processor *insertBeforeSibl
 
 void ProcessorEditorHeader::updateIdAndColour(dispatch::library::Processor* p)
 {
-	NEW_PROCESSOR_DISPATCH(idLabel->setText(p->getOwner<hise::Processor>().getId(), dontSendNotification));
+	auto n = ProcessorHelpers::getDisplayName(&p->getOwner<hise::Processor>());
+	NEW_PROCESSOR_DISPATCH(idLabel->setText(n, dontSendNotification));
 	repaint();
 	// skip colour, it's a icon colour (ideally the modulator synth should be a listener that updates the icon colour itself)
 };
@@ -1029,29 +1031,14 @@ void ProcessorEditorHeader::timerCallback()
 	{
 		if (isHeaderOfModulator())
 		{
-			const float outputValue = getProcessor()->getOutputValue();
+			float outputValue = getProcessor()->getOutputValue();
 
 			Modulation* m = dynamic_cast<Modulation*>(getProcessor());
 
 			if (m->getMode() == Modulation::PitchMode)
-			{
-				const float intensity = m->getIntensity();
+				outputValue = Modulation::PitchConverters::pitchFactorToOutputValue(outputValue);
 
-				if (m->isBipolar())
-				{
-					const float value = 0.5f + (outputValue-0.5f) * intensity;
-					valueMeter->setPeak(value, -1.0f);
-				}
-				else
-				{
-					const float value = 0.5f + 0.5f * (outputValue * intensity);
-					valueMeter->setPeak(value, -1.0f);
-				}
-			}
-			else
-			{
-				valueMeter->setPeak(outputValue, -1.0f);
-			}
+			valueMeter->setPeak(outputValue, -1.0f);
 		}
 		else
 		{
@@ -1165,8 +1152,8 @@ void ProcessorEditorHeader::labelTextChanged(Label *l)
 {
 	if (l == idLabel)
 	{
-		getEditor()->getProcessor()->setId(l->getText(), sendNotification);
-        
+		ProcessorHelpers::changeDisplayName(getEditor()->getProcessor(), l->getText());
+		
 		auto root = GET_BACKEND_ROOT_WINDOW(this);
 
 		if(auto keyboard = root->getKeyboard())

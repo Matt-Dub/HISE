@@ -35,7 +35,9 @@
 #include "xmmintrin.h"
 #endif
 
-
+#if !HISE_INCLUDE_XSIMD
+#include "../hi_neural/RTNeural/modules/xsimd/xsimd.hpp"
+#endif
 
 
 namespace hise {
@@ -466,10 +468,38 @@ StringArray FuzzySearcher::searchForResults(const String &word, const StringArra
 	return foundWords;
 }
 
-Array<int> FuzzySearcher::searchForIndexes(const String &word, const StringArray &wordList, double fuzzyness)
+Array<int> FuzzySearcher::searchForIndexes(const String &word, const StringArray &wordList, double fuzzyness, bool sortByScore)
 {
 	Array<int> foundIndexes;
 	search(&foundIndexes, true, word, wordList, fuzzyness);
+	
+	if (sortByScore && foundIndexes.size() > 1)
+	{
+		String searchWord = word.toLowerCase();
+		searchWord = searchWord.removeCharacters("()`[]*_-` ");
+		
+		// Precompute distances for each matched index
+		HashMap<int, int> distances;
+		for (int idx : foundIndexes)
+		{
+			String w = wordList[idx].toLowerCase();
+			w = w.removeCharacters("()`[]*_-` ").substring(0, 32);
+			distances.set(idx, getLevenshteinDistance(searchWord, w));
+		}
+		
+		struct DistanceSorter
+		{
+			const HashMap<int, int>& distances;
+			
+			int compareElements(int a, int b) const
+			{
+				return distances[a] - distances[b];
+			}
+		} sorter { distances };
+		
+		foundIndexes.sort(sorter);
+	}
+	
 	return foundIndexes;
 }
 
@@ -999,13 +1029,60 @@ template <bool Inverse> struct PitchSimd
     }
 };
 
-struct SkewSimd
+struct StepSimd
 {
 	template <class Arch>
-    void operator()(Arch, float* data, int numValues, Range<float> targetRange, float skew)
-    {
+	void operator()(Arch, float* data, int numValues, Range<float> targetRange, float interval)
+	{
 		using b_type = xsimd::batch<float, Arch>;
-	    auto inc = (int)b_type::size;
+		auto inc = (int)b_type::size;
+		auto numVectorized = numValues - numValues % inc;
+
+		jassert(interval != 0.0f);
+
+		const auto min = targetRange.getStart();
+		const auto max = targetRange.getEnd();
+		const auto intervalInv = 1.0f / interval;
+		const auto delta = max - min;
+
+		for (int i = 0; i < numVectorized; i += inc)
+		{
+			auto v = b_type::load_unaligned(data + i);
+			
+			v *= (max - min);
+			v *= intervalInv;
+			v += 0.5f;
+			v  = xsimd::floor(v);
+			v *= interval;
+			v += min;
+
+			v.store_unaligned(data + i);
+		}
+
+		for (int i = numVectorized; i < numValues; i++)
+		{
+			// v [0 ... 1]
+			auto v = data[i];
+
+			v *= delta;
+			v *= intervalInv;
+			v += 0.5f;
+			v  = std::floor (v);
+			v *= interval;
+			v += min;
+
+			data[i] = v;
+		}
+	}
+};
+
+struct ScaleSimd
+{
+	template <class Arch>
+	void operator()(Arch, float* data, int numValues, Range<float> targetRange)
+	{
+		using b_type = xsimd::batch<float, Arch>;
+		auto inc = (int)b_type::size;
 		auto numVectorized = numValues - numValues % inc;
 
 		auto min = targetRange.getStart();
@@ -1016,47 +1093,71 @@ struct SkewSimd
 
 		// return min + (max - min) * hmath::exp(hmath::log(value) / skew);
 
-		if(skew != 1.0f)
+		for (int i = 0; i < numVectorized; i += inc)
 		{
-			skew = 1.0f / skew;
-
-			for (int i = 0; i < numVectorized; i += inc)
-		    {
-		        auto v = b_type::load_unaligned(data + i);
-
-				v = xsimd::clip(v, b_type(0.0f), b_type(1.0f));
-
-				v = xsimd::log(v);
-				v *= skew;
-				v = xsimd::exp(v);
-				v *= scale;
-				v += offset;
-
-		        v.store_unaligned(data + i);
-		    }
-
-			for(int i = numVectorized; i < numValues; i++)
-			{
-				auto v = jlimit(0.0f, 1.0f, data[i]);
-				v = std::exp(std::log(v) * skew);
-				v *= scale;
-				v += offset;
-
-				data[i] = v;
-			}
+			auto v = b_type::load_unaligned(data + i);
+			v *= scale;
+			v += offset;
+			v.store_unaligned(data + i);
 		}
-		else
+
+		for (int i = numVectorized; i < numValues; i++)
 		{
-			for(int i = 0; i < numValues; i++)
-			{
-				data[i] *= scale;
-				data[i] += offset;
-			}
+			auto v = data[i];
+			v *= scale;
+			v += offset;
+			data[i] = v;
 		}
-    }
+	}
 };
 
+struct SkewSimd
+{
+	template <class Arch>
+	void operator()(Arch, float* data, int numValues, Range<float> targetRange, float skew)
+	{
+		using b_type = xsimd::batch<float, Arch>;
+		auto inc = (int)b_type::size;
+		auto numVectorized = numValues - numValues % inc;
 
+		auto min = targetRange.getStart();
+		auto max = targetRange.getEnd();
+
+		auto offset = min;
+		auto scale = max - min;
+
+		jassert(skew != 1.0f);
+
+		skew = 1.0f / skew;
+
+		for (int i = 0; i < numVectorized; i += inc)
+		{
+			auto v = b_type::load_unaligned(data + i);
+
+			v = xsimd::clip(v, b_type(0.0f), b_type(1.0f));
+
+			v = xsimd::log(v);
+			v *= skew;
+			v = xsimd::exp(v);
+			v *= scale;
+			v += offset;
+
+			v.store_unaligned(data + i);
+		}
+
+		for (int i = numVectorized; i < numValues; i++)
+		{
+			auto v = jlimit(0.0f, 1.0f, data[i]);
+			v = std::log(v);
+			v *= skew;
+			v = std::exp(v);
+			v *= scale;
+			v += offset;
+
+			data[i] = v;
+		}
+	}
+};
 
 void ModBufferExpansion::pitchFactorToNormalisedRange(float* data, int numSamples)
 {
@@ -1068,9 +1169,16 @@ void ModBufferExpansion::normalisedRangeToPitchFactor(float* data, int numSample
 	xsimd::dispatch(PitchSimd<false>{})(data, numSamples);
 }
 
-void ModBufferExpansion::applySkewFactor(float* data, int numSamples, Range<float> targetRange, float skewFactor)
+void ModBufferExpansion::applySkewFactor(float* data, int numSamples, NormalisableRange<double> targetRange)
 {
-	xsimd::dispatch(SkewSimd{})(data, numSamples, targetRange, skewFactor);
+	Range<float> r((float)targetRange.start, (float)targetRange.end);
+
+	if(targetRange.skew != 1.0)
+		xsimd::dispatch(SkewSimd{})(data, numSamples, r, targetRange.skew);
+	else if (targetRange.interval != 0.0)
+		xsimd::dispatch(StepSimd{})(data, numSamples, r, targetRange.interval);
+	else
+		xsimd::dispatch(ScaleSimd{})(data, numSamples, r);
 }
 
 Ramper::Ramper():
@@ -3557,7 +3665,7 @@ struct TextEditorWithAutocompleteComponent::Autocomplete: public Component,
         auto newIndex = sb.getCurrentRangeStart() + (e.getPosition().getY() - 15) / ItemHeight;
         
         if(isPositiveAndBelow(newIndex, items.size()))
-            setSelectedIndex(newIndex);
+            setSelectedIndex(newIndex, sendNotification);
     }
     
     void mouseDoubleClick(const MouseEvent& e) override
@@ -3571,7 +3679,7 @@ struct TextEditorWithAutocompleteComponent::Autocomplete: public Component,
         
         if(isPositiveAndBelow(newIndex, items.size()))
         {
-            setSelectedIndex(newIndex);
+            setSelectedIndex(newIndex, sendNotification);
             return true;
         }
         
@@ -3593,7 +3701,7 @@ struct TextEditorWithAutocompleteComponent::Autocomplete: public Component,
         return false;
     }
     
-    void setSelectedIndex(int index)
+    void setSelectedIndex(int index, NotificationType n)
     {
         selectedIndex = index;
         
@@ -3605,6 +3713,9 @@ struct TextEditorWithAutocompleteComponent::Autocomplete: public Component,
                 sb.setCurrentRangeStart(selectedIndex - 3);
         }
         
+		if(n != dontSendNotification)
+			parent.get()->autoCompleteItemSelected(selectedIndex, items[selectedIndex].displayString);
+
         repaint();
     }
     
@@ -3623,6 +3734,16 @@ struct TextEditorWithAutocompleteComponent::Autocomplete: public Component,
 
 		StringArray thisItems;
 
+		LookAndFeelMethods* lafToUse = &laf;
+
+		if(parent != nullptr)
+		{
+			auto plaf = dynamic_cast<LookAndFeelMethods*>(&dynamic_cast<Component*>(parent.get())->getLookAndFeel());
+
+			if(plaf != nullptr)
+				lafToUse = plaf;
+		}
+
 		if(!items.isEmpty())
 		{
 			for(int i = 0; i < itemsToShow; i++)
@@ -3631,7 +3752,7 @@ struct TextEditorWithAutocompleteComponent::Autocomplete: public Component,
 			}
 		}
 
-		laf.drawAutocompleteBackground(g, *parent->getTextEditor(), getLocalBounds().toFloat(), thisItems, thisIndex);
+		lafToUse->drawAutocompleteBackground(g, *parent->getTextEditor(), getLocalBounds().toFloat(), thisItems, thisIndex);
     }
     
     bool setAndDismiss()
@@ -3649,6 +3770,7 @@ struct TextEditorWithAutocompleteComponent::Autocomplete: public Component,
         else
             nt = newTextAfterComma;
         
+		ed->setText("", false);
         ed->setText(nt, true);
         
         return dismiss();
@@ -3686,7 +3808,7 @@ struct TextEditorWithAutocompleteComponent::Autocomplete: public Component,
         
         sb.setRangeLimits(0.0, (double)items.size());
         sb.setCurrentRange(0.0, (double)itemsToShow);
-        setSelectedIndex(0);
+        setSelectedIndex(0, dontSendNotification);
         
         if(items.isEmpty())
             dismiss();
@@ -3727,20 +3849,24 @@ void TextEditorWithAutocompleteComponent::LookAndFeelMethods::drawAutocompleteBa
 	}
 	else
 	{
-		for(int i = 0; i < itemToShow.size(); i++)
-		{
-			g.setColour(Colours::white.withAlpha(0.6f));
-			auto tb = b.removeFromTop(ItemHeight);
+		auto f = te.findParentComponentOfClass<TextEditorWithAutocompleteComponent>();
 
-			if(i == selectedIndex)
-			{
-				g.fillRoundedRectangle(tb.withX(10.0f).reduced(3.0f, 1.0f), 3.0f);
-				g.setColour(Colours::black.withAlpha(0.8f));
-			}
-	                    
-			g.drawText(itemToShow[i], tb, Justification::left);
-		}
+		for(int i = 0; i < itemToShow.size(); i++)
+			drawAutocompleteItem(g, *f, itemToShow[i], b.removeFromTop(ItemHeight).toFloat(), i == selectedIndex);			
 	}
+}
+
+void TextEditorWithAutocompleteComponent::LookAndFeelMethods::drawAutocompleteItem(Graphics& g, TextEditorWithAutocompleteComponent& parent, const String& itemName, Rectangle<float> itemBounds, bool selected)
+{
+	g.setColour(Colours::white.withAlpha(0.6f));
+
+	if (selected)
+	{
+		g.fillRoundedRectangle(itemBounds.withX(10.0f).reduced(3.0f, 1.0f), 3.0f);
+		g.setColour(Colours::black.withAlpha(0.8f));
+	}
+
+	g.drawText(itemName, itemBounds, Justification::left);
 }
 
 void TextEditorWithAutocompleteComponent::textEditorReturnKeyPressed(TextEditor& e)
@@ -3785,6 +3911,11 @@ bool TextEditorWithAutocompleteComponent::AutocompleteNavigator::keyPressed(cons
 TextEditorWithAutocompleteComponent::Autocomplete* TextEditorWithAutocompleteComponent::getCurrentAutocomplete()
 {
 	return dynamic_cast<Autocomplete*>(currentAutocomplete.get());
+}
+
+bool TextEditorWithAutocompleteComponent::isAutocomplete(Component* c)
+{
+	return dynamic_cast<Autocomplete*>(c) != nullptr;
 }
 
 void ModulationDisplayValue::clipTo0To1()
@@ -3868,6 +3999,9 @@ ValueToTextConverter ValueToTextConverter::fromString(const String& converterStr
 
 	if(converterString.isNotEmpty())
 	{
+		if(getAvailableTextConverterModes().contains(converterString))
+			return createForMode(converterString);
+
 #if HI_ZSTD_INCLUDED
 			zstd::ZDefaultCompressor comp;
 

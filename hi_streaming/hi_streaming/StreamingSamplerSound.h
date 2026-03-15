@@ -187,11 +187,22 @@ public:
 
 	bool isEntireSampleLoaded() const noexcept { return entireSampleLoaded; };
 	
-	
-
 #if HISE_SAMPLER_ALLOW_RELEASE_START
 
-	bool isReleaseStartEnabled() const noexcept { return releaseStart != 0; }
+	void setIsReleaseSample(bool shouldBeReleaseSample)
+	{
+		if(shouldBeReleaseSample != isReleaseSample)
+		{
+			isReleaseSample = shouldBeReleaseSample;
+
+			if(isReleaseSample)
+				releaseStart = 0;
+
+			rebuildReleaseStartBuffer();
+		}
+	}
+
+	bool isReleaseStartEnabled() const noexcept { return releaseStart != 0 || isReleaseSample; }
 
 	/** Sets the point where the sample should seek to if the note is released (0 = disabled). */
 	void setReleaseStart(int newReleaseStart);
@@ -228,9 +239,25 @@ public:
 			releaseStartData->calculateReleasePeak(calculatedValues, numSamples, releaseStartOptions);
 	}
 
+	float getCurrentReleasePeak() const
+	{
+		if(releaseStartData != nullptr)
+			return releaseStartData->currentAttenuationPeak;
+
+		return 0.0f;
+	}
 #else
 
+	const hlac::HiseSampleBuffer* getReleaseStartBuffer() const { return nullptr; }
+
+	float getCurrentReleasePeak() const
+	{
+		return 0.0f;
+	}
+
 	static constexpr bool isReleaseStartEnabled() { return false; }
+
+	void setIsReleaseSample(bool) {}
 
 #endif
 	
@@ -591,6 +618,7 @@ private:
 #if HISE_SAMPLER_ALLOW_RELEASE_START
 
 	int releaseStart = 0;
+	bool isReleaseSample = false;
 
 	struct ReleaseStartData
 	{

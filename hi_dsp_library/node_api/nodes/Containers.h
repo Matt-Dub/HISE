@@ -76,78 +76,8 @@ template <class ...Types> static constexpr int getSummedChannels()
 
 
 
-template <typename, typename = void>
-struct has_voice_setter : std::false_type {};
-
-template <typename T>
-struct has_voice_setter<T, std::void_t<typename T::ObjectType::VoiceSetter>>
-	: std::true_type {};
-
-
-
-template <typename T, std::size_t I, bool Has = has_voice_setter<T>::value>
-struct base_wrapper; 
-
-template <typename T, std::size_t I>
-struct base_wrapper<T, I, true>
-{
-	using WT = typename T::ObjectType;
-    using VS = typename WT::VoiceSetter;
-
-	base_wrapper(T& obj, bool forceAll) :
-        vs(obj.getObject(), forceAll)
-	{}
-    
-    explicit operator bool() const
-    {
-        return static_cast<bool>(vs);
-    }
-    
-    VS vs;
-};
-
-template <typename T, std::size_t I>
-struct base_wrapper<T, I, false> {
-	base_wrapper(T&, bool) {} // ignore it
-
-	operator bool() const { return true; }
-};
-
-template <typename Tuple, typename Indices> struct sub_tuple_helper_impl;
-
-template <typename... Ts, std::size_t... Is>
-struct sub_tuple_helper_impl<std::tuple<Ts...>, std::index_sequence<Is...>>
-	: base_wrapper<Ts, Is>...
-{
-	sub_tuple_helper_impl(std::tuple<Ts...>& t, bool forceAll)
-		: base_wrapper<Ts, Is>(std::get<Is>(t), forceAll)... {}
-
-	operator bool() const
-	{
-		return (static_cast<bool>(static_cast<const base_wrapper<Ts, Is>&>(*this)) && ...);
-	}
-};
-
-template <typename... Ts>
-using sub_tuple = sub_tuple_helper_impl<std::tuple<Ts...>, std::make_index_sequence<sizeof...(Ts)>>;
-
-struct DummyVoiceSetter
-{
-	template <typename T> DummyVoiceSetter(T& obj, bool) {};
-	operator bool() const { return true; }
-};
-
-template <typename T, typename = void>
-struct get_voice_setter {
-	using type = DummyVoiceSetter;
-};
-
-template <typename T>
-struct get_voice_setter<T, std::void_t<typename T::ObjectType::VoiceSetter>> {
-	using type = typename T::ObjectType::VoiceSetter;
-};
-
 }
+
 
 
 
@@ -161,7 +91,7 @@ template <class ParameterClass, typename... Processors> struct container_base
     
 	static constexpr int getFixChannelAmount() { return Helpers::getNumChannelsOfFirstElement<Processors...>(); };
 
-	void initialise(NodeBase* b)
+	void initialise(ObjectWithValueTree* b)
 	{
 		call_tuple_iterator1(initialise, b);
 	}
@@ -198,13 +128,6 @@ template <class ParameterClass, typename... Processors> struct container_base
 
 	ParameterClass parameters;
 
-	struct VoiceSetter : Helpers::sub_tuple<Processors...>
-	{
-		VoiceSetter(container_base& t, bool forceAll) :
-			Helpers::sub_tuple<Processors...>(t.elements, forceAll)
-		{}
-	};
-
 protected:
 
 	static constexpr auto getIndexSequence()
@@ -220,7 +143,7 @@ protected:
 private:
 
 	tuple_iterator0(reset);
-	tuple_iterator1(initialise, NodeBase*, b);
+	tuple_iterator1(initialise, ObjectWithValueTree*, b);
 };
 
 

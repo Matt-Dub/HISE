@@ -97,6 +97,38 @@ public:
 		Timer::callAfterDelay(milliseconds, SafeAsyncCaller<T>(&object, f));
 	}
 
+	/** Dispatches f to the message thread and blocks until complete (or timeout).
+	    If already on the message thread, executes directly.
+	    Returns true if executed, false if timed out or object was deleted.
+	*/
+	template <typename T> static bool callAsyncAndWait(T& object, std::function<void(T&)> f, int timeoutMs = 500)
+	{
+		if (MessageManager::getInstance()->isThisTheMessageThread())
+		{
+			f(object);
+			return true;
+		}
+
+		auto event = std::make_shared<WaitableEvent>(true);
+		WeakReference<T> weak(&object);
+
+		MessageManager::callAsync([weak, f, event]()
+		{
+			if (auto* obj = weak.get())
+				f(*obj);
+
+			event->signal();
+		});
+
+		if (!event->wait(timeoutMs))
+		{
+			jassertfalse;
+			return false;
+		}
+
+		return true;
+	}
+
 	static void resized(Component* c)
 	{
 		callAsyncIfNotOnMessageThread<Component>(*c, [](Component& c) { c.resized(); });
@@ -458,6 +490,122 @@ public:
 
 	ScopedPointer<GlContextHolder> contextHolder;
 };
+
+
+struct DocumentWindowWithEmbeddedPopupMenu : public juce::DocumentWindow,
+											 public TopLevelWindowWithOptionalOpenGL
+{
+	DocumentWindowWithEmbeddedPopupMenu(const String& name, Colour backgroundColour, int requiredButtons, bool addToDesktop = true) :
+		DocumentWindow(name, backgroundColour, requiredButtons, addToDesktop)
+	{
+	};
+
+	virtual ~DocumentWindowWithEmbeddedPopupMenu() = default;
+
+	static Component* getParentOf(Component* c) { return c != nullptr ? dynamic_cast<DocumentWindowWithEmbeddedPopupMenu*>(c->getTopLevelComponent()) : nullptr; }
+
+	static String getSubComponentTargetId(Component* c) { return c->getProperties()["subTargetId"].toString(); }
+	static void setSubComponentTargetId(Component* c, const String& subTargetId) { c->getProperties().set("subTargetId", subTargetId); }
+
+	
+
+	/** Use this if you have a component that should consider zones within this component as target areas. */
+	static void setSubTargetAreas(Component* c, const std::map<String, Rectangle<int>>& subAreas)
+	{
+		auto prop = c->getProperties();
+
+		DynamicObject::Ptr obj = new DynamicObject();
+
+		for (auto& sa : subAreas)
+			obj->setProperty(Identifier(sa.first), sa.second.toString());
+
+		prop.set("subTargetAreas", var(obj.get()));
+	}
+
+	/**/
+	static std::map<String, Rectangle<int>> getSubTargetAreas(Component* c)
+	{
+		std::map<String, Rectangle<int>> m;
+
+		if (auto obj = c->getProperties()["subTargetAreas"].getDynamicObject())
+		{
+			for (const auto& nv : obj->getProperties())
+				m[nv.name.toString()] = Rectangle<int>::fromString(nv.value.toString());
+		}
+
+		return m;
+	}
+
+	static Rectangle<int> resolveToGlobalBounds(Component* root, Component* c, const String& subTargetId)
+	{
+		jassert(subTargetId.isNotEmpty());
+		jassert(root != nullptr);
+		jassert(c != nullptr);
+
+		if (getSubComponentTargetId(c) == subTargetId)
+			return root->getLocalArea(c, c->getLocalBounds());
+
+		for (const auto& m : getSubTargetAreas(c))
+		{
+			if (m.first == subTargetId)
+				return root->getLocalArea(c, m.second);
+		}
+
+		for (int i = c->getNumChildComponents() - 1; i >= 0; i--)
+		{
+			auto nextChild = c->getChildComponent(i);
+
+			if (!nextChild->isVisible())
+				continue;
+
+			auto r = resolveToGlobalBounds(root, nextChild, subTargetId);
+
+			if (!r.isEmpty())
+				return r;
+
+		}
+
+		return {};
+	}
+
+	/** Recursively searches child components until it finds one that has the sub component target ID set.
+		If nothing is found, then it will return the original component.
+	*/
+	static std::pair<String, Rectangle<int>> findSubTargetId(Component* root, Component* c, Point<int> pos)
+	{
+		auto subTargetId = getSubComponentTargetId(c);
+
+		if (subTargetId.isNotEmpty())
+			return { subTargetId, root->getLocalArea(c, c->getLocalBounds()) };
+
+		for (const auto& sa : getSubTargetAreas(c))
+		{
+			if (sa.second.contains(pos))
+				return { sa.first, root->getLocalArea(c, sa.second) };
+		}
+
+		for (int i = c->getNumChildComponents() - 1; i >= 0; i--)
+		{
+			auto nextChild = c->getChildComponent(i);
+
+			if (!nextChild->isVisible())
+				continue;
+
+			if (nextChild->getBoundsInParent().contains(pos))
+			{
+				auto localPos = nextChild->getLocalPoint(c, pos);
+				auto id = findSubTargetId(root, nextChild, localPos);
+
+				if (id.first.isNotEmpty())
+					return id;
+			}
+		}
+
+		return { "", Rectangle<int>() };
+	}
+
+};
+
 #endif
 
 
@@ -1808,8 +1956,9 @@ public:
 	/** Returns a string array with the results. */
 	static StringArray searchForResults(const String &word, const StringArray &wordList, double fuzzyness);
 
-	/** Returns a index array with the results for the given wordlist. */
-	static Array<int> searchForIndexes(const String &word, const StringArray &wordList, double fuzzyness);
+	/** Returns a index array with the results for the given wordlist. 
+	    If sortByScore is true, results are sorted by Levenshtein distance (best match first). */
+	static Array<int> searchForIndexes(const String &word, const StringArray &wordList, double fuzzyness, bool sortByScore = false);
 
 	static String suggestCorrection(const juce::String& wrongToken, const juce::StringArray& availableTokens, double fuzzyness = 0.3);
 
@@ -2730,6 +2879,7 @@ struct TextEditorWithAutocompleteComponent: public Timer,
         virtual ~LookAndFeelMethods() {};
         
 	    virtual void drawAutocompleteBackground(Graphics& g, TextEditor& te, Rectangle<float> b, const StringArray& itemToShow, int selectedIndex);
+		virtual void drawAutocompleteItem(Graphics& g, TextEditorWithAutocompleteComponent& parent, const String& itemName, Rectangle<float> itemBounds, bool selected);
     };
 
     void textEditorTextChanged(TextEditor&) override
@@ -2744,7 +2894,15 @@ struct TextEditorWithAutocompleteComponent: public Timer,
     void showAutocomplete(const String& currentText);
     void dismissAutocomplete();
 
+	virtual void autoCompleteItemSelected(int selectedIndex, const String& item)
+	{
+		if(updateTextEditorOnItemChange)
+			getTextEditor()->setText(item, dontSendNotification);
+	}
+
     virtual Identifier getIdForAutocomplete() const = 0;
+
+	static bool isAutocomplete(Component* c);
 
     struct Autocomplete;
 
@@ -2755,6 +2913,7 @@ struct TextEditorWithAutocompleteComponent: public Timer,
 
     bool useDynamicAutocomplete = false;
 	int itemsToShow = 4;
+	bool updateTextEditorOnItemChange = false;
 
     JUCE_DECLARE_WEAK_REFERENCEABLE(TextEditorWithAutocompleteComponent);
 };
@@ -2772,7 +2931,7 @@ struct ModulationDisplayValue
 		virtual ~QueryFunction() {}
 
 		virtual bool onScaleDrag(Processor* p, bool isDown, float delta) = 0;
-		virtual ModulationDisplayValue getDisplayValue(Processor* p, double nv, NormalisableRange<double> nr) const = 0;
+		virtual ModulationDisplayValue getDisplayValue(Processor* p, double nv, NormalisableRange<double> nr, int sourceIndex) const = 0;
 		
 		JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(QueryFunction);
 	};
@@ -2898,9 +3057,11 @@ struct ValueToTextConverter
 	{
 		static String Frequency(double input)
 		{
-			if (input < 30.0f)
+			auto absValue = std::abs(input);
+
+			if (absValue < 30.0f)
 				return String(input, 1) + " Hz";
-			else if (input < 1000.0f)
+			else if (absValue < 1000.0f)
 				return String(roundToInt(input)) + " Hz";
 			else
 				return String(input / 1000.0, 1) + " kHz";
@@ -2951,7 +3112,7 @@ struct ValueToTextConverter
 			if(v > 0.0)
 				s << '+';
 
-			if(std::fmod(std::abs(v), 1.0) < 0.001)
+			if(std::fmod(std::abs(v+0.005), 1.0) < 0.01)
 				s << String(roundToInt(v));
 			else
 				s << String(v, 2);
@@ -3051,6 +3212,135 @@ struct ValueToTextConverter
 	WeakReference<CustomConverter> customConverter = nullptr;
 	double stepSize = 0.01;
 	String suffix;
+};
+
+struct HiseModulationColours
+{
+	enum class ColourId : char
+	{
+		ExtraMod = 0,
+		Midi,
+		Gain,
+		Pitch,
+		FX,
+		Wavetable,
+		Samplestart,
+		GroupFade,
+		GroupDetune,
+		GroupSpread,
+		numColourIds
+	};
+
+	static ColourId getFromVar(const var& value)
+	{
+		if(value.isVoid() || value.isUndefined())
+			return ColourId::ExtraMod;
+
+		auto idx = (int)value;
+
+		if(isPositiveAndBelow(idx, (int)ColourId::numColourIds))
+			return (ColourId)(int)idx;
+
+		return ColourId::ExtraMod;
+	}
+
+	struct Selector: public PropertyComponent
+	{
+		Selector(ValueTree& d, const Identifier& id, UndoManager* um):
+		  PropertyComponent(id.toString()),
+		  value(d.getPropertyAsValue(id, um, false))
+		{}
+
+		void mouseMove(const MouseEvent& e) override
+		{
+			auto bounds = getLookAndFeel().getPropertyComponentContentPosition (*this);
+
+			auto normX = (float)(e.getPosition().getX() - bounds.getX()) / (float)bounds.getWidth();
+
+			if(normX < 0.0f || normX > 1.0f)
+			{
+				hoverId = ColourId::numColourIds;
+			}
+			else
+			{
+				auto x = normX * (float)((int)ColourId::numColourIds);
+				hoverId = (ColourId)(int)(x);
+			}
+			
+			repaint();
+		}
+
+		void mouseDown(const MouseEvent& e) override
+		{
+			value.setValue((int)hoverId);
+			repaint();
+		}
+
+		void refresh() override { repaint(); }
+
+		void paint(Graphics& g) override
+		{
+			PropertyComponent::paint(g);
+
+			HiseModulationColours data;
+
+			auto numColours = (int)ColourId::numColourIds;
+			auto b = getLookAndFeel().getPropertyComponentContentPosition (*this).toFloat();
+			auto w = b.getWidth() / (float)numColours;
+
+			auto current = getFromVar(value.getValue());
+
+			for(int i = 0; i < numColours; i++)
+			{
+				auto a = b.removeFromLeft(w).reduced(1);
+				auto active = (ColourId)i == current;
+
+				float alpha = 0.5f;
+
+				if((ColourId)i == hoverId)
+					alpha += 0.2f;
+
+				if(active)
+					alpha += 0.3f;
+
+				g.setColour(data.getColour((ColourId)i).withAlpha(alpha));
+
+				g.fillRoundedRectangle(a, 3.0f);
+
+				if(active)
+				{
+					g.setColour(Colours::white.withAlpha(0.7f));
+					g.drawRoundedRectangle(a.reduced(1.0f), 3.0f, 2.0f);
+				}
+			}
+		}
+		
+		Value value;
+		ColourId hoverId = ColourId::numColourIds;
+	};
+
+	HiseModulationColours()
+	{
+		data[(int)ColourId::ExtraMod] = Colours::grey;
+		data[(int)ColourId::Midi] = Colour(0xFFC65638);
+		data[(int)ColourId::Gain] = Colour(0xffbe952c);
+		data[(int)ColourId::Pitch] = Colour(0xff7559a4);
+		data[(int)ColourId::FX] = Colour(0xff3a6666);
+		data[(int)ColourId::Wavetable] = Colour(0xFF4D54B3);
+		data[(int)ColourId::Samplestart] = Colour(0xFF5E8127);
+		data[(int)ColourId::GroupFade] = Colour(0xFF884B29);
+		data[(int)ColourId::GroupDetune] = Colour(0xFF880022);
+		data[(int)ColourId::GroupSpread] = Colour(0xFF22AA88);
+	}
+
+	Colour getColour(ColourId id) const
+	{
+		return data[(int)id];
+	}
+
+private:
+
+	std::array<Colour, (int)ColourId::numColourIds> data;
 };
 
 }

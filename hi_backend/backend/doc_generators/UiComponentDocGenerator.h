@@ -88,11 +88,11 @@ namespace UIComponentDatabase
 			colour = Colour(0xFF9064FF);
 		}
 
-		MarkdownDataBase::Item createRootItem(MarkdownDataBase& parent) override;
+		MarkdownDataBase::Item::Ptr createRootItem(MarkdownDataBase& parent) override;
 
-		void createFloatingTileApi(MarkdownDataBase::Item& item);
+		void createFloatingTileApi(MarkdownDataBase::Item::Ptr item);
 
-		MarkdownDataBase::Item createItemForFloatingTile(MarkdownDataBase::Item& item, FloatingTileContent::Factory& f, Identifier& id, FloatingTile* root);
+		MarkdownDataBase::Item::Ptr createItemForFloatingTile(MarkdownDataBase::Item::Ptr item, FloatingTileContent::Factory& f, Identifier& id, FloatingTile* root);
 
 		MarkdownDatabaseHolder& holder;
 	};
@@ -107,11 +107,20 @@ namespace UIComponentDatabase
 		Identifier getId() const override { RETURN_STATIC_IDENTIFIER("UIComponentResolver"); }
 		LinkResolver* clone(MarkdownParser*) const override { return new Resolver(root, d->bp); }
 
+		void dumpRAGFile() override
+		{
+			auto dumpFile = root.getChildFile("rag").getChildFile("ui_component_properties.json");
+			auto json = JSON::toString(var(ragContent.get()), false);
+			dumpFile.replaceWithText(json);
+		}
+
 		String getContent(const MarkdownLink& url) override;
 
 		String getInitialisationForComponent(const String& name);
 
 		File root;
+
+		DynamicObject::Ptr ragContent;
 	};
 
 	struct FloatingTileResolver : public CommonData,

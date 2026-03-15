@@ -240,7 +240,7 @@ void GlobalHiseLookAndFeel::drawRotarySlider(Graphics &g, int /*x*/, int /*y*/, 
 	drawHiBackground(g, 12, 10, width-12, 30, &s);
 		
 	const double value = s.getValue();
-    const double normalizedValue = (value - s.getMinimum()) / (s.getMaximum() - s.getMinimum());
+    const double normalizedValue = jlimit(0.0, 1.0, (value - s.getMinimum()) / (s.getMaximum() - s.getMinimum()));
 	const double proportion = pow(normalizedValue, s.getSkewFactor());
 
 	auto area = s.getLocalBounds().toFloat();
@@ -1624,6 +1624,11 @@ Rectangle<int> PopupLookAndFeel::getPropertyComponentContentPosition(PropertyCom
 
 Component* PopupLookAndFeel::getParentComponentForMenuOptions(const PopupMenu::Options& options)
 {
+#if USE_BACKEND
+	if (auto tc = DocumentWindowWithEmbeddedPopupMenu::getParentOf(options.getTargetComponent()))
+		return tc;
+#endif
+
 	if (HiseDeviceSimulator::isAUv3())
 	{
 		if (options.getParentComponent() == nullptr && options.getTargetComponent() != nullptr)
@@ -1735,9 +1740,10 @@ void ScriptnodeComboBoxLookAndFeel::drawScriptnodeDarkBackground(Graphics& g, Re
 
 	if (roundedCorners)
 	{
-		g.fillRoundedRectangle(area, area.getHeight() / 2.0f);
+		auto cornerSize = jmin(area.getWidth(), area.getHeight()) / 2.0f;
+		g.fillRoundedRectangle(area, cornerSize);
 		g.setColour(Colour(0xFF060609));
-		g.drawRoundedRectangle(area.reduced(0.5f), area.getHeight() / 2.0f, 1.0f);
+		g.drawRoundedRectangle(area.reduced(0.5f), cornerSize, 1.0f);
 	}
 	else
 	{
@@ -1813,7 +1819,7 @@ PopupMenu::Options PopupLookAndFeel::getOptionsForComboBoxPopupMenu (ComboBox& b
         
         return options.withTargetScreenArea(area.toNearestInt());
     }
-    
+	
     return options;
 }
 

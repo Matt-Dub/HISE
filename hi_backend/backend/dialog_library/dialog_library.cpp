@@ -366,121 +366,6 @@ var CleanDspNetworkFiles::clearFile(const var::NativeFunctionArgs& args)
 	return var();
 }
 
-ExportSetupWizard::ExportSetupWizard(BackendRootWindow* bpe):
-	EncodedDialogBase(bpe)
-{
-	loadFrom("2704.jNB..fmB........nT6K8C1aqT2T.nFYPIQKvBYE2fZk8oTIuY8Ts9srVR7eYYBcitoBwNv2ZY6uP6ASUlOjRN9A8eP+W3gbeDPHAfQ.SuzEIh.YoZOrFbxSt4TOetXZ+XbKwqojPhV.KE0i90DZ+ntUScr1hZRpxR08vKd5uJ7QsR++MqOWc1kzFRPn4TDUVpr+A4dPzPrs3nDDJHRh9PYMe2YU+l2wZDMEMmUDYKO1fnIoIoKRGVo8GUOdjguKzUXVqwa7WMFtnZSFcRdp4YdTdDnD1412U6S8YnKhVpnZCeZOcJmnMrqCcMxXQFd0yptFgJVhvxDPDQKgwG2YsDpwjELSfYh1OtyniV7GwDWh3gIj.yDVtLwGp+HfXhHtLwGILhQBLWfPBK5me8fELXtfohDVtrTQzMO5Y7XMIIQkkJpGAVIIZAXPZWMoJ4JE7htERh7m0HZohdoiQzt65fFVpH9YMcr6qh10AMzjhRyFarPCUNUd9qBIZhhCmMTYOCqZ8uYZCNpbPWoLmKIF0uqncD972EVPYqcS1ZR3VkN7ujaXXd6aDu1mj6LicFUYeGsAcglMRN+8gxPPZB+T47Xasgbqsy98yE72utggUB0w1tG2zHuMHNCayt.IH6JsY+r21Z8e05u1UW5120cy61Yry1XjaqvrNen9qvd10IZWKzzWDlkYZJhLOvNioIInoqdLiFEhI6M5uTQbM7iIrrTdjv2imureoeIfnElPyokhyebVcRHKSVpo+OrTOVGCMgXojPOTVKAQfPgOf.EbPEv5HCDUvoBWlFyCxnCMeXgGwNbvPGVTwiSnJDZjNrPxw7AWl3EvH5P5IIA47fSGRfxr.CtLzINFoiJtTQVkMMyCLaqE3gqj5JhHxs0iju5fOKo8Gq3.yIT.QsOSp9xIQFN4V5Tht+Tpc7B9TlRrAIaJ0MJw9kPINNt4Dtkg1Coouv8AZpVDffL8aKd4+1zs51eXMpbitRIGX5gIKT7fWQFihFDrV4IAjrF8EcyqDn5CJ.Qf1CJhs7h.Tr8ox.JSlLYxGIm8T5GEM+R5w7pSufZRUPTnPUm+mYfPZZmYgUyoXK7cw18P4l1Zwxjk0gusuZi7VE9w91txcbtR12kXapUNlgZqfPnK1rnpkcIYZEGSlLoKN2WGi7WgzN66LtciwBzb6WoPLjbglMULsmb3PHMEVaMXajD8PMqsJMZOLGIGz1iGHsCHL9IjdUYPrC1vi8njy0.poAfM3PHUn1vWcNRWposL.OsqdLqBkPLNqT0u1fBEPP5a4XSUcN48gNUercTtV6qV14yqJ23nju3VNentDn80VaskwCafbq0lNw7es3ulI6kQXtI4l9oxclvQjn8WYMJeqgGQX.QRssnmI1UcT+uZJTCWcOAS+mTo4EcLdck4paOm4PPbVasu9ufulNkabG6rRVd6OITaeFBcXWdb9WLMSDQ9t1xts1Jmsb9F0k1fJPeI8eetm8Fc8lxasC4VaW6jrDjPjDQq8HxN6dIjairDpQ6eYYO8tJ2ak4NGvZyiElWg59uobZp+U6bVQlmMm56Apvd+Z+bbBal94WgBoujrFsmaj07ee8S1WIXbnJ8lPICoTDIh..ff.HDH.Pf3AyRj0r0CBCJPHNFDkTQLF..Hf.Pf..jfAfH..f..lFPXIiQfLMSPueHEpd05DXMIYtYa6fJi2EPx7CyRb3lFOeOqo1p.t63Me420zXmkuGsWWezW4EWGnihKTgd2S8f34Bfjt4EQ.exYTh943S9nS6RINKtasGNrOslldEEARB0iOJoDGbTUyRy3FkEIFvvkvpyRRB6TaPkHvIDHqXDqg5UgGoXBdos8MWrZ9fpxGm3wf5JhC.hOJMssAfE7GpWgD6A21BK3CqdBTpvjMMBg5DM6OAxIKnT0jkT+IGBL6sdGfIjIGrfkINZHCzWCxEiS5dIBS0YWJypdNSTsOz1sKS5v+V8sBZXa0091YzSh6WJptzCArBFVBNqebX.ppO0KUsIYMJ+AqkOagMVwIcpYwjtK17LmVIOvINn8BR2GieJzuomlsDRDC8FzHrXiuNSyHgkO9pQpybd1pENRcmO8ZP6sTxH3D2.f0qwJIcJM7rohvCnuSSlgjiJMK4ffQwHD40HUxnIiipjMBnFxixL9qDLdG7QE5nRoBw6LLkFkZ+HC0wtYLJSTfxAty+CjUH+3wvYu7b2Y8qwbhK67gfk5NcLEHeOSIiY34M8cX9US6CRdkazQZWgJn2PqCoUApQQ7XiZsL8oxUBJH3to11SjfKI+YIBQB+AYAPblmXGVPnSTAQNUYmXS11QxujtRM+4fvFKM.SmCqYjKkOEQbVy6pFUnBAWBfBrM28H.WjsVOIUtCEm9S8J4.bNhhdS3tfhM6fnxoRbGXzIWiLA1iB+Ar7lctbWrCqEGesOdpz9kjaK8lzxRDQF8GgRgLHszqpU1IPcqdpWBt.hf7DrSvtkqMX3Lc0Zj.42Z0+o8fZH0Dc6mWqav67CH4JO5iYpMt6yx3StXJDgUY6+f3jBVsYahwYDHzeYmDx7lGCdv2wOabRAocG+u.H9.nuQf7s.SnORhnTK7zgINl9ai7VlN+k70UoiumY6IclwofK3P4Ex5NgWW4vlQCHCzvrtelgR4.m1VU0AuomukFfiz..WIckWcK7XmH2ZC7sMClIaYji0sh8li5q.ZxE7oHLdtpQgCPiezTslpnmB2reKSBcjLGs1Y450C1gcoIBOeShwIrwFpibZJ+FIc5foYuMfLLoXlRFOqMpVinOIz.IWxPAYDRDniM3YPHSZtBEbfYyYrs5uWmnnBShXnKnJAGVfV8n8PLPlXQnkQm4HcdvT1wpnCFXg246dylQsLgCh5ydEKNn9OgnYBVawW6SIWr+mS8sj+6z4VpwBGUKpoVRnYqG2ay1+tUNXZUHXmJSUzsXZm+jIJX4CF1eWjalP.iV0lH.acRsrXvzdc2XwdzZasqMaIMiPsQjk8lH9PoBUCKsoFubhCibfYwou.sk4N6DwpHSnFfrO6O80R8mGKOIPZPHN.Y82huYN+.tHXFJwzrlSn.RFT58WePuOy0MRl6B5Gzfl.1NnWYjy47jX4g2eoDiCqoIxsrKze7yR+35mxcmVf2sXN9aMVlfwlm0XkMzVXA9F5BFU+TIlxzotxzKeGCv8TFH1Jqis.XvZIxL0L2bZBAYAYxJNkNXxoA7RWoshSsDPkrCG9DDIWdq4iXlNl5BEAbJjEhGDtlHA4Y0nTozk5xwNry7LFcQRGu.poP5gPLRrb.tlL3ZqzPjU0WkOBZfepFj6Auv34i.P6u5Zw4BwhJ01KQgrPLEZ8XONZBoRRVts6EyhVSnDOYnLeZBgyXaiBRanS8XtFAXe+4urBVrQE6POX7YcNknyj4cj4Tm6I8Clj8Q38ts7kO2PSUzoNFUItmRSh28f9j8wDQIuQzsPxe+IdyFIJvBikPxia4AzoOWdTSguVHTQ4YtXlg.1jluZN8IFtZWRdZerk4OiF.b7AEc2eGgBcRCRxhxwKBWRQ4UPW+wzljqxDBVyyle+tyQB1xgQQ.RCviA.u+lsxMe3NN+FFNentgOT5H..foi...qNB...");
-}
-
-var ExportSetupWizard::checkHisePath(const var::NativeFunctionArgs& args)
-{
-	auto exists = readState("HisePath").toString().isNotEmpty();
-
-	writeState("hisePathExists", exists);
-	writeState("hisePathExtract", !exists);
-	writeState("hisePathDownload", !exists);
-	writeState("hiseVersionMatches", true); // TODO: make a proper version check against the source code
-
-	return var();
-}
-
-var ExportSetupWizard::checkIDE(const var::NativeFunctionArgs& args)
-{
-#if JUCE_WINDOWS
-
-	auto MSBuildPath = "C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe";
-	writeState("msBuildExists", File(MSBuildPath).existsAsFile());
-
-	if(readState("UseIPP"))
-	{
-		auto IppPath = "C:/Program Files (x86)/Intel/oneAPI/ipp/latest/include/ipp.h";
-		writeState("ippExists", File(IppPath).existsAsFile());
-	}
-	else
-	{
-		writeState("ippExists", true);
-	}
-#elif JUCE_MAC
-        {
-            juce::ChildProcess xc;
-            xc.start("xcodebuild --help");
-            auto output = xc.readAllProcessOutput();
-            auto xcodeExists = xc.getExitCode() == 0;
-            writeState("xcodeExists", xcodeExists);
-        }
-        {
-            writeState("xcPrettyExists", true);
-        }
-#endif
-
-	return var();
-}
-
-var ExportSetupWizard::checkSDK(const var::NativeFunctionArgs& args)
-{
-	auto toolsDir = File(readState("HisePath").toString()).getChildFile("tools");
-	auto vst3sdk = toolsDir.getChildFile("SDK/VST3 SDK");
-
-#if JUCE_WINDOWS
-	auto projucer = toolsDir.getChildFile("projucer/Projucer.exe");
-
-	auto ok = projucer.startAsProcess("--help");
-#elif JUCE_MAC
-        
-        auto projucer = toolsDir.getChildFile("projucer/Projucer.app/Contents/MacOS/Projucer");
-        
-        jassert(projucer.existsAsFile());
-        
-        auto ok = projucer.startAsProcess("--help");
-        
-#else
-		auto ok = true;
-#endif
-
-	writeState("projucerWorks", ok);
-	writeState("sdkExists", vst3sdk.isDirectory());
-	writeState("sdkExtract", !vst3sdk.isDirectory());
-
-	return var();
-}
-
-var ExportSetupWizard::prevDownload(const var::NativeFunctionArgs& args)
-{
-	auto id = args.arguments[0].toString();
-	String url;
-
-	url << "https://github.com/christophhart/HISE/archive/refs/tags/";
-	url << GlobalSettingManager::getHiseVersion();
-	url << ".zip";
-		
-	writeState("sourceURL", url);
-	return var();
-}
-
-var ExportSetupWizard::skipIfDesired(const var::NativeFunctionArgs& args)
-{
-	if(readState("skipEverything"))
-		navigate(4, false);
-
-	return var();
-}
-
-var ExportSetupWizard::onPost(const var::NativeFunctionArgs& args)
-{
-	writeState("ExportSetup", true);
-		
-	auto bp = findParentComponentOfClass<BackendRootWindow>()->getBackendProcessor();
-
-	MessageManager::callAsync([bp]()
-	{
-		bp->getSettingsObject().loadSettingsFromFile(HiseSettings::SettingFiles::CompilerSettings);
-	});
-		
-	return var();
-}
-
-
-
 var AboutWindow::initValues(const var::NativeFunctionArgs& args)
 {
 	
@@ -523,7 +408,8 @@ var AboutWindow::initValues(const var::NativeFunctionArgs& args)
     
     
     String Version = hise::PresetHandler::getVersionString();
-    
+	String JuceVersion = SystemStats::getJUCEVersion();
+
 #if JUCE_DEBUG
     setXY(JUCE_DEBUG, 1);
 #else
@@ -537,6 +423,7 @@ var AboutWindow::initValues(const var::NativeFunctionArgs& args)
 #endif
 
     set(Version);
+	set(JuceVersion);
     set(USE_IPP);
     set(HISE_INCLUDE_RLOTTIE);
     set(HISE_INCLUDE_RT_NEURAL);
@@ -639,7 +526,7 @@ var WelcomeScreen::populateProjectSelector(const var::NativeFunctionArgs& args)
 {
 	auto recentProjects = ProjectHandler::getRecentWorkDirectories();
 
-	recentProjects.removeRange(10, 10000);
+	recentProjects.removeRange(4, 10000);
 
 	if(recentProjects.isEmpty())
 	{
@@ -685,8 +572,8 @@ var WelcomeScreen::populateProjectSelector(const var::NativeFunctionArgs& args)
 			hipFiles.sort(recentSorter, true);
 			xmlFiles.sort(recentSorter, true);
 
-			hipFiles.removeRange(1, 10000);
-			xmlFiles.removeRange(10, 10000);
+			hipFiles.removeRange(3, 10000);
+			xmlFiles.removeRange(3, 10000);
 
 				
 
@@ -738,18 +625,6 @@ var WelcomeScreen::populateProjectSelector(const var::NativeFunctionArgs& args)
 
 var WelcomeScreen::setupExport(const var::NativeFunctionArgs& args)
 {
-	auto b = bpe;
-
-	closeAndPerform([b]()
-	{
-		b->clearModalComponent();
-		BackendCommandTarget::Actions::setupExportWizard(b);
-
-		auto np = dynamic_cast<multipage::library::ExportSetupWizard*>(b->modalComponent.get());
-		jassert(np != nullptr);
-		np->navigate(1, false);
-	});
-
 	return var();
 }
 
@@ -1848,6 +1723,167 @@ var DebugSessionOptions::onExport(const var::NativeFunctionArgs& args)
 #endif
 
 	return var();
+}
+
+AssetInstallCreator::AssetInstallCreator(BackendRootWindow* bpe) :
+	EncodedDialogBase(bpe)
+{
+	loadFrom("2694.sNB..D...............35H...oi...Zo.........J09R+fwBIEJE.5zEjPvBzPiyAHSYiU5F1TxTIVixkZt+yB0d5PqUd.mpMCeUHdPPoOAGmuvK3by.kHnP.0Cv7.rintlDdlVGE3kuix6ZkMVetkFPq+Dv6jKodeYIXJeHtD9CFPRiRDPfW77q8y+A+QG3OXZTxdXR60ZNX4peU8v4ecUpwDoVyBVF0LHLAqbIuTfn.AA2q6TOp3rQ0Xp1fJ27R5FlRJMre+nGmU1rprgu5tEHikuyZP8S0gYBdYhq66zV63XRIHF.0YYGVtRZii5U.hJSToBIlP4ksR0ixqFTpXoBKTb5J0LTVT9STQDSrfJnvREUhnhmD8mPhJlHhJDgWlEJrDgDT7.c0RKnhEKQXABJpDAdYh60rFyTDEHJf.uLQ4vxYw5G7vDWxdSJEv9SMlfWl7biwDDQL.c.uLI+7BkU8blfX.5P.XVpnGGdBSSqqim0Qx3T9gQNRFAnusNIuytZJGWVDI0ijujnXEmeA3dQRGIhz9bEZLMiGK83WlyEZxVCt++8fI7Gf.BHqTqb8ud2TGU65f8+w4dc4ycHb6a.pARHn552wLbzjApbiuzaknGeYQu11YQ1qSEi2jBa.jS87MmcZz+WcbwI5Ja6f7luScciZWp+PMRB+zoKxoTiodPFa+fqNHQ6f+zKQb4FZqpiLntEa8fgxBjPyfBkIrvTyx8BGzPe87nD1O9b9AecE1W3ttg5MCCka6v5y83kIuqadXAu3ucktD3zkqqvfJUpL.7xhesaRDoL5iFvRYcygAbVWq0C9vhsunJFKk1Oo5+kg3r9Om3y5SxCg.7Adxe1yU2+ZWm3UizJv3ZYQNoaHICjuUsiKk2HpVRYMDJARaHJv4DBBMoX6FnSidRl5d+sA02O3Cdj9jB4OaKxRoK8HggffPvLO.xsAvpNHPGY4.00iIYgkxhxEq4dx3.BBB4IvKa23Su87rc2o9CSj5iSmRNodPwuYMTn3QJzoOmo5aTYJ40XMcGViFndrFi.7kKkVDnU8To2RcdlVJrhEkQp5XkSGQ+7rW1QWXUz2a7EWJkq63zFpQ3h8ZOt6zm.ItVo5zLzPIbe4xEaz7fNnqN..JI.ZfRktYZTpQuoDJvoaW+zQtNKsku+nPOw1hAVxN8IIiNx5QxYAS4zoSu.qTaW2VN.wx8S6OutF+b365ydTqisyt.Bg7hd7kWLbbXImlThNkbvcmL+bgAS2j97dfWaskSz03AbeQouW0u68rp0XVtriZKCCD1nIiNxrwD3.RFIXwFbzHylMVjAFP1nBa3OtfEZPgLdLAPxzgEdnoCLVj4BPf5W+08woiznBznPXTj.0c3EjPbtmjjxxzbW6tJ0tl53vEw0edcSyuXW6FsbCu20SYMpjC+AGVx89K+gSoulobx55WRc6BW5mthw8hULv.w3QosixPGvUI2qckBgfxhpHLJUPExDYF...E.fPn...hGOMPYP8AHJj.gTkTNogv.R..CH..ADBHffB.JQ..7WAG0RbjRKeA5JAAKCnIiPTY8qjPGY2brUlELSX8bJc0EtGD6KMKVPWE9MyUFWDpK52BojZ1QOUyqkw60GmMJAWJb3QuFsVXg6ptfEVrABg4IpGlGX3P8irUlWfxSF5DIJIHBDwWkPqPu7+tFndoVoV3kmLWO7ZVqMzk7TYzLtqWoWFSJRz6BWapdT61GRsaVpXRJ8GrIFJPdFVnZdPPNl7uHVqTLUgZH0fotCJMMQ2Q8jumVf.ZAjWkuB49Bn1hkGwf.z5aOhzf5P1Dwcdw1FA+pNakJbsdn9n9MHh2C0Bm5nGVuC+z5CyNuOSLLsroyXea1aLIgvKtiNhTzZl1AhQZP1GcYDVgl4ydiVfBAsqbYAPsK.oJ2l6xWM2B6ZA11BkBhN4g7wgRCnVuPVAKn2Vo176L4wzdcVTAcQMOAMHrGNJuwSDT8LwbRH8XZRoj6EmUED2+CYEE5Y6Gsh8JqYootMyZFBxEKe0yBXhsNMqKXmpVjCjdwCV6Nhg2u8cCEZYVFCFn8JDLJ1xQWez4.WIs8Jd3H5Kdeak+4zrJMiZ3+HLGZrh6ovpCS5bjFyOZPzwlLg.jFGRo4QQSSo5pXTVzBp9OjBWofqdCGFwuD7UUMHhgO0Zzxqo2M.DTKIJ5vHjyQAMBNJc42oaFMj339QvJ5U0WVt+CHmBspf8pp0fHGu1lAwn3IhMVVpxVjYucbmN6HxdWCmUv1b1pk8sPAtj.JwaTUtVNaUrOPl5lcj87TPn8JZxm+D8FcYa72Km466giv4y5iYOpjabZMDjsuORS2lyvHXUJFKcNeWxY701Jua+Wn8txP13HO5yB2uk9iFtck3.PIXiCdHGpPZwDGp3YXuysecxf53JDqDZx73ssQdqhjraMKuhVjv.hR0aVmdgFZzgbLMsFhThwTdaQvI0zAdsBYgJy8rKFsdzi58vwO7SNBPeDvI+MvYSho2xE584juHRbcTRsfRHn5hVnb9P0LOZhJYXDbCnpdS.3VDHDFzVbdQdrMYIDoIia58e1znEFaiTFs5F2bVo.CrhhdIcZ3Arh3qW5NiLnZ11c.Dx8ERSK06cone6ARM0DOyGGy5S1MA00uZDvRdeSl.djwDDY7q2nrLMqR+2z5VvzenQZg9dhPlZNaIZWww2un.wA7GrzgCSBaG36XHohYbFG00TRJOTIAAtoOZOsIG4D6Fh4LA8vDPUsDblFVqFznywm0wxq0GLCAbV2GUyWAmrX6Wm0Tht9NHMEUuND9pqZT8Os3n+umT0oRunkrn96fkZT23vxKSZsL1aVi9SSfVZ8mYWh9OK2OjKdDHBmfbkW0173adOIGdjXOLdxozvEzFiYcJJYMTnU3NJZtvrxmGCnF05qt5jIIpvw16Iq0F1YjQcNo4h5gf1wn5HTjRDUrK7U7dJYrDE0goOs5Q9L5zi3hY.HArZ73Z8lVwjX3HRyNXKe0NU5qAtBDGkFvQiLXUvgmEj8kNfGHL26ywGEgkPjjUhWwN0QuqMbm3XKtTzwt5WhaOgpQIfGsaj1Sfnqg0ERQO352B3qTOhnY8IF1DQwpMp75f2Dz73AJpwRpCRv4yGjLc6.k5bSQ3T4JdRwl6jd9HtPvy3DiuMCq1zAbIPnoo9XqRpKMAvBXN2Qw24T3wAxEH74aXNMybuEgHEiL.OFhzv5e4GJXzENSUmByeYsPAm0LCIQJa.4kk19vwbALl4M5vOY6pnAQ4vVdN2uUri0CtuImql6tyft3paG7OFsn5CmB+BhdXJaebW74FRpREHOktatsSYPE4+ZWSGS1iDwChVRqGn4lweKBDRHAdqiRMbkzebf9gJPa9VoTftPl.vTC6+Xm4qpwkPJJIdq0tDMgJxVPkVlsKoOfUveNRlO5yjG3vyezNtzmPtyVjssKsndstuIDCpTfEUAAC.JezpFbKXFB1l.+gemithRgZD4JImEW+I+tuOguC5t5uZqHapE4H7u8SgVkFmnPz3huko5NB5NMSel6vNLVkmS+E1sKAtZCfXiOi2RyEZYlmwX2xHvk8Kfr8.kNB..X5H...qi...");
+}
+
+juce::var AssetInstallCreator::cleanupData(const var& obj, bool forLoading)
+{
+	if(obj.getDynamicObject() == nullptr)
+		return var();
+
+	auto o = obj.getDynamicObject()->clone();
+
+	auto convertLinesToArray = [&](const Identifier& id)
+	{
+		auto multilineString = o->getProperty(id).toString();
+
+		auto sa = StringArray::fromTokens(multilineString, "\n", "");
+		Array<var> items;
+		for(auto& s: sa)
+			items.add(var(s));
+
+		o->setProperty(id, var(items));
+	};
+
+	auto removeIfDefault = [&](const Identifier& id, const var& defaultValue)
+	{
+		if(o->getProperty(id) == defaultValue)
+			o->removeProperty(id);
+	};
+
+	auto convertArrayToLines = [&](const Identifier& id)
+	{
+		auto stringListAsArray = o->getProperty(id);
+
+		String s;
+
+		if(auto ar = stringListAsArray.getArray())
+		{
+			for(auto& v: *ar)
+				s << v.toString() << "\n";
+		}
+
+		o->setProperty(id, s.trimEnd());
+	};
+
+	if(forLoading)
+	{
+		convertArrayToLines("PositiveWildcard");
+		convertArrayToLines("NegativeWildcard");
+	}
+	else
+	{
+		o->removeProperty("SimulateTestRun");
+		o->removeProperty("LoadSettings");
+		o->removeProperty("ExternalZipSelector");
+		
+		removeIfDefault("InfoText", "");
+		removeIfDefault("UseFileType", false);
+		removeIfDefault("UsePreprocessors", false);
+		removeIfDefault("UseClipboard", false);
+
+		convertLinesToArray("PositiveWildcard");
+		convertLinesToArray("NegativeWildcard");
+		
+		if(!obj["UseClipboard"])
+			o->removeProperty("ClipboardContent");
+	}
+
+	return var(o.get());
+}
+
+juce::var AssetInstallCreator::onInfoType(const var::NativeFunctionArgs& args)
+{
+	setElementProperty("MarkdownPreview", mpid::Text, readState("InfoText"));
+	return var(true);
+}
+
+juce::var AssetInstallCreator::onSubmit(const var::NativeFunctionArgs& args)
+{
+	auto x = cleanupData(dialog->getState().globalState, false);
+
+	auto content = JSON::toString(x, false);
+	getPayloadFile().replaceWithText(content);
+
+	return var();
+}
+
+juce::var AssetInstallCreator::onPageLoad(const var::NativeFunctionArgs& args)
+{
+	auto projectRoot = getMainController()->getCurrentFileHandler().getRootFolder();
+
+	auto extraDefinitions = dynamic_cast<GlobalSettingManager*>(getMainController())->getSettingsObject().getExtraDefinitionsAsObject();
+
+	if(auto obj = extraDefinitions.getDynamicObject())
+	{
+		StringArray sa;
+
+		for(const auto& nv: obj->getProperties())
+		{
+			sa.add(nv.name.toString());
+		}
+
+		setElementProperty("Preprocessors", mpid::Items, sa.joinIntoString("\n"));
+	}
+
+	return var(true);
+}
+
+juce::var AssetInstallCreator::onLoadSettings(const var::NativeFunctionArgs& args)
+{
+	if(readState("LoadSettings"))
+	{
+		auto c = getPayloadFile().loadFileAsString();
+
+		var obj;
+		auto ok = JSON::parse(c, obj);
+
+		obj = cleanupData(obj, true);
+
+		if (auto o = obj.getDynamicObject())
+		{
+			auto gs = dialog->getState().globalState;
+
+			for (const auto& nv : o->getProperties())
+			{
+				gs.getDynamicObject()->setProperty(nv.name, nv.value);
+			}
+		}
+
+		return var(true);
+	}
+
+	return var(false);
+}
+
+juce::var AssetInstallCreator::onSimulateTestRun(const var::NativeFunctionArgs& args)
+{
+	auto externalArchive = readState("ExternalZipSelector").toString();
+	
+	HiseAssetInstaller::UninstallInfo info(getPayloadFile().getParentDirectory());
+
+	if(externalArchive.isNotEmpty())
+	{
+		ScopedPointer<ZipFile> zf = new ZipFile(File(externalArchive));
+		hise::HiseAssetInstaller payload(getMainController(), zf);
+		payload.setTestMode();
+		payload.install(info);
+	}
+	else
+	{
+		auto testData = cleanupData(dialog->getState().globalState, false);
+		
+		hise::HiseAssetInstaller payload(getMainController(), testData);
+		payload.setTestMode();
+		payload.install(info);
+	}
+
+	return var(true);
 }
 
 } // namespace library
