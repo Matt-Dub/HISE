@@ -161,7 +161,7 @@
 #endif
 
 #ifndef    HISE_DEACTIVATE_OVERLAY
- //#define HISE_DEACTIVATE_OVERLAY 0
+ #define   HISE_DEACTIVATE_OVERLAY 1
 #endif
 
 #ifndef    HISE_MIDIFX_PLUGIN
@@ -217,7 +217,7 @@
 #endif
 
 #ifndef    HISE_COMPLAIN_ABOUT_ILLEGAL_BUFFER_SIZE
- //#define HISE_COMPLAIN_ABOUT_ILLEGAL_BUFFER_SIZE 1
+ #define   HISE_COMPLAIN_ABOUT_ILLEGAL_BUFFER_SIZE 0
 #endif
 
 #ifndef    ENABLE_ALL_PEAK_METERS
@@ -277,11 +277,11 @@
 #endif
 
 #ifndef    HISE_SAMPLE_DIALOG_SHOW_INSTALL_BUTTON
- //#define HISE_SAMPLE_DIALOG_SHOW_INSTALL_BUTTON 1
+ #define   HISE_SAMPLE_DIALOG_SHOW_INSTALL_BUTTON 0
 #endif
 
 #ifndef    HISE_SAMPLE_DIALOG_SHOW_LOCATE_BUTTON
- //#define HISE_SAMPLE_DIALOG_SHOW_LOCATE_BUTTON 1
+ #define   HISE_SAMPLE_DIALOG_SHOW_LOCATE_BUTTON 0
 #endif
 
 #ifndef    HISE_MACROS_ARE_PLUGIN_PARAMETERS
@@ -323,7 +323,7 @@
 // hi_faust flags:
 
 #ifndef    HISE_INCLUDE_FAUST
- //#define HISE_INCLUDE_FAUST 0
+ #define   HISE_INCLUDE_FAUST 1
 #endif
 
 #ifndef    HISE_FAUST_USE_LLVM_JIT
@@ -331,7 +331,7 @@
 #endif
 
 #ifndef    HISE_INCLUDE_FAUST_JIT
- //#define HISE_INCLUDE_FAUST_JIT 0
+ #define   HISE_INCLUDE_FAUST_JIT 1
 #endif
 
 //==============================================================================
@@ -456,6 +456,10 @@
 
 #ifndef    HISE_INCLUDE_PITCH_DETECTION
  //#define HISE_INCLUDE_PITCH_DETECTION 1
+#endif
+
+#ifndef    HISE_INCLUDE_XSIMD
+ //#define HISE_INCLUDE_XSIMD 0
 #endif
 
 #ifndef    HISE_INCLUDE_RT_NEURAL
