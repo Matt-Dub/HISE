@@ -513,7 +513,7 @@ public:
 
 private:
 
-	Colour noteColours[127];
+	Colour noteColours[128];
 	int lowestKey;
 
 };
