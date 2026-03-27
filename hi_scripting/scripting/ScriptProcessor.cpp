@@ -38,6 +38,22 @@ namespace hise { using namespace juce;
 		contentParameterHandler(*this)
 	{}
 
+	hise::ProcessorMetadata ProcessorWithScriptingContent::withDynamicScriptParameters(const ProcessorMetadata& pd) const
+	{
+		auto md = pd;
+
+		auto content = getScriptingContent();
+
+		for (int i = 0; i < content->getNumComponents(); i++)
+		{
+			auto sc = content->getComponent(i);
+
+			md = md.withParameter(sc->createParameterMetadata(i));
+		}
+
+		return md;
+	}
+
 	void ProcessorWithScriptingContent::setAllowObjectConstruction(bool shouldBeAllowed)
 	{
 		allowObjectConstructors = shouldBeAllowed;
@@ -2430,13 +2446,6 @@ String JavascriptProcessor::SnippetDocument::getSnippetAsFunction() const
 	else				  return getAllContent();
 }
 
-float ScriptBaseMidiProcessor::getDefaultValue(int index) const
-{
-	if(auto c = getScriptingContent()->getComponent(index))
-		return c->getScriptObjectProperty(ScriptingApi::Content::ScriptComponent::defaultValue);
-
-	return 0.0f;
-}
 
 JavascriptThreadPool::JavascriptThreadPool(MainController* mc) :
 	Thread("Javascript Thread", HISE_DEFAULT_STACK_SIZE),

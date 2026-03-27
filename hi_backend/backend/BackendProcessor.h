@@ -539,7 +539,12 @@ public:
 		return &scriptUnlocker;
 	}
 
+	/** Creates or returns the build undo manager f. */
+	ControlledObject* getOrCreateRestServerBuildUndoManager();
+	
 	RestServer& getRestServer() { return restServer; }
+
+	ReplServer& getReplServer() { return replServer; }
 
 	simple_css::Animator& getCssParseAnimator() { return restServerAnimator; }
 
@@ -641,10 +646,15 @@ private:
 
 	AutoSaver autosaver;
 
+	ScopedPointer<ControlledObject> buildUndoManager;
+
 	RestServer restServer;
+	ReplServer replServer;
 	simple_css::Animator restServerAnimator;
 	
 	std::unique_ptr<InteractionTester> interactionTester;
+
+	hise::ProcessorMetadataRegistry processorDatabase;
 
 	static int commandLineServerPort;
 

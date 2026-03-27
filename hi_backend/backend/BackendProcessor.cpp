@@ -335,11 +335,38 @@ RestServer::Response BackendProcessor::onAsyncRequest(RestServer::AsyncRequest::
 		case RestHelpers::ApiRoute::ParseCSS:
 			return RestHelpers::handleParseCSS(this, req);
 			
-		case RestHelpers::ApiRoute::Shutdown:
-			return RestHelpers::handleShutdown(this, req);
-			
-		default:
-			return req->fail(404, "Unknown API endpoint: " + subURL);
+	case RestHelpers::ApiRoute::Shutdown:
+		return RestHelpers::handleShutdown(this, req);
+	
+	case RestHelpers::ApiRoute::BuilderTree:
+		return RestHelpers::handleBuilderTree(this, req);
+	
+	case RestHelpers::ApiRoute::BuilderApply:
+		return RestHelpers::handleBuilderApply(this, req);
+	
+	case RestHelpers::ApiRoute::UndoPushGroup:
+		return RestHelpers::handleUndoPushGroup(this, req);
+	
+	case RestHelpers::ApiRoute::UndoPopGroup:
+		return RestHelpers::handleUndoPopGroup(this, req);
+	
+	case RestHelpers::ApiRoute::UndoBack:
+		return RestHelpers::handleUndoBack(this, req);
+	
+	case RestHelpers::ApiRoute::UndoForward:
+		return RestHelpers::handleUndoForward(this, req);
+	
+	case RestHelpers::ApiRoute::UndoDiff:
+		return RestHelpers::handleUndoDiff(this, req);
+	
+	case RestHelpers::ApiRoute::UndoHistory:
+		return RestHelpers::handleUndoHistory(this, req);
+	
+	case RestHelpers::ApiRoute::UndoClear:
+		return RestHelpers::handleUndoClear(this, req);
+		
+	default:
+		return req->fail(404, "Unknown API endpoint: " + subURL);
 	}
 }
 
@@ -376,6 +403,7 @@ BackendProcessor::BackendProcessor(AudioDeviceManager *deviceManager_/*=nullptr*
   AudioProcessorDriver(deviceManager_, callback_),
   scriptUnlocker(this),
   autosaver(this),
+  replServer(*this),
   pluginParameterRamp(this)
 {
 	// Register all REST API routes from the centralized metadata

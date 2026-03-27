@@ -462,8 +462,7 @@ void ModulatorSynthChain::reset()
     
     clearAllMacroControls();
     
-    
-    for(int i = 0; i < parameterNames.size(); i++)
+    for(int i = 0; i < getNumParameters(); i++)
         setAttribute(i, getDefaultValue(i), dontSendNotification);
     
     sendOtherChangeMessage(dispatch::library::ProcessorChangeEvent::Preset);
@@ -596,21 +595,27 @@ bool ModulatorSynthChain::hasDefinedFrontInterface() const
 
 NoMidiInputConstrainer::NoMidiInputConstrainer()
 {
-	Array<FactoryType::ProcessorEntry> typeNames;
+	TimeVariantModulatorFactoryType tv(Modulation::Mode::GainMode, nullptr);
 
-    ADD_NAME_TO_TYPELIST(HarmonicFilter);
-    ADD_NAME_TO_TYPELIST(StereoEffect);
-    ADD_NAME_TO_TYPELIST(PolyshapeFX);
+	for (auto& pn : tv.getAllowedTypes())
+		allowedModulators.add(pn.type);
+}
 
-	forbiddenModulators.addArray(typeNames);
+hise::ProcessorMetadata::WildcardFilterList NoMidiInputConstrainer::getWildcard()
+{
 
-	EnvelopeModulatorFactoryType envelopes(0, Modulation::Mode::GainMode, nullptr);
-
-	forbiddenModulators.addArray(envelopes.getAllowedTypes());
-
-	VoiceStartModulatorFactoryType voiceStart(0, Modulation::Mode::GainMode, nullptr);
-
-	forbiddenModulators.addArray(voiceStart.getAllowedTypes());
+	return {
+		{
+			ProcessorMetadataIds::Modulator,
+			ProcessorMetadataIds::TimeVariantModulator.toString()
+		},
+		{
+			ProcessorMetadataIds::Effect,
+			ProcessorMetadataIds::MasterEffect.toString() + "|" +
+			ProcessorMetadataIds::MonophonicEffect.toString() + "|" +
+			PolyFilterEffect::getClassType().toString()
+		}
+	};
 }
 
 String NoMidiInputConstrainer::getDescription() const
@@ -618,27 +623,15 @@ String NoMidiInputConstrainer::getDescription() const
 
 bool NoMidiInputConstrainer::allowType(const Identifier& typeName)
 {
-	for(int i = 0; i < forbiddenModulators.size(); i++)
-	{
-		if(forbiddenModulators[i].type == typeName) return false;
-	}
+	if (noVoiceFX.allowType(typeName))
+		return true;
 
-	return true;
-}
+	// special rule: allow filter as only polyphonic fx - it can be 
+	// used monophonically
+	if (typeName == PolyFilterEffect::getClassType())
+		return true;
 
-SynthGroupFXConstrainer::SynthGroupFXConstrainer() = default;
-
-String SynthGroupFXConstrainer::getDescription() const
-{ return "Only Polyphonic FX"; }
-
-bool SynthGroupFXConstrainer::allowType(const Identifier& typeName)
-{
-	auto isPoly = typeName.toString().toLowerCase().contains("poly");
-        
-	// just trying to get through the day...
-	isPoly |= (typeName == Identifier("StereoFX"));
-        
-	return isPoly;
+	return allowedModulators.contains(typeName);
 }
 
 SynthGroupConstrainer::SynthGroupConstrainer()
@@ -651,6 +644,20 @@ SynthGroupConstrainer::SynthGroupConstrainer()
 	ADD_NAME_TO_TYPELIST(MacroModulationSource);
 
 	forbiddenModulators.addArray(typeNames);
+}
+
+
+hise::ProcessorMetadata::WildcardFilterList SynthGroupConstrainer::getWildcard()
+{
+	return {
+		{
+			ProcessorMetadataIds::SoundGenerator,
+			makeNegativeFilterWildcard<ModulatorSynthChain, 
+									   GlobalModulatorContainer, 
+									   ModulatorSynthGroup, 
+									   MacroModulationSource>()
+		}
+	};
 }
 
 String SynthGroupConstrainer::getDescription() const
