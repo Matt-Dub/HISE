@@ -105,7 +105,7 @@
 #endif
 
 #ifndef    USE_RAW_FRONTEND
- #define   USE_RAW_FRONTEND 0
+ //#define USE_RAW_FRONTEND 0
 #endif
 
 #ifndef    IS_STANDALONE_APP
@@ -129,7 +129,7 @@
 #endif
 
 #ifndef    USE_COPY_PROTECTION
- #define   USE_COPY_PROTECTION 0
+ //#define USE_COPY_PROTECTION 0
 #endif
 
 #ifndef    HISE_USE_UNLOCKER_FOR_EXPANSIONS
@@ -201,7 +201,7 @@
 #endif
 
 #ifndef    ENABLE_SCRIPTING_SAFE_CHECKS
- #define   ENABLE_SCRIPTING_SAFE_CHECKS 1
+ //#define ENABLE_SCRIPTING_SAFE_CHECKS 1
 #endif
 
 #ifndef    CRASH_ON_GLITCH
@@ -209,7 +209,7 @@
 #endif
 
 #ifndef    ENABLE_SCRIPTING_BREAKPOINTS
- #define   ENABLE_SCRIPTING_BREAKPOINTS 1
+ //#define ENABLE_SCRIPTING_BREAKPOINTS 0
 #endif
 
 #ifndef    HISE_ENABLE_MIDI_INPUT_FOR_FX
@@ -221,7 +221,7 @@
 #endif
 
 #ifndef    ENABLE_ALL_PEAK_METERS
- #define   ENABLE_ALL_PEAK_METERS 1
+ //#define ENABLE_ALL_PEAK_METERS 1
 #endif
 
 #ifndef    READ_ONLY_FACTORY_PRESETS
