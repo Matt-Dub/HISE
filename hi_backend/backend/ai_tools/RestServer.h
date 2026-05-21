@@ -32,6 +32,16 @@
 
 #pragma once
 
+//==============================================================================
+/** REST API contract version - stamped onto every JSON envelope as `apiVersion`.
+
+    Bump (semver) whenever the response envelope or any route's request/response
+    schema changes. Compile-time constant: there is no setter, no init call, no
+    runtime field. Consumers read it off any response (or `/api/status`) to
+    verify they are talking to a HISE build that matches their expected schema.
+*/
+#define HISE_REST_API_VERSION "0.8.2"
+
 namespace hise { using namespace juce;
 
 //==============================================================================
@@ -57,6 +67,7 @@ namespace RestApiIds
     DECLARE_ID(errors);
     DECLARE_ID(errorMessage);
     DECLARE_ID(callstack);
+    DECLARE_ID(apiVersion);  // Auto-injected envelope version (see HISE_REST_API_VERSION)
 
     // list_methods response
     DECLARE_ID(methods);
@@ -70,10 +81,12 @@ namespace RestApiIds
     DECLARE_ID(name);
     DECLARE_ID(required);
     DECLARE_ID(defaultValue);
+    DECLARE_ID(inverted);
 
     // status response
     DECLARE_ID(server);
     DECLARE_ID(version);
+    DECLARE_ID(commitHash);
     DECLARE_ID(compileTimeout);
     DECLARE_ID(project);
     DECLARE_ID(projectFolder);
@@ -173,6 +186,19 @@ namespace RestApiIds
     DECLARE_ID(files);                // Array of included file entries
     DECLARE_ID(processor);            // Owning processor ID for an included file
 
+    // script/tree
+    DECLARE_ID(tree);                 // Hierarchical script symbol tree
+    DECLARE_ID(dataType);             // HiseScript / debug data type
+    DECLARE_ID(search);               // Text search filter
+    DECLARE_ID(available);            // Whether a location can be used for jump-to-definition
+    DECLARE_ID(charNumber);           // Character offset for jump-to-definition
+    DECLARE_ID(maxDepth);             // Maximum tree recursion depth
+    DECLARE_ID(compact);              // If true, omit extended node metadata
+    DECLARE_ID(totalMatches);         // Number of matched nodes before limiting
+    DECLARE_ID(returned);             // Number of returned nodes after limiting
+    DECLARE_ID(truncated);            // True if limit clipped the result
+    const Identifier namespace_("namespace"); // Namespace filter parameter / response value
+
     // profile / attachable profiling
     DECLARE_ID(durationMs);           // Profiling duration in milliseconds
     DECLARE_ID(threadFilter);         // Array of thread names to filter
@@ -217,6 +243,14 @@ namespace RestApiIds
     DECLARE_ID(selectors);            // Array of selector strings for specificity resolution
     DECLARE_ID(resolved);             // Resolved pixel value for a property
 
+    // Wizard endpoints
+    DECLARE_ID(wizardId);             // Wizard identifier string
+    DECLARE_ID(answers);              // Key/value form data from wizard
+    DECLARE_ID(tasks);                // Array of task function names to execute
+    DECLARE_ID(jobId);                // Job identifier for async wizard tasks
+    DECLARE_ID(finished);             // Whether an async job has completed
+    DECLARE_ID(progress);             // Progress value 0.0-1.0 for async jobs
+
     // Builder endpoints
     DECLARE_ID(operations);           // Array of builder operation objects
     DECLARE_ID(parent);               // Parent module name
@@ -229,6 +263,8 @@ namespace RestApiIds
     DECLARE_ID(validChains);          // Array of valid chain names for a type
     const Identifier template_("template");;            // Name template with {n} placeholder
     DECLARE_ID(created);              // Array of created module names
+    DECLARE_ID(parameters);
+    DECLARE_ID(prettyName);
 
     // Undo system
     DECLARE_ID(scope);                // "group" or "root"
@@ -247,10 +283,112 @@ namespace RestApiIds
     DECLARE_ID(op);                   // Operation type (add, remove, clone, set_attributes, etc.)
     DECLARE_ID(attributes);           // Parameter values object {paramName: value}
     DECLARE_ID(effect);               // Effect/network name for HotswappableEffect modules
+    DECLARE_ID(matrix);               // Routing matrix array: index=source channel, value=destination (-1 = none); length sets numSourceChannels
+    DECLARE_ID(send);                 // Send connection array (parallel sends); same shape as matrix, length must match numSourceChannels
+    DECLARE_ID(preset);               // Routing preset name (stereo, stereo_2, stereo_3, all, all_to_stereo)
+
+    // UI component endpoints
+    DECLARE_ID(componentType);        // Component type (ScriptButton, ScriptPanel, etc.)
+    DECLARE_ID(newId);                // New component ID for rename
+    DECLARE_ID(saveInPreset);         // Whether component value is saved in presets
+    DECLARE_ID(parentId);             // Parent component ID for add/move operations
+    DECLARE_ID(keepPosition);         // Preserve absolute position when reparenting
+
+    // testing/sequence
+    DECLARE_ID(messages);             // Array of MIDI message objects
+    DECLARE_ID(noteNumber);           // MIDI note number (0-127)
+    DECLARE_ID(velocity);             // Note velocity (0.0-1.0)
+    DECLARE_ID(channel);              // MIDI channel (1-16)
+    DECLARE_ID(controller);           // CC controller number (0-127)
+    DECLARE_ID(timestamp);            // Absolute time offset in ms from start of sequence
+    DECLARE_ID(isPlaying);            // Whether MIDI sequence is still playing
+    DECLARE_ID(activeNotes);          // Number of notes currently on
+    DECLARE_ID(eventsInSequence);     // Total logical events in queue
+    DECLARE_ID(playedEvents);         // Number of events dispatched so far
+    DECLARE_ID(replResults);          // Array of REPL evaluation results from testing/sequence
+    DECLARE_ID(processorId);          // Target processor ID for set_attribute
+    DECLARE_ID(parameterId);          // Parameter name for set_attribute
+    DECLARE_ID(propertyId);           // Property name for DSP node properties
+    DECLARE_ID(blocking);             // If true, wait for sequence to complete before responding
+    DECLARE_ID(signal);               // Test signal type (sine, saw, sweep, dirac, noise, silence)
+    DECLARE_ID(frequency);            // Signal frequency in Hz
+    DECLARE_ID(startFrequency);       // Sweep start frequency in Hz
+    DECLARE_ID(endFrequency);         // Sweep end frequency in Hz
+    DECLARE_ID(recordOutput);         // File path to record audio output to WAV
+
+    // project endpoints
+    DECLARE_ID(projects);             // Array of available HISE projects
+    DECLARE_ID(active);               // Name of currently active project
+    DECLARE_ID(projectName);          // Project name for tree response
+    DECLARE_ID(root);                 // Root node of project file tree
+    DECLARE_ID(modified);             // ISO8601 timestamp of last modification
+    DECLARE_ID(masterChainRenamed);   // True if HIP save renamed the master chain
+    DECLARE_ID(newName);              // New master chain name after rename
+    DECLARE_ID(snippet);              // HISE snippet string
+    DECLARE_ID(settings);             // Flat object of project_info.xml settings
+    DECLARE_ID(key);                  // Setting key name
+    DECLARE_ID(format);               // Save format ("xml" or "hip")
+    DECLARE_ID(file);                 // Relative path to XML or HIP file
+    DECLARE_ID(filename);             // Relative path to XML or HIP file
+    DECLARE_ID(referenced);           // True if file is actively referenced by HISE runtime
+    DECLARE_ID(OS);                   // Target operating system (Windows, macOS, Linux, all)
+    DECLARE_ID(preprocessor);         // Preprocessor macro name
+    DECLARE_ID(preprocessors);        // Array of preprocessor entries
+    DECLARE_ID(skipDefaults);         // If true, omit preprocessors whose runtime value equals the default
+
+    // dsp (scriptnode)
+    DECLARE_ID(nodeId);               // Node instance ID within a network
+    DECLARE_ID(factoryPath);          // Node factory path (e.g. core.oscillator)
+    DECLARE_ID(networks);             // Array of network names
+    DECLARE_ID(connections);          // Array of connection objects in tree
+    DECLARE_ID(sourceOutput);         // Connection source output name
+    DECLARE_ID(parameter);            // Parameter ID for connect/disconnect
+    DECLARE_ID(stepSize);             // Parameter step size
+    DECLARE_ID(middlePosition);       // Parameter middle position
+    DECLARE_ID(skewFactor);           // Parameter skew factor
+    DECLARE_ID(matchRange);           // connect op flag: copy target range onto source after wiring
+    DECLARE_ID(injectId);             // Child node ID to inject before
+    DECLARE_ID(probeId);              // Child node ID to probe after
+    DECLARE_ID(injectIndex);          // Resolved injection checkpoint index
+    DECLARE_ID(probeIndex);           // Resolved probe checkpoint index
+    DECLARE_ID(recursive);            // Probe all child containers recursively
+    DECLARE_ID(signalType);           // Probe signal type
+    DECLARE_ID(gain);                 // Probe signal gain
+    DECLARE_ID(seed);                 // Probe noise seed
+    DECLARE_ID(delayMs);              // Probe delay before capture
+    DECLARE_ID(specs);                // Probe processing specs
+    DECLARE_ID(containers);           // Recursive probe container reports
+    DECLARE_ID(numChildren);          // Number of child nodes in a container report
+    DECLARE_ID(sampleRate);           // Processing sample rate
+    DECLARE_ID(numChannels);          // Processed channel count
+    DECLARE_ID(blockSize);            // Processing block size
+    DECLARE_ID(polyphonic);           // Whether voice processing was enabled
+    DECLARE_ID(processMidi);          // Whether container was in MIDI context
+    DECLARE_ID(channels);             // Array of channel reports
+    DECLARE_ID(channelIndex);         // Channel report index
+    DECLARE_ID(avg);                  // Channel average sample value
+    DECLARE_ID(peakIndex);            // Sample index of positive peak
+    DECLARE_ID(silence);              // Whether the channel block was silent
+    DECLARE_ID(injected);             // Parameter values injected during a DSP probe
+    DECLARE_ID(probed);               // Parameter values captured during a DSP probe
+    DECLARE_ID(touchedEdges);         // Parameter connections touched by a wildcard probe
+    DECLARE_ID(testValue);            // Injected parameter value after processing
+    DECLARE_ID(originalValue);        // Parameter value before injection
+    DECLARE_ID(normalizedValue);      // Normalised parameter value
+    DECLARE_ID(outOfRange);           // Whether a parameter value is outside its range
+    DECLARE_ID(connectionMode);        // Parameter connection scaling mode
+    DECLARE_ID(sourceValue);          // Captured connection source value
+    DECLARE_ID(targetValue);          // Captured connection target value
+
+    // snippet browser
+    DECLARE_ID(exists);               // Whether a snippet browser instance is alive
+    DECLARE_ID(activeIsSnippetBrowser);  // /api/status: is the active BP the snippet browser?
 
 }
 
 #undef DECLARE_ID
+
+
 
 //==============================================================================
 /**
@@ -318,6 +456,8 @@ public:
         */
         String operator[](const Identifier& name) const;
 
+        bool getTrueValue(const Identifier& name) const;
+        
         /** Parse POST body as JSON. Returns undefined var on parse failure. */
         var getJsonBody() const;
     };
@@ -622,12 +762,15 @@ public:
 
     //==============================================================================
     /** Start listening for connections.
-        
-        @param port         Port number to listen on
-        @param bindAddress  Address to bind to. Default "127.0.0.1" for localhost only.
-        @returns            true if server started successfully
+
+        @param port                 Port number to listen on
+        @param bindAddress          Address to bind to. Default "127.0.0.1" for localhost only.
+        @param corsAllowedOrigins   CORS policy for the `Access-Control-Allow-Origin` header.
+                                    `"*"` (default) allows any origin, `""` disables CORS entirely,
+                                    or a comma-separated origin list to whitelist specific origins.
+        @returns                    true if server started successfully
     */
-    bool start(int port, const String& bindAddress = "127.0.0.1");
+    bool start(int port, const String& bindAddress = "127.0.0.1", const String& corsAllowedOrigins = "*");
 
     /** Stop the server. 
         

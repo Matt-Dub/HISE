@@ -252,20 +252,99 @@ struct RestServerUndoManager
 		UndoManager um;
 	};
 
+	/** Stores a deep copy of a script processor's content ValueTree for plan-mode validation
+	    of UI component operations. Created eagerly in pushPlan() using "Interface" as moduleId. */
+	struct UIValidationState : public ReferenceCountedObject,
+	                            public ControlledObject
+	{
+		using Ptr = ReferenceCountedObjectPtr<UIValidationState>;
+
+		UIValidationState(MainController* mc);
+
+		/** Find a component ValueTree by ID (recursive search). */
+		ValueTree findComponent(const String& id) const;
+
+		/** Check if a component with the given ID exists. */
+		bool componentExists(const String& id) const;
+
+		/** Check if child is a descendant of parent in the tree. */
+		bool isDescendantOf(const String& child, const String& parent) const;
+
+		/** Get all component IDs in the tree. */
+		StringArray getAllComponentIds() const;
+
+		/** Get the component type string for a given ID. */
+		String getComponentType(const String& id) const;
+
+		// Plan-mode mutations (modify the copied tree only)
+		void addComponent(const String& parentId, const String& type, const String& id, int x, int y, int w, int h);
+		void removeComponent(const String& id);
+		void renameComponent(const String& oldId, const String& newId);
+		void moveComponent(const String& id, const String& newParent, int insertIndex = -1);
+		void setProperty(const String& id, const Identifier& prop, const var& value);
+
+		ValueTree contentTree;   // deep copy of contentPropertyData
+		String moduleId;
+
+		/** Static map of component type -> valid property IDs for plan-mode validation. */
+		static const std::map<Identifier, std::vector<Identifier>>& getPropertyMap();
+
+	private:
+
+		static ValueTree findComponentRecursive(const ValueTree& tree, const String& id);
+	};
+
+	struct DspValidationState : public ReferenceCountedObject,
+	                            public ControlledObject
+	{
+		using Ptr = ReferenceCountedObjectPtr<DspValidationState>;
+
+		DspValidationState(MainController* mc, const String& moduleId);
+
+		/** Find a node ValueTree by ID (recursive search). */
+		ValueTree findNode(const String& nodeId) const;
+
+		/** Check if a node with the given ID exists. */
+		bool nodeExists(const String& nodeId) const;
+
+		/** Get all node IDs in the tree. */
+		StringArray getAllNodeIds() const;
+
+		/** Get the factory path for a given node ID. */
+		String getFactoryPath(const String& nodeId) const;
+
+		// Plan-mode mutations (modify the copied tree only)
+		void addNode(const String& parentId, const String& factoryPath,
+		             const String& nodeId, int index);
+		void removeNode(const String& nodeId);
+		void moveNode(const String& nodeId, const String& newParent, int index);
+		void setNodeProperty(const String& nodeId, const Identifier& prop, const var& value);
+		void setParameterValue(const String& nodeId, const String& parameterId, const var& value);
+
+		ValueTree networkTree;   // deep copy of DspNetwork ValueTree
+		String moduleId;
+
+	private:
+
+		static ValueTree findNodeRecursive(const ValueTree& tree, const String& id);
+	};
+
 	enum class Domain
 	{
 		Undefined  = 0x0,
 		Builder    = 0x01, // modify the module tree
-		UI         = 0x02, // modify the script components (not implemented)
+		UI         = 0x02, // modify the script components
+		DSP        = 0x03, // modify the scriptnode graph
 		numDomains
 	};
 
 	enum RebuildLevel
 	{
-		Nothing    = 0x0,
-		UpdateUI   = 0x1,   // use this if the data model should send a UI update (eg. patch browser rebuild).
-		UniqueId   = 0x2,	// use this if the data model should update the ID set
-		Recompile  = 0x4	// use this if the action should trigger a recompilation
+		Nothing        = 0x0,
+		UpdateUI       = 0x1,   // use this if the data model should send a UI update (eg. patch browser rebuild).
+		UniqueId       = 0x2,	// use this if the data model should update the ID set
+		Recompile      = 0x4,	// use this if the action should trigger a recompilation
+		ParameterSlots = 0x8,   // use this if the action should trigger a parameter slot update
 	};
 
 	struct CallStack
@@ -459,7 +538,8 @@ struct RestServerUndoManager
 		return {
 			"*",
 			"builder",
-			"ui"
+			"ui",
+			"dsp"
 		};
 	}
 
@@ -520,10 +600,15 @@ struct RestServerUndoManager
 		virtual void perform() = 0;
 		virtual void undo() = 0;
 
+		/** Override this to return the moduleId for UI actions (used for recompile targeting). */
+		virtual String getModuleId() const { return {}; }
+
 		// filled in by the factory...
 		Domain d = Domain::Undefined;
 
 		PlanValidationState::Ptr planValidation;
+		UIValidationState::Ptr uiValidation;
+		DspValidationState::Ptr dspValidation;
 	};
 
 	struct Factory: public ControlledObject
@@ -592,6 +677,8 @@ struct RestServerUndoManager
 
 			String name;
 			PlanValidationState::Ptr planValidationState;
+			UIValidationState::Ptr uiValidationState;
+			DspValidationState::Ptr dspValidationState;
 			ActionBase::Ptr currentAction;
 			ActionBase::List actions;
 		};
@@ -614,10 +701,33 @@ struct RestServerUndoManager
 		void pushPlan(const String& name);
 		bool popPlan(AsyncRequest::Ptr req);;
 
-		ActionBase::Ptr createAction(Domain d, const var& obj) const 
-		{ 
-			auto ad = f.create(d, obj); 
+		ActionBase::Ptr createAction(Domain d, const var& obj) const
+		{
+			auto ad = f.create(d, obj);
 			ad->planValidation = getCurrentValidationState();
+			ad->uiValidation = getCurrentUIValidationState();
+
+			// Lazy DspValidationState creation: inside a plan group, create/replace
+			// the snapshot based on the DSP action's moduleId. Different from UI,
+			// which hardcodes "Interface" at pushPlan time -- DSP module IDs vary.
+			if (d == Domain::DSP)
+			{
+				auto cs = getCurrentStack();
+				if (cs != nullptr && cs != rootActions)
+				{
+					auto actionModuleId = obj[RestApiIds::moduleId].toString();
+					if (actionModuleId.isNotEmpty()
+						&& (cs->dspValidationState == nullptr
+							|| cs->dspValidationState->moduleId != actionModuleId))
+					{
+						cs->dspValidationState = new DspValidationState(
+							const_cast<MainController*>(getMainController()),
+							actionModuleId);
+					}
+				}
+			}
+
+			ad->dspValidation = getCurrentDspValidationState();
 			return ad;
 		}
 
@@ -626,6 +736,16 @@ struct RestServerUndoManager
 		PlanValidationState::Ptr getCurrentValidationState() const
 		{
 			return getCurrentStack()->planValidationState;
+		}
+
+		UIValidationState::Ptr getCurrentUIValidationState() const
+		{
+			return getCurrentStack()->uiValidationState;
+		}
+
+		DspValidationState::Ptr getCurrentDspValidationState() const
+		{
+			return getCurrentStack()->dspValidationState;
 		}
 
 		String getCurrentGroupId() const { return getCurrentStack()->name; }
@@ -797,12 +917,32 @@ struct RestServerUndoManager
 
 			void perform() override
 			{
-				for (auto a : subActions)
+				int successfulCount = 0;
+				try
 				{
-					a->planValidation = planValidation;
-					a->perform();
+					for (auto a : subActions)
+					{
+						a->planValidation = planValidation;
+						a->uiValidation = uiValidation;
+						a->dspValidation = dspValidation;
+						a->perform();
+						successfulCount++;
+					}
 				}
-				
+				catch (...)
+				{
+					// Transactional rollback: undo already-performed sub-actions in reverse.
+					// Best-effort -- a rethrown undo error during rollback would leave us
+					// with even more partial state, so we swallow them and let the original
+					// exception describe the failure.
+					for (int i = successfulCount - 1; i >= 0; i--)
+					{
+						try { subActions[i]->undo(); }
+						catch (...) { /* best-effort */ }
+					}
+					throw;
+				}
+
 				if (!subActions.isEmpty() && postOpCallback)
 					postOpCallback(subActions, false);
 			}
@@ -823,11 +963,23 @@ struct RestServerUndoManager
 				return "group";
 			}
 
+			String getModuleId() const override
+			{
+				for (auto a : subActions)
+				{
+					auto id = a->getModuleId();
+					if (id.isNotEmpty())
+						return id;
+				}
+				return {};
+			}
+
 			Error validate() override
 			{
 				for (auto a : subActions)
 				{
 					a->planValidation = planValidation;
+					a->uiValidation = uiValidation;
 					auto e = a->validate();
 
 					if (!e)
@@ -839,8 +991,29 @@ struct RestServerUndoManager
 
 			void undo() override
 			{
-				for (auto a : subActions)
-					a->undo();
+				int undoneCount = 0;
+				try
+				{
+					for (int i = subActions.size() - 1; i >= 0; i--)
+					{
+						subActions[i]->undo();
+						undoneCount++;
+					}
+				}
+				catch (...)
+				{
+					// Symmetric rollback: re-perform already-undone sub-actions
+					// in their original forward order so we end up back at the
+					// post-perform state instead of a half-undone mix.
+					// Best-effort -- if re-perform also throws, we're degraded
+					// but the original exception describes the primary failure.
+					for (int i = subActions.size() - undoneCount; i < subActions.size(); i++)
+					{
+						try { subActions[i]->perform(); }
+						catch (...) { /* best-effort */ }
+					}
+					throw;
+				}
 
 				if (!subActions.isEmpty() && postOpCallback)
 					postOpCallback(subActions, true);

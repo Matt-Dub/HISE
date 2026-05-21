@@ -2631,12 +2631,15 @@ void ScriptingObjects::ScriptedLookAndFeel::setStyleSheetInternal(const String& 
 	currentStyleSheet = cssCode;
 	simple_css::Parser p(cssCode);
 
+	p.setAddAllStyleSheet(true);
+
 	auto ok = p.parse();
 
 	if(!ok.wasOk())
 		reportScriptError(ok.getErrorMessage());
 
 	auto newCollection = p.getCSSValues();
+
 	SimpleReadWriteLock::ScopedWriteLock sl(getMainController()->getJavascriptThreadPool().getLookAndFeelRenderLock());
 
 	graphics.clear();
@@ -5756,10 +5759,11 @@ HiSlider::HoverPopupLookandFeel::PositionData ScriptingObjects::ScriptedLookAndF
 	{
 		if (auto l = const_cast<Laf*>(this)->get())
 		{
-			PositionData pd;
+			PositionData pd = HoverPopupLookandFeel::getModulatorDragData(s, sourceList);
 			
 			var args = pd.toVar();
 
+			writeId(args.getDynamicObject(), &s);
 			args.getDynamicObject()->setProperty("sliderBounds", ApiHelpers::getVarRectangle(useRectangleClass, s.getBoundsInParent().toFloat()));
 			args.getDynamicObject()->setProperty("parentBounds", ApiHelpers::getVarRectangle(useRectangleClass, s.getParentComponent()->getLocalBounds().toFloat()));
 
@@ -5772,6 +5776,7 @@ HiSlider::HoverPopupLookandFeel::PositionData ScriptingObjects::ScriptedLookAndF
 
 			auto returnObj = l->callDefinedFunction("getModulatorDragData", &args, 1);
 			pd.fromVar(returnObj);
+
 			return pd;
 		}
 	}

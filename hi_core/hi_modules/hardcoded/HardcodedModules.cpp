@@ -214,6 +214,8 @@ void HardcodedMasterFX::prepareToPlay(double sampleRate, int samplesPerBlock)
 
 	auto ok = prepareOpaqueNode(opaqueNode.get());
 	errorBroadcaster.sendMessage(sendNotificationAsync, ok.getErrorMessage());
+
+	extraMods.prepareToPlay(sampleRate, samplesPerBlock);
 }
 
 juce::Path HardcodedMasterFX::getSpecialSymbol() const
@@ -421,6 +423,8 @@ void HardcodedPolyphonicFX::prepareToPlay(double sampleRate, int samplesPerBlock
 	auto ok = prepareOpaqueNode(opaqueNode.get());
 
 	errorBroadcaster.sendMessage(sendNotificationAsync, ok.getErrorMessage());
+
+	extraModSources.prepareToPlay(sampleRate, samplesPerBlock);
 }
 
 void HardcodedPolyphonicFX::startVoice(int voiceIndex, const HiseEvent& e)
@@ -958,7 +962,7 @@ void HardcodedSynthesiser::Voice::prepareToPlay(double sampleRate, int samplesPe
 {
 	auto numSynthChannels = synth->numChannelsToRender;
 
-	if (numSynthChannels != voiceBuffer.getNumChannels())
+	if (numSynthChannels != voiceBuffer.getNumChannels() && numSynthChannels > 0)
 		voiceBuffer.setSize(numSynthChannels, samplesPerBlock);
 	
 	ModulatorSynthVoice::prepareToPlay(sampleRate, samplesPerBlock);
@@ -1065,6 +1069,8 @@ void HardcodedSynthesiser::prepareToPlay(double sampleRate, int samplesPerBlock)
 	auto ok = prepareOpaqueNode(opaqueNode.get());
 
 	errorBroadcaster.sendMessage(sendNotificationAsync, ok.getErrorMessage());
+
+	extraModSources.prepareToPlay(sampleRate, samplesPerBlock);
 }
 
 Processor* HardcodedSynthesiser::getChildProcessor(int processorIndex)

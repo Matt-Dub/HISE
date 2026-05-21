@@ -179,7 +179,7 @@ struct ProcessorMetadata
 		ParameterMetadata withDescription(const String& desc) const
 		{
 			auto copy = *this;
-			copy.description = desc;
+			BACKEND_ONLY(copy.description = desc);
 			return copy;
 		}
 
@@ -238,7 +238,12 @@ struct ProcessorMetadata
 		{
 			auto copy = *this;
 			copy.type = Type::List;
-			copy.range = { (double)startIndex, (double)(startIndex + items.size() - 1), 1.0 };
+            
+            if(items.size() == 1)
+                copy.range = { (double)startIndex, (double)startIndex + 1.0, 1.0};
+            else
+                copy.range = { (double)startIndex, (double)(startIndex + items.size() - 1), 1.0 };
+            
 			copy.vtc = ValueToTextConverter::createForOptions(items);
 			return copy;
 		}
@@ -324,7 +329,7 @@ struct ProcessorMetadata
 		ModulationMetadata withDescription(const String& desc) const
 		{
 			auto copy = *this;
-			copy.description = desc;
+			BACKEND_ONLY(copy.description = desc);
 			return copy;
 		}
 
@@ -468,7 +473,7 @@ struct ProcessorMetadata
 	ProcessorMetadata withDescription(const String& desc) const
 	{
 		auto copy = *this;
-		copy.description = desc;
+		BACKEND_ONLY(copy.description = desc);
 		return copy;
 	}
 
@@ -563,6 +568,10 @@ struct ProcessorMetadata
 	ProcessorMetadata withParameter(const ParameterMetadata& pd) const
 	{
 		auto copy = *this;
+
+		// parameterIndex must equal the position in the array. Use asDisabled() to fill gaps.
+		jassert(pd.parameterIndex == copy.parameters.size());
+
 		copy.parameters.add(pd);
 		return copy;
 	}
