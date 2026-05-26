@@ -2406,7 +2406,7 @@ struct ScriptBroadcaster::RadioGroupListener::InternalListener
 	InternalListener(ScriptBroadcaster* b, ScriptComponent* sc) :
 		radioButton(sc)
 	{
-		radioButton->valueListener = b;
+		radioButton->valueListeners.add(b);
 	}
 
 	WeakReference<ScriptComponent> radioButton;
@@ -3166,7 +3166,10 @@ juce::Result ScriptBroadcaster::ComponentValueItem::callSync(const Array<var>& a
 				return false;
 
 			if (auto sc = dynamic_cast<ScriptComponent*>(cv.getObject()))
+			{
 				sc->setValue(rv);
+				sc->changed();
+			}				
 
 			return true;
 		});
@@ -4015,7 +4018,7 @@ void ScriptBroadcaster::attachToModuleParameter(var moduleIds, var parameterIds,
 
 	if (defaultValues.size() != 3)
 	{
-		reportScriptError("If you want to attach a broadcaster to mouse events, it needs three parameters (processorId, parameterId, value)");
+		reportScriptError("If you want to attach a broadcaster to module events, it needs three parameters (processorId, parameterId, value)");
 	}
 
 	auto synthChain = getScriptProcessor()->getMainController_()->getMainSynthChain();
@@ -4411,7 +4414,7 @@ void ScriptBroadcaster::attachToEqEvents(var moduleIds, var events, var optional
 	}
 
 	StringArray eventTypes;
-	StringArray legitEventTypes = { "BandAdded", "BandRemoved", "BandSelected", "FFTEnabled" };
+	StringArray legitEventTypes = { "BandAdded", "BandRemoved", "BandSelected", "BandMoved", "QChanged", "MouseOver", "FFTEnabled" };
 
 	if (events.isString() && events.toString().isNotEmpty())
 	{

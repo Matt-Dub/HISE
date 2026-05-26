@@ -863,7 +863,7 @@ void BackendRootWindow::saveInterfaceData()
 	{
 		auto tabs = BackendPanelHelpers::ScriptingWorkspace::getCodeTabs(this);
 
-		for (int i = 0; i < tabs->getNumTabs(); i++)
+		for (int i = 0; i < tabs->getNumTabs() - 8; i++)
 		{
 			auto c = tabs->getComponent(i);
 

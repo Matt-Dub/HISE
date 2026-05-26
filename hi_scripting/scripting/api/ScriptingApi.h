@@ -456,6 +456,9 @@ public:
 		/** Shows a message box with an OK button and a icon defined by the type variable. */
 		void showMessageBox(String title, String markdownMessage, int type);
 
+		/** Shows a message box with an OK button and calls the callback after the user clicks OK. */
+		void showMessageBoxWithCallback(String title, String markdownMessage, int type, var callback);
+
 		/** Returns the millisecond value for the supplied tempo (HINT: Use "TempoSync" mode from Slider!) */
 		double getMilliSecondsForTempo(int tempoIndex) const;;
 
@@ -677,7 +680,7 @@ public:
 
         /** Returns a number as string in hexadecimal format (0xFFFFFFFF). */
 		String intToHexString(int value);
-
+		
 		/** Signals that the application should terminate. */
 		void quit();
 
@@ -1022,6 +1025,9 @@ public:
 
 		/** Sets the options for the release start behaviour. */
 		void setReleaseStartOptions(var newOptions);
+		
+		/** Internally multiply sample start offsets by set amount */
+		void setOffsetMultiplier(int multiplier);
 
 		/** Converts the user preset data of a audio waveform to a base 64 samplemap. */
 		String getAudioWaveformContentAsBase64(var presetObj);

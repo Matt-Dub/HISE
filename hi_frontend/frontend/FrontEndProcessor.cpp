@@ -712,7 +712,7 @@ FrontendStandaloneApplication::AudioWrapper::~AudioWrapper()
 
 FrontendStandaloneApplication::MainWindow::MainWindow(String name) : DocumentWindow(name,
 	Colours::lightgrey,
-	DocumentWindow::allButtons - DocumentWindow::maximiseButton)
+	DocumentWindow::closeButton | DocumentWindow::minimiseButton)
 {
 	setUsingNativeTitleBar(true);
 	setContentOwned(new AudioWrapper(), true);

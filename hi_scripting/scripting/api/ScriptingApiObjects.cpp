@@ -193,6 +193,7 @@ struct ScriptingObjects::ScriptFile::Wrapper
 	API_METHOD_WRAPPER_1(ScriptFile, getChildFile);
 	API_METHOD_WRAPPER_1(ScriptFile, createDirectory);
 	API_METHOD_WRAPPER_0(ScriptFile, getSize);
+	API_METHOD_WRAPPER_0(ScriptFile, getVersion);
 	API_METHOD_WRAPPER_0(ScriptFile, getBytesFreeOnVolume);
 	API_METHOD_WRAPPER_1(ScriptFile, setExecutePermission);
 	API_METHOD_WRAPPER_1(ScriptFile, startAsProcess);
@@ -218,6 +219,7 @@ struct ScriptingObjects::ScriptFile::Wrapper
 	API_METHOD_WRAPPER_1(ScriptFile, loadEncryptedObject);
 	API_METHOD_WRAPPER_0(ScriptFile, getRedirectedFolder);
 	API_METHOD_WRAPPER_1(ScriptFile, rename);
+	API_METHOD_WRAPPER_0(ScriptFile, isOnHardDisk);
 	API_METHOD_WRAPPER_1(ScriptFile, move);
 	API_METHOD_WRAPPER_1(ScriptFile, copy);
 	API_METHOD_WRAPPER_1(ScriptFile, copyDirectory);
@@ -226,6 +228,7 @@ struct ScriptingObjects::ScriptFile::Wrapper
 	API_METHOD_WRAPPER_1(ScriptFile, toReferenceString);
 	API_METHOD_WRAPPER_1(ScriptFile, getRelativePathFrom);
 	API_METHOD_WRAPPER_0(ScriptFile, getNumZippedItems);
+	API_METHOD_WRAPPER_0(ScriptFile, getZippedItemList);
 	API_VOID_METHOD_WRAPPER_2(ScriptFile, setReadOnly);
 	API_VOID_METHOD_WRAPPER_3(ScriptFile, extractZipFile);
 	API_VOID_METHOD_WRAPPER_0(ScriptFile, show);
@@ -259,6 +262,7 @@ ScriptingObjects::ScriptFile::ScriptFile(ProcessorWithScriptingContent* p, const
 	ADD_API_METHOD_1(getChildFile);
 	ADD_API_METHOD_1(createDirectory);
 	ADD_API_METHOD_0(getSize);
+	ADD_API_METHOD_0(getVersion);
 	ADD_API_METHOD_0(getHash);
 	ADD_API_METHOD_1(toString);
 	ADD_API_METHOD_0(isFile);
@@ -280,6 +284,7 @@ ScriptingObjects::ScriptFile::ScriptFile(ProcessorWithScriptingContent* p, const
     ADD_API_METHOD_0(loadAudioMetadata);
 	ADD_API_METHOD_0(loadAsBase64String);
 	ADD_API_METHOD_1(rename);
+	ADD_API_METHOD_0(isOnHardDisk);
 	ADD_API_METHOD_1(move);
 	ADD_API_METHOD_1(copy);
 	ADD_API_METHOD_1(copyDirectory);
@@ -289,6 +294,7 @@ ScriptingObjects::ScriptFile::ScriptFile(ProcessorWithScriptingContent* p, const
 	ADD_API_METHOD_0(getNonExistentSibling);
 	ADD_API_METHOD_3(extractZipFile);
 	ADD_API_METHOD_0(getNumZippedItems);
+	ADD_API_METHOD_0(getZippedItemList);
 	ADD_API_METHOD_2(setReadOnly);
 	ADD_API_METHOD_1(toReferenceString);
 	ADD_API_METHOD_1(getRelativePathFrom);
@@ -320,6 +326,16 @@ var ScriptingObjects::ScriptFile::createDirectory(String directoryName)
 int64 ScriptingObjects::ScriptFile::getSize()
 {	
 	return f.getSize();
+}
+
+String ScriptingObjects::ScriptFile::getVersion()
+{	
+	#if JUCE_LINUX
+		auto matches = RegexFunctions::getFirstMatch(R"((\d+)(.\d+)*)", f.getFileName());
+		return matches[0];
+	#else
+		return f.getVersion();
+	#endif	
 }
 
 int64 ScriptingObjects::ScriptFile::getBytesFreeOnVolume()
@@ -783,6 +799,11 @@ bool ScriptingObjects::ScriptFile::rename(String newName)
 	return f.moveFileTo(newFile);
 }
 
+bool ScriptingObjects::ScriptFile::isOnHardDisk()
+{	
+	return f.isOnHardDisk();
+}
+
 bool ScriptingObjects::ScriptFile::move(var target)
 {	
 	if (auto sf = dynamic_cast<ScriptFile*>(target.getObject()))
@@ -992,6 +1013,7 @@ void ScriptingObjects::ScriptFile::extractZipFile(var targetDirectory, bool over
 		data->setProperty("TotalBytesWritten", 0);
 		data->setProperty("Cancel", false);
 		data->setProperty("Target", tf.getFullPathName());
+		data->setProperty("ZipFile", safeThis->f.getFullPathName());
 		data->setProperty("CurrentFile", "");
 		data->setProperty("Error", "");
 		
@@ -1119,6 +1141,20 @@ int ScriptingObjects::ScriptFile::getNumZippedItems()
 {
 	juce::ZipFile zipFile(f);
 	return zipFile.getNumEntries();
+}
+
+var ScriptingObjects::ScriptFile::getZippedItemList()
+{
+	juce::ZipFile zipFile(f);
+	StringArray result;
+	
+	for (int i = 0; i < zipFile.getNumEntries(); ++i)
+	{
+			if (auto* entry = zipFile.getEntry(i))
+					result.add(entry->filename);
+	}
+	
+	return result;
 }
 
 void ScriptingObjects::ScriptFile::setReadOnly(bool shouldBeReadOnly, bool applyRecursively)

@@ -69,7 +69,10 @@ public:
 		Colour highlightedTextColour;
 		Colour backgroundColour;
 		Colour textColour;
+		Colour modalBackgroundColour;
+		Colour itemColour3;
 		Font font;
+		String fontName;
 
 		int numColumns = 3;
 		Array<var> columnWidthRatios;
@@ -95,7 +98,9 @@ public:
 		bool showFolderButton = true;
 		bool showFavoriteIcons = true;
 		bool fullPathFavorites = false;
+		bool fullPathSearch = false;
 		bool showExpansions = false;
+		bool showExpansionEditButtons = false;
 	};
 
 	// ============================================================================================
@@ -186,11 +191,14 @@ public:
 	void updateFavoriteButton();
 	bool shouldShowFavoritesButton() { return showFavoritesButton; }
 	bool shouldShowFullPathFavorites() { return fullPathFavorites; }
+	bool shouldShowFullPathSearch() { return fullPathSearch; }
 
 	void lookAndFeelChanged() override;
 
 	void loadPresetDatabase(const File& rootDirectory);
 	void savePresetDatabase(const File& rootDirectory);
+	/** Flush the in-memory favourite database for the currently loaded root to disk. */
+	void saveCurrentDatabase() { savePresetDatabase(rootFile); }
 	var getDataBase() { return presetDatabase; }
 	const var getDataBase() const { return presetDatabase; }
 
@@ -233,6 +241,15 @@ public:
 
 	Point<int> getMouseHoverInformation() const;
 
+	Array<File> getAllSearchRoots() const;
+	Array<File> getAllFavoritePresets();
+	bool isFavoriteInAnyDatabase(const File& presetFile) const;
+
+	/** Mark the favourites cache as stale so it is rebuilt on next access.
+	    Call this whenever the favourite state of any preset changes or
+	    whenever the set of visible roots changes (e.g. expansion switch). */
+	void invalidateFavoritesCache() { favoritesCacheDirty = true; }
+
 	Component* getColumn(int columnIndex)
 	{
 		switch(columnIndex)
@@ -254,6 +271,7 @@ private:
 	void setShowFavorites(bool shouldShowFavorites);
 	void setFavoriteIconOffset(int xOffset);
 	void setShowFullPathFavorites(bool shouldShowFullPathFavorites);
+	void setShowFullPathSearch(bool shouldShowFullPathSearch);
 	void setHighlightColourAndFont(Colour c, Colour bgColour, Font f);
 	void setNumColumns(int numColumns);
 
@@ -294,7 +312,7 @@ private:
 	ScopedPointer<BetterLabel> noteLabel;
 	ScopedPointer<TagList> tagList;
 	ScopedPointer<ShapeButton> closeButton;
-	ScopedPointer<ShapeButton> favoriteButton;
+	ScopedPointer<TextButton> favoriteButton;
 	ScopedPointer<ModalWindow> modalInputWindow;
 
 	ScopedPointer<TextButton> saveButton;
@@ -305,6 +323,7 @@ private:
 
 	bool showFavoritesButton = true;
 	bool fullPathFavorites = false;
+	bool fullPathSearch = false;
 	bool showOnlyPresets = false;
 	String currentWildcard = "*";
 	StringArray currentTagSelection;
@@ -312,6 +331,16 @@ private:
 	WeakReference<Expansion> currentlySelectedExpansion;
 
 	var presetDatabase;
+
+	// Cached list of favourite files.  Rebuilt lazily whenever
+	// favoritesCacheDirty is true (on first access after a favourite toggle
+	// or expansion switch).  mutable so it can be populated from const
+	// query methods.
+	mutable Array<File> cachedFavorites;
+	mutable bool favoritesCacheDirty = true;
+
+	// Rebuild cachedFavorites from disk/in-memory databases.
+	void rebuildFavoritesCache() const;
 
 	JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PresetBrowser);
 

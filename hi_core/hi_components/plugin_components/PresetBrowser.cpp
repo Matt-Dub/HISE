@@ -535,7 +535,7 @@ expHandler(mc->getExpansionHandler())
 
 	addAndMakeVisible(tagList = new TagList(mc, this));
 
-	addAndMakeVisible(favoriteButton = new ShapeButton("Show Favorites", Colours::white, Colours::white, Colours::white));
+	addAndMakeVisible(favoriteButton = new TextButton("Show Favorites"));
 	favoriteButton->addListener(this);
 
 	addAndMakeVisible(modalInputWindow = new ModalWindow(this));
@@ -697,6 +697,126 @@ Point<int> PresetBrowser::getMouseHoverInformation() const
 		return p;
 	
 	return p;
+}
+
+Array<File> PresetBrowser::getAllSearchRoots() const
+{
+	Array<File> roots;
+
+	if (currentlySelectedExpansion != nullptr)
+	{
+		auto userPresetsDir = currentlySelectedExpansion->getSubDirectory(FileHandlerBase::UserPresets);
+		if (userPresetsDir.isDirectory())
+			roots.add(userPresetsDir);
+		return roots;
+	}
+
+	if (defaultRoot.isDirectory())
+		roots.add(defaultRoot);
+
+	auto& handler = getMainController()->getExpansionHandler();
+
+	for (int i = 0; i < handler.getNumExpansions(); ++i)
+	{
+		if (auto e = handler.getExpansion(i))
+		{
+			auto userPresetsDir = e->getSubDirectory(FileHandlerBase::UserPresets);
+			if (userPresetsDir.isDirectory() && !roots.contains(userPresetsDir))
+				roots.add(userPresetsDir);
+		}
+	}
+
+	return roots;
+}
+
+void PresetBrowser::rebuildFavoritesCache() const
+{
+	cachedFavorites.clear();
+
+	// Always build the full cache across ALL roots, regardless of which
+	// expansion is currently selected in the browser column.  The selection
+	// only determines which subset callers receive (see getAllFavoritePresets).
+	Array<File> allRoots;
+
+	if (defaultRoot.isDirectory())
+		allRoots.add(defaultRoot);
+
+	auto& handler = getMainController()->getExpansionHandler();
+
+	for (int i = 0; i < handler.getNumExpansions(); ++i)
+	{
+		if (auto e = handler.getExpansion(i))
+		{
+			auto userPresetsDir = e->getSubDirectory(FileHandlerBase::UserPresets);
+			if (userPresetsDir.isDirectory() && !allRoots.contains(userPresetsDir))
+				allRoots.add(userPresetsDir);
+		}
+	}
+
+	for (auto& rootDir : allRoots)
+	{
+		var db;
+
+		if (rootDir == rootFile)
+		{
+			// Use the in-memory database for the currently loaded root so that
+			// changes made since the last save (e.g. a just-toggled favourite)
+			// are reflected immediately without requiring a round-trip to disk.
+			db = presetDatabase;
+		}
+		else
+		{
+			auto dbFile = rootDir.getChildFile("db.json");
+
+			if (dbFile.existsAsFile())
+			{
+				db = JSON::parse(dbFile.loadFileAsString());
+				if (!db.isObject())
+					db = new DynamicObject();
+			}
+			else
+				db = new DynamicObject();
+		}
+
+		Array<File> presets;
+		rootDir.findChildFiles(presets, File::findFiles, true);
+		DataBaseHelpers::cleanFileList(const_cast<MainController*>(getMainController()), presets);
+
+		for (auto& preset : presets)
+		{
+			if (DataBaseHelpers::isFavorite(db, preset))
+				cachedFavorites.add(preset);
+		}
+	}
+
+	favoritesCacheDirty = false;
+}
+
+bool PresetBrowser::isFavoriteInAnyDatabase(const File& presetFile) const
+{
+	if (favoritesCacheDirty)
+		rebuildFavoritesCache();
+
+	return cachedFavorites.contains(presetFile);
+}
+
+Array<File> PresetBrowser::getAllFavoritePresets()
+{
+	if (favoritesCacheDirty)
+		rebuildFavoritesCache();
+
+	if (currentlySelectedExpansion == nullptr)
+		return cachedFavorites;
+
+	// Return only the favourites belonging to the selected expansion.
+	auto expansionRoot = currentlySelectedExpansion->getSubDirectory(FileHandlerBase::UserPresets);
+	Array<File> filtered;
+
+	for (auto& f : cachedFavorites)
+		if (f.isAChildOf(expansionRoot))
+			filtered.add(f);
+
+	return filtered;
 }
 
 void PresetBrowser::presetChanged(const File& newPreset)
@@ -909,39 +1029,45 @@ void PresetBrowser::resized()
 	if (tagList->isActive())
 		tagList->setBounds(listArea.removeFromTop(30));
 
+	const int folderOffset = expansionColumn != nullptr ? 1 : 0;
+	const int numColumnsToShow = jlimit(1, 4, numColumns + folderOffset);
+	int columnWidths[4] = { 0, 0, 0, 0 };
+	auto w = (double)getWidth();
+
+	if (columnWidthRatios.size() == numColumnsToShow)
+	{
+		for (int i = 0; i < numColumnsToShow; i++)
+		{
+			auto r = jlimit(0.0, 1.0, (double)columnWidthRatios[i]);
+			columnWidths[i] = roundToInt(w * r);
+		}
+	}
+	else
+	{
+		// column amount mismatch, use equal spacing...
+		const int columnWidth = roundToInt(w / (double)numColumnsToShow);
+
+		for (int i = 0; i < numColumnsToShow; i++)
+			columnWidths[i] = columnWidth;
+	}
+
 	if (showOnlyPresets)
 	{
 		if (expansionColumn != nullptr)
-			listArea.removeFromLeft(expansionColumn->getWidth() + 4);
+		{
+			expansionColumn->setVisible(true);
+			expansionColumn->setBounds(listArea.removeFromLeft(columnWidths[0]).reduced(2, 2));
+		}
 
 		presetColumn->setBounds(listArea.reduced(2));
 	}
 	else
 	{
-		const int folderOffset = expansionColumn != nullptr ? 1 : 0;
-		const int numColumnsToShow = jlimit(1, 4, numColumns + folderOffset);
-		int columnWidths[4] = { 0, 0, 0, 0 };
-		auto w = (double)getWidth();
-
-		if (columnWidthRatios.size() == numColumnsToShow)
-		{
-			for (int i = 0; i < numColumnsToShow; i++)
-			{
-				auto r = jlimit(0.0, 1.0, (double)columnWidthRatios[i]);
-				columnWidths[i] = roundToInt(w * r);
-			}
-		}
-		else
-		{
-			// column amount mismatch, use equal spacing...
-			const int columnWidth = roundToInt(w / (double)numColumnsToShow);
-
-			for (int i = 0; i < numColumnsToShow; i++)
-				columnWidths[i] = columnWidth;
-		}
-
 		if(expansionColumn != nullptr)
+		{
+			expansionColumn->setVisible(true);
 			expansionColumn->setBounds(listArea.removeFromLeft(columnWidths[0]).reduced(2, 2));
+		}
 
 		if(numColumns > 1)
 			bankColumn->setBounds(listArea.removeFromLeft(columnWidths[0+folderOffset]).reduced(2, 2));
@@ -1015,7 +1141,7 @@ void PresetBrowser::labelTextChanged(Label* l)
 	{
 		showOnlyPresets = !currentTagSelection.isEmpty() || l->getText().isNotEmpty() || favoriteButton->getToggleState();
 
-		if (showOnlyPresets)
+		if (l->getText().isNotEmpty())
 			currentWildcard = "*" + l->getText() + "*";
 		else
 			currentWildcard = "*";
@@ -1032,11 +1158,14 @@ void PresetBrowser::updateFavoriteButton()
 
 	auto path = getPresetBrowserLookAndFeel().createPresetBrowserIcons(on ? "favorite_on" : "favorite_off");
 
-
-	favoriteButton->setShape(path, false, true, true);
-
 	if (presetColumn == nullptr)
 		return;
+
+	// Invalidate the cache when the filter is turned on so that any changes
+	// made by another plugin instance (written to disk but not reflected in
+	// this instance's in-memory cache) are picked up immediately.
+	if (on)
+		invalidateFavoritesCache();
 
 	presetColumn->setShowFavoritesOnly(on);
 
@@ -1093,6 +1222,11 @@ void PresetBrowser::setShowFullPathFavorites(bool shouldShowFullPathFavorites)
 	fullPathFavorites = shouldShowFullPathFavorites;
 }
 
+void PresetBrowser::setShowFullPathSearch(bool shouldShowFullPathSearch)
+{
+	fullPathSearch = shouldShowFullPathSearch;
+}
+
 void PresetBrowser::setHighlightColourAndFont(Colour c, Colour bgColour, Font f)
 {
 	auto& lf = getPresetBrowserLookAndFeel();
@@ -1100,8 +1234,6 @@ void PresetBrowser::setHighlightColourAndFont(Colour c, Colour bgColour, Font f)
 	lf.backgroundColour = bgColour;
 	lf.font = f;
 	lf.highlightColour = c;
-
-	favoriteButton->setColours(c.withAlpha(0.7f), c.withAlpha(0.5f), c.withAlpha(0.6f));
 
 	setOpaque(bgColour.isOpaque());
 }
@@ -1291,7 +1423,10 @@ void PresetBrowser::setOptions(const Options& newOptions)
 
 	setHighlightColourAndFont(newOptions.highlightColour, newOptions.backgroundColour, newOptions.font);
 
+	getPresetBrowserLookAndFeel().fontName = newOptions.fontName;
 	getPresetBrowserLookAndFeel().textColour = newOptions.textColour;
+	getPresetBrowserLookAndFeel().modalBackgroundColour = newOptions.modalBackgroundColour;
+	getPresetBrowserLookAndFeel().itemColour3 = newOptions.itemColour3;
 	setNumColumns(newOptions.numColumns);
 	columnWidthRatios.clear();
 	columnWidthRatios.addArray(newOptions.columnWidthRatios);
@@ -1322,7 +1457,8 @@ void PresetBrowser::setOptions(const Options& newOptions)
 	setShowFavorites(newOptions.showFavoriteIcons);
 	setFavoriteIconOffset(newOptions.favoriteIconOffset);
 	setShowFullPathFavorites(newOptions.fullPathFavorites);
-	
+	setShowFullPathSearch(newOptions.fullPathSearch);
+
 	if (expansionColumn != nullptr)
 		expansionColumn->update();
 
@@ -1349,14 +1485,20 @@ void PresetBrowser::selectionChanged(int columnIndex, int /*rowIndex*/, const Fi
 		currentBankFile = File();
 		currentCategoryFile = File();
 		currentlyLoadedPreset = 0;
-		
+
+		// Save any pending favourite changes for the current root before we
+		// switch to a different one (loadPresetDatabase below would overwrite
+		// the in-memory state otherwise).
+		if (rootFile.isDirectory())
+			savePresetDatabase(rootFile);
+
 		if (file == File())
 		{
 			if (FullInstrumentExpansion::isEnabled(getMainController()))
 				rootFile = File();
 			else
 				rootFile = defaultRoot;
-				
+
 			currentlySelectedExpansion = nullptr;
 		}
 		else
@@ -1376,15 +1518,28 @@ void PresetBrowser::selectionChanged(int columnIndex, int /*rowIndex*/, const Fi
 		bankColumn->setNewRootDirectory(rootFile);
 		categoryColumn->setModel(new PresetBrowserColumn::ColumnListModel(this, 1, this), rootFile);
 		categoryColumn->setNewRootDirectory(currentCategoryFile);
-		presetColumn->setNewRootDirectory(File());
-		
-		auto pc = new PresetBrowserColumn::ColumnListModel(this, 2, this);
-		pc->setDisplayDirectories(false);
-		presetColumn->setModel(pc, rootFile);
-		
+
 		loadPresetDatabase(rootFile);
-		presetColumn->setDatabase(getDataBase());
 		rebuildAllPresets();
+
+		if (showOnlyPresets)
+		{
+			// Keep the existing model so the search wildcard is preserved; just
+			// refresh the list — getAllSearchRoots() now returns the new expansion.
+			presetColumn->setNewRootDirectory(rootFile);
+		}
+		else
+		{
+			presetColumn->setNewRootDirectory(File());
+
+			auto pc = new PresetBrowserColumn::ColumnListModel(this, 2, this);
+			pc->setDisplayDirectories(false);
+			presetColumn->setModel(pc, rootFile);
+		}
+
+		// Set the database after the model may have been replaced above so the
+		// active model always has a valid database reference.
+		presetColumn->setDatabase(getDataBase());
 	}
 
 	if (columnIndex == 0)

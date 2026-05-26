@@ -368,6 +368,9 @@ namespace ScriptingObjects
 		/** Returns the size of the file in bytes. */
 		int64 getSize();
 		
+		/** If possible, this will try to create a version string for the given file. */
+		String getVersion();
+		
 		/** Returns the number of bytes free on the drive that this file lives on. */
 		int64 getBytesFreeOnVolume();
 
@@ -448,6 +451,9 @@ namespace ScriptingObjects
 
 		/** Renames the file. */
 		bool rename(String newName);
+		
+		/** True if this file is on a hard disk. This will fail if it's a network drive, but will still be true for removable hard-disks. */
+		bool isOnHardDisk();
 
 		/** Moves the file. The target isn't the directory to put it in, it's the actual file to create. */
 		bool move(var target);
@@ -478,6 +484,9 @@ namespace ScriptingObjects
 
 		/** Returns the number of items in the zip file. */
 		int getNumZippedItems();
+
+		/** Returns an array of the filenames of all entries in the zip file. */
+		var getZippedItemList();
 
 		/** Changes the read/write permission for the given file. */
 		void setReadOnly(bool shouldBeReadOnly, bool applyRecursively);

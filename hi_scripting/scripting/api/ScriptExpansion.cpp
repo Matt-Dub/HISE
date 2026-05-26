@@ -1134,8 +1134,10 @@ struct ScriptExpansionHandler::Wrapper
 	API_METHOD_WRAPPER_1(ScriptExpansionHandler, encodeWithCredentials);
 	API_METHOD_WRAPPER_0(ScriptExpansionHandler, refreshExpansions);
 	API_VOID_METHOD_WRAPPER_1(ScriptExpansionHandler, setAllowedExpansionTypes);
-	API_METHOD_WRAPPER_2(ScriptExpansionHandler, installExpansionFromPackage);
+	API_METHOD_WRAPPER_1(ScriptExpansionHandler, getPropertiesFromHxi);
+		API_METHOD_WRAPPER_2(ScriptExpansionHandler, installExpansionFromPackage);
 	API_METHOD_WRAPPER_1(ScriptExpansionHandler, getExpansionForInstallPackage);
+	API_METHOD_WRAPPER_0(ScriptExpansionHandler, getUninitialisedExpansions);
 	API_METHOD_WRAPPER_1(ScriptExpansionHandler, getMetaDataFromPackage);
 };
 
@@ -1162,6 +1164,7 @@ ScriptExpansionHandler::ScriptExpansionHandler(JavascriptProcessor* jp_) :
 	ADD_API_METHOD_1(setInstallFullDynamics);
 	ADD_API_METHOD_1(encodeWithCredentials);
 	ADD_API_METHOD_0(refreshExpansions);
+	ADD_API_METHOD_1(getPropertiesFromHxi);
 	ADD_API_METHOD_2(installExpansionFromPackage);
 	ADD_API_METHOD_1(setAllowedExpansionTypes);
 	ADD_API_METHOD_0(getCurrentExpansion);
@@ -1169,6 +1172,7 @@ ScriptExpansionHandler::ScriptExpansionHandler(JavascriptProcessor* jp_) :
 	ADD_CALLBACK_DIAGNOSTIC(installCallback, setInstallCallback, 0);
 	ADD_API_METHOD_1(getMetaDataFromPackage);
 	ADD_API_METHOD_1(getExpansionForInstallPackage);
+	ADD_API_METHOD_0(getUninitialisedExpansions);
 
 	
 
@@ -1317,6 +1321,24 @@ bool ScriptExpansionHandler::encodeWithCredentials(var hxiFile)
 	{
 		reportScriptError("argument is not a file");
 		RETURN_IF_NO_THROW(false);
+	}
+}
+
+var ScriptExpansionHandler::getPropertiesFromHxi(var hxiFile)
+{
+	if (auto f = dynamic_cast<ScriptingObjects::ScriptFile*>(hxiFile.getObject()))
+	{
+		if (!f->f.existsAsFile())
+			reportScriptError(f->toString(0) + " doesn't exist");
+
+		auto result = getMainController()->getExpansionHandler().getPropertiesFromHxi(f->f);
+
+		return var(result);
+	}
+	else
+	{
+		reportScriptError("argument is not a file");
+		return var();
 	}
 }
 
@@ -2554,6 +2576,37 @@ juce::Result FullInstrumentExpansion::initialise()
 }
 
 
+void FullInstrumentExpansion::loadSampleMapsIfEmpty()
+{
+	// For non-lazy-loaded expansion types just use the base class (reads from disk).
+	if (getExpansionType() != Expansion::Intermediate)
+	{
+		Expansion::loadSampleMapsIfEmpty();
+		return;
+	}
+
+	// FullInstrumentExpansion uses lazy loading: the pool is empty until the
+	// expansion is actually activated.  Populate just the sample maps so that
+	// the redirect-sample validation in the preset browser can check them.
+	if (pool->getSampleMapPool().getNumLoadedFiles() > 0)
+		return;
+
+	// A valid Blowfish key is required to decrypt the embedded pool data.
+	ScopedPointer<BlowFish> bf = createBlowfish();
+
+	if (bf == nullptr)
+		return;
+
+	auto allData = getValueTreeFromFile(getExpansionType());
+
+	if (!allData.isValid())
+		return;
+
+	setCompressorForPool(FileHandlerBase::SampleMaps, true);
+	restorePool(allData, FileHandlerBase::SampleMaps);
+	pool->getSampleMapPool().loadAllFilesFromDataProvider();
+}
+
 juce::ValueTree FullInstrumentExpansion::getValueTreeFromFile(Expansion::ExpansionType type)
 {
 	auto hxiFile = Helpers::getExpansionInfoFile(getRootFolder(), type);
@@ -3381,7 +3434,7 @@ juce::var ScriptUnlocker::getExpansionList()
 		mos.writeString(registeredMachineId);
 		mos.flush();
 
-		BlowFish bf(mos.getData(), (int)mos.getDataSize());
+		BlowFish bf(mos.getData(), mos.getDataSize());
 		
 		bf.decrypt(mb);
 

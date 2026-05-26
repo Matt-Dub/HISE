@@ -414,7 +414,7 @@ void ModulatorSynth::synthTimerCallback(uint8 index, int numSamplesThisBlock)
 
 void ModulatorSynth::startSynthTimer(int index, double interval, int timeStamp)
 {
-	if (interval < 0.004)
+	if (interval < 0.001)
 	{
 		nextTimerCallbackTimes[index] = 0.0;
 		jassertfalse;

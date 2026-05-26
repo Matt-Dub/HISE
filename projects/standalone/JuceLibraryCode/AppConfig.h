@@ -327,7 +327,7 @@
 // hi_faust flags:
 
 #ifndef    HISE_INCLUDE_FAUST
- //#define HISE_INCLUDE_FAUST 0
+ #define   HISE_INCLUDE_FAUST 1
 #endif
 
 #ifndef    HISE_FAUST_USE_LLVM_JIT
@@ -335,7 +335,7 @@
 #endif
 
 #ifndef    HISE_INCLUDE_FAUST_JIT
- //#define HISE_INCLUDE_FAUST_JIT 0
+ #define   HISE_INCLUDE_FAUST_JIT 1
 #endif
 
 //==============================================================================
@@ -379,7 +379,7 @@
 // hi_rlottie flags:
 
 #ifndef    HISE_INCLUDE_RLOTTIE
- #define   HISE_INCLUDE_RLOTTIE 1
+ //#define HISE_INCLUDE_RLOTTIE 1
 #endif
 
 #ifndef    HISE_RLOTTIE_DYNAMIC_LIBRARY
@@ -471,7 +471,7 @@
 #endif
 
 #ifndef    HISE_USE_EXTENDED_TEMPO_VALUES
- //#define HISE_USE_EXTENDED_TEMPO_VALUES 0
+ #define   HISE_USE_EXTENDED_TEMPO_VALUES 1
 #endif
 
 //==============================================================================
@@ -652,7 +652,7 @@
 #endif
 
 #ifndef    JUCE_DSP_USE_STATIC_FFTW
- //#define JUCE_DSP_USE_STATIC_FFTW 0
+ #define   JUCE_DSP_USE_STATIC_FFTW 0
 #endif
 
 #ifndef    JUCE_DSP_ENABLE_SNAP_TO_ZERO
@@ -731,7 +731,7 @@
 // juce_product_unlocking flags:
 
 #ifndef    JUCE_USE_BETTER_MACHINE_IDS
- //#define JUCE_USE_BETTER_MACHINE_IDS 0
+ #define   JUCE_USE_BETTER_MACHINE_IDS 0
 #endif
 
 //==============================================================================

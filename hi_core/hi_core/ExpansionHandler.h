@@ -99,6 +99,10 @@ public:
 	*/
 	virtual Result initialise();;
 
+	/** Ensures the sample map pool is populated, loading from disk if needed.
+	 *  Call this before iterating the pool for validation purposes. */
+	virtual void loadSampleMapsIfEmpty();
+
 	struct Helpers
 	{
 		static ValueTree loadValueTreeForFileBasedExpansion(const File& root);;
@@ -319,6 +323,8 @@ public:
 	void addListener(Listener* l);
 
 	void removeListener(Listener* l);
+
+	var getPropertiesFromHxi(const File& hxiFile);
 
 	bool installFromResourceFile(const File& f, const File& sampleDirectoryToUse);
 

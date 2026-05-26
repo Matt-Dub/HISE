@@ -1886,7 +1886,7 @@ public:
 	int getMaximumBlockSize() const { return maximumBlockSize; }
 
 	/** Returns the time that the plugin spends in its processBlock method. */
-	float getCpuUsage() const {return usagePercent.load();};
+	float getCpuUsage() const {return usagePercent.load() / 10;};
 
 	/** Returns the amount of playing voices. */
 	int getNumActiveVoices() const;;

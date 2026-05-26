@@ -229,6 +229,8 @@ Colour ApiHelpers::getColourFromVar(const var& value)
 
 	if (value.isInt64() || value.isInt())
 		colourValue = (int64)value;
+	else if (value.isDouble())
+		colourValue = (int64)(double)value;
 	else if (value.isString())
 	{
 		auto string = value.toString();
@@ -989,7 +991,7 @@ void ScriptingApi::Message::setStartOffset(int newStartOffset)
 	}
 
 	if (newStartOffset > UINT16_MAX)
-		reportScriptError("Max start offset is 65536 (2^16)");
+		reportScriptError("Max start offset is 65535 (2^16-1)");
 
 #endif
 
@@ -1264,6 +1266,7 @@ struct ScriptingApi::Engine::Wrapper
 	API_METHOD_WRAPPER_0(Engine, createMacroHandler);
 	API_METHOD_WRAPPER_0(Engine, getWavetableList);
 	API_VOID_METHOD_WRAPPER_3(Engine, showYesNoWindow);
+	API_VOID_METHOD_WRAPPER_4(Engine, showMessageBoxWithCallback);
 	API_VOID_METHOD_WRAPPER_1(Engine, addModuleStateToUserPreset);
 	API_VOID_METHOD_WRAPPER_0(Engine, rebuildCachedPools);
 	API_VOID_METHOD_WRAPPER_1(Engine, extendTimeOut);
@@ -1443,6 +1446,7 @@ parentMidiProcessor(dynamic_cast<ScriptBaseMidiProcessor*>(p))
 	ADD_API_METHOD_0(createExpansionHandler);
 	ADD_API_METHOD_1(createModulationMatrix);
 	ADD_API_METHOD_3(showYesNoWindow);
+	ADD_API_METHOD_4(showMessageBoxWithCallback);
 	ADD_API_METHOD_3(showMessageBox);
 	ADD_API_METHOD_1(getSystemTime);
 	ADD_API_METHOD_0(createLicenseUnlocker);
@@ -2014,6 +2018,33 @@ void ScriptingApi::Engine::showMessageBox(String title, String markdownMessage, 
 	});
 }
 
+void ScriptingApi::Engine::showMessageBoxWithCallback(String title, String markdownMessage, int type, var callback)
+{
+	static bool isMessageBoxOpen = false;
+
+	if (isMessageBoxOpen)
+		return;
+
+	isMessageBoxOpen = true;
+
+	auto p = getScriptProcessor();
+
+	WeakCallbackHolder cb(p, this, callback, 1);
+	cb.incRefCount();
+	
+	auto f = [markdownMessage, title, cb, type]() mutable
+	{
+		auto ok = PresetHandler::showMessageWindow(title, markdownMessage, (PresetHandler::IconType)type);
+
+		std::array<var, 1> args = { var(ok) };
+		cb.call({ var(ok) });
+		
+		isMessageBoxOpen = false;
+	};
+	
+	MessageManager::callAsync(f);	
+}
+
 void ScriptingApi::Engine::showYesNoWindow(String title, String markdownMessage, var callback)
 {
 	//auto p = dynamic_cast<JavascriptProcessor*>(getScriptProcessor());
@@ -2032,8 +2063,6 @@ void ScriptingApi::Engine::showYesNoWindow(String title, String markdownMessage,
 
 	MessageManager::callAsync(f);
 }
-
-
 
 String ScriptingApi::Engine::decodeBase64ValueTree(const String& b64Data)
 {
@@ -3637,6 +3666,10 @@ String ScriptingApi::Engine::doubleToString(double value, int digits)
     return String(value, digits);
 }
 
+String ScriptingApi::Engine::intToHexString(int value)
+{
+    return String::toHexString(value);
+}
 
 float ScriptingApi::Engine::getStringWidth(String text, String fontName, float fontSize, float fontSpacing)
 {
@@ -3649,11 +3682,6 @@ void ScriptingApi::Engine::quit()
     #if IS_STANDALONE_APP
     JUCEApplication::quit();
 	#endif
-}
-                
-String ScriptingApi::Engine::intToHexString(int value)
-{
-    return String::toHexString(value);
 }
 
 void ScriptingApi::Engine::undo()
@@ -3832,6 +3860,7 @@ struct ScriptingApi::Sampler::Wrapper
 	API_METHOD_WRAPPER_2(Sampler, setAllowReleaseStart);
 	API_VOID_METHOD_WRAPPER_2(Sampler, setGUISelection);
 	API_VOID_METHOD_WRAPPER_1(Sampler, setSortByRRGroup);
+	API_VOID_METHOD_WRAPPER_1(Sampler, setOffsetMultiplier);
 	API_METHOD_WRAPPER_0(Sampler, getComplexGroupManager);
 };
 
@@ -3895,6 +3924,8 @@ sampler(sampler_)
 	ADD_API_METHOD_0(getTimestretchOptions);
 	ADD_API_METHOD_0(getReleaseStartOptions);
 	ADD_API_METHOD_1(setReleaseStartOptions);
+
+	ADD_API_METHOD_1(setOffsetMultiplier);
 	ADD_API_METHOD_0(getComplexGroupManager);
 
 	sampleIds = SampleIds::Helpers::getAllIds();
@@ -4821,6 +4852,16 @@ void ScriptingApi::Sampler::setReleaseStartOptions(var data)
 #endif
 }
 
+void ScriptingApi::Sampler::setOffsetMultiplier(int multiplier)
+{
+		ModulatorSampler* s = dynamic_cast<ModulatorSampler*>(sampler.get());
+		
+		if (s == nullptr)
+			reportScriptError("Invalid sampler call");
+			
+		s->setStartOffsetMultiplier(multiplier);
+}
+
 String ScriptingApi::Sampler::getAudioWaveformContentAsBase64(var presetObj)
 {
 	auto fileName = presetObj.getProperty("data", "").toString();
@@ -5741,7 +5782,7 @@ int ScriptingApi::Synth::addMessageFromHolder(var messageHolder)
 void ScriptingApi::Synth::startTimer(double intervalInSeconds)
 {
 #if ENABLE_SCRIPTING_SAFE_CHECKS
-	if(intervalInSeconds < 0.004)
+	if(intervalInSeconds < 0.001)
 	{
 		reportScriptError("Go easy on the timer!");
 		return;
@@ -7691,10 +7732,13 @@ void ScriptingApi::FileSystem::browseInternally(File f, bool forSaving, bool isD
 			
 		}
 
-		if (a.isObject())
+		if (!a.isObject())
 		{
-			wc.call(&a, 1);
+			File emptyFile;
+			a = var(new ScriptingObjects::ScriptFile(p_, emptyFile));
 		}
+			
+		wc.call(&a, 1);
 		
 		fileChooserIsOpen = false;
 	};
