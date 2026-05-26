@@ -105,7 +105,7 @@
 #endif
 
 #ifndef    USE_RAW_FRONTEND
- //#define USE_RAW_FRONTEND 0
+ #define   USE_RAW_FRONTEND 0
 #endif
 
 #ifndef    IS_STANDALONE_APP
@@ -129,7 +129,7 @@
 #endif
 
 #ifndef    USE_COPY_PROTECTION
- //#define USE_COPY_PROTECTION 0
+ #define   USE_COPY_PROTECTION 0
 #endif
 
 #ifndef    HISE_USE_UNLOCKER_FOR_EXPANSIONS
@@ -165,7 +165,7 @@
 #endif
 
 #ifndef    HISE_DEACTIVATE_OVERLAY
- #define   HISE_DEACTIVATE_OVERLAY 1
+ //#define HISE_DEACTIVATE_OVERLAY 0
 #endif
 
 #ifndef    HISE_MIDIFX_PLUGIN
@@ -205,7 +205,7 @@
 #endif
 
 #ifndef    ENABLE_SCRIPTING_SAFE_CHECKS
- //#define ENABLE_SCRIPTING_SAFE_CHECKS 1
+ #define   ENABLE_SCRIPTING_SAFE_CHECKS 1
 #endif
 
 #ifndef    CRASH_ON_GLITCH
@@ -213,7 +213,7 @@
 #endif
 
 #ifndef    ENABLE_SCRIPTING_BREAKPOINTS
- //#define ENABLE_SCRIPTING_BREAKPOINTS 0
+ #define   ENABLE_SCRIPTING_BREAKPOINTS 1
 #endif
 
 #ifndef    HISE_ENABLE_MIDI_INPUT_FOR_FX
@@ -221,11 +221,11 @@
 #endif
 
 #ifndef    HISE_COMPLAIN_ABOUT_ILLEGAL_BUFFER_SIZE
- #define   HISE_COMPLAIN_ABOUT_ILLEGAL_BUFFER_SIZE 0
+ //#define HISE_COMPLAIN_ABOUT_ILLEGAL_BUFFER_SIZE 1
 #endif
 
 #ifndef    ENABLE_ALL_PEAK_METERS
- //#define ENABLE_ALL_PEAK_METERS 1
+ #define   ENABLE_ALL_PEAK_METERS 1
 #endif
 
 #ifndef    READ_ONLY_FACTORY_PRESETS
@@ -281,11 +281,11 @@
 #endif
 
 #ifndef    HISE_SAMPLE_DIALOG_SHOW_INSTALL_BUTTON
- #define   HISE_SAMPLE_DIALOG_SHOW_INSTALL_BUTTON 0
+ //#define HISE_SAMPLE_DIALOG_SHOW_INSTALL_BUTTON 1
 #endif
 
 #ifndef    HISE_SAMPLE_DIALOG_SHOW_LOCATE_BUTTON
- #define   HISE_SAMPLE_DIALOG_SHOW_LOCATE_BUTTON 0
+ //#define HISE_SAMPLE_DIALOG_SHOW_LOCATE_BUTTON 1
 #endif
 
 #ifndef    HISE_MACROS_ARE_PLUGIN_PARAMETERS
@@ -327,7 +327,7 @@
 // hi_faust flags:
 
 #ifndef    HISE_INCLUDE_FAUST
- #define   HISE_INCLUDE_FAUST 1
+ //#define HISE_INCLUDE_FAUST 0
 #endif
 
 #ifndef    HISE_FAUST_USE_LLVM_JIT
@@ -335,7 +335,7 @@
 #endif
 
 #ifndef    HISE_INCLUDE_FAUST_JIT
- #define   HISE_INCLUDE_FAUST_JIT 1
+ //#define HISE_INCLUDE_FAUST_JIT 0
 #endif
 
 //==============================================================================
