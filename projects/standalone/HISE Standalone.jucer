@@ -97,7 +97,7 @@
     </XCODE_MAC>
     <VS2026 targetFolder="Builds/VisualStudio2026" smallIcon="ho3qQy" bigIcon="ho3qQy"
             useIPP="Sequential" IPPLibrary="" extraDefs="HISE_SCRIPT_SERVER_TIMEOUT=20000&#10;HISE_ENABLE_FULL_CONTROL_RATE_PITCH_MOD=1&#10;HISE_USE_OPENGL_FOR_PLUGIN=1&#10;HISE_DEACTIVATE_OVERLAY=1&#10;HISE_USE_VS2026=1&#10;PERFETTO=0&#10;NUM_HARDCODED_FX_MODS=6&#10;HISE_USE_SCRIPT_RECTANGLE_OBJECT=1&#10;HISE_USE_MOUSE_WHEEL_FOR_TABLE_CURVE=1&#10;HI_ENABLE_EXPANSION_EDITING=1&#10;HISE_ENABLE_EXPANSIONS=1&#10;HISE_USE_SVF_FOR_CURVE_EQ=0&#10;HISE_USE_EXTENDED_TEMPO_VALUES=1&#10;HISE_INCLUDE_PROFILING_TOOLKIT=1&#10;HISE_MAX_DELAY_TIME_SAMPLES=131072"
-            extraCompilerFlags="/bigobj  /cgthreads8 /wd&quot;4100&quot; /wd&quot;4661&quot; /wd&quot;4456&quot; /wd&quot;4244&quot; /wd&quot;4457&quot; /wd&quot;4458&quot; /wd&quot;4127&quot; /vmg&#10;/arch:AVX&#10; "
+            extraCompilerFlags="/bigobj  /cgthreads8 /wd&quot;4100&quot; /wd&quot;4661&quot; /wd&quot;4456&quot; /wd&quot;4244&quot; /wd&quot;4457&quot; /wd&quot;4458&quot; /wd&quot;4127&quot; /vmg&#10; "
             IPP1ALibrary="Static_Library" externalLibraries="faust.lib">
       <CONFIGURATIONS>
         <CONFIGURATION name="Debug" generateManifest="1" winArchitecture="x64" isDebug="1"
