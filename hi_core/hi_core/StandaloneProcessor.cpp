@@ -478,7 +478,7 @@ int GlobalSettingManager::getChannelData() const
 { return channelData; }
 
 float GlobalSettingManager::getGlobalScaleFactor() const noexcept
-{ return (float)scaleFactor; }
+{ return std::isfinite(scaleFactor) ? (float)scaleFactor : 1.0f; }
 
 void GlobalSettingManager::addScaleFactorListener(ScaleFactorListener* newListener)
 {
@@ -518,7 +518,8 @@ GlobalSettingManager::GlobalSettingManager()
 
 	if (xml != nullptr)
 	{
-		scaleFactor = (float)xml->getDoubleAttribute("SCALE_FACTOR", 1.0);
+		auto scaleFactorValue = xml->getDoubleAttribute("SCALE_FACTOR", 1.0);
+		scaleFactor = std::isfinite(scaleFactorValue) ? (float)scaleFactorValue : 1.0f;
 
 #if HISE_USE_OPENGL_FOR_PLUGIN
 		bool dv = (bool)HISE_DEFAULT_OPENGL_VALUE;
@@ -543,7 +544,8 @@ void GlobalSettingManager::restoreGlobalSettings(MainController* mc, bool checkR
 		GlobalSettingManager* gm = dynamic_cast<GlobalSettingManager*>(mc);
 
 		gm->diskMode = globalSettings->getIntAttribute("DISK_MODE");
-		gm->scaleFactor = globalSettings->getDoubleAttribute("SCALE_FACTOR", 1.0);
+		auto scaleFactorValue = globalSettings->getDoubleAttribute("SCALE_FACTOR", 1.0);
+		gm->scaleFactor = std::isfinite(scaleFactorValue) ? scaleFactorValue : 1.0;
 
 #if IS_STANDALONE_APP
 		// Don't save this for plugins as they are usually synced to the host
