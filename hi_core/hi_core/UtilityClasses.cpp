@@ -712,7 +712,37 @@ AsyncValueTreePropertyListener::AsyncValueTreePropertyListener(ValueTree state_,
 
 void AsyncValueTreePropertyListener::valueTreePropertyChanged(ValueTree& v, const Identifier& id)
 {
-	pendingPropertyChanges.addIfNotAlreadyThere(PropertyChange(v, id));
+#if JUCE_DEBUG
+	// Confirmation guard: detect concurrent writers to this listener's tree (see header).
+	struct ScopedWriterCheck
+	{
+		ScopedWriterCheck(std::atomic<int>& c_) : c(c_) { jassert(c.fetch_add(1) == 0); }
+		~ScopedWriterCheck() { c.fetch_sub(1); }
+		std::atomic<int>& c;
+	} writerCheck(writerReentryCount);
+#endif
+
+	// Capture the property value HERE, synchronously inside JUCE's setProperty notification, i.e.
+	// on the same thread that just performed the write. Reading it later (at drain time, on the
+	// message thread) raced with concurrent writes from the sample loading thread during a preset
+	// load / scriptnode rebuild (juce::ValueTree is not thread-safe) and produced a use-after-free
+	// on the copied var. We therefore snapshot the value by value and carry it through the queue.
+	PropertyChange pc(v, id, v.getProperty(id));
+
+	// Coalescing: a (v, id) pair already pending must be UPDATED to the latest value rather than
+	// skipped (operator== matches on v + id only), otherwise the drain would dispatch a stale
+	// value. Hold the queue lock across the find + update/add so it stays atomic.
+	{
+		const ScopedLock sl(pendingPropertyChanges.getLock());
+
+		auto existingIndex = pendingPropertyChanges.indexOf(pc);
+
+		if (existingIndex >= 0)
+			pendingPropertyChanges.setUnchecked(existingIndex, pc);
+		else
+			pendingPropertyChanges.add(pc);
+	}
+
 	asyncHandler.triggerAsyncUpdate();
 }
 
@@ -733,11 +763,14 @@ void AsyncValueTreePropertyListener::clearQueue()
 	while (!pendingPropertyChanges.isEmpty())
 	{
 		auto pc = pendingPropertyChanges.removeAndReturn(0);
-		asyncValueTreePropertyChanged(pc.v, pc.id);
+
+		// Dispatch the snapshot captured at notification time. We intentionally do NOT read pc.v
+		// here (this runs on the message thread) to avoid the cross-thread ValueTree race.
+		asyncValueTreePropertyChanged(pc.v, pc.id, pc.value);
 	}
 }
 
-AsyncValueTreePropertyListener::PropertyChange::PropertyChange(ValueTree v_, Identifier id_): v(v_), id(id_)
+AsyncValueTreePropertyListener::PropertyChange::PropertyChange(ValueTree v_, Identifier id_, var value_): v(v_), id(id_), value(value_)
 {}
 
 AsyncValueTreePropertyListener::PropertyChange::PropertyChange()

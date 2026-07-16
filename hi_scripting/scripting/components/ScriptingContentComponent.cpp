@@ -218,9 +218,9 @@ void ScriptContentComponent::changeListenerCallback(SafeChangeBroadcaster *b)
 	}
 }
 
-void ScriptContentComponent::asyncValueTreePropertyChanged(ValueTree& /*v*/, const Identifier& /*id*/)
+void ScriptContentComponent::asyncValueTreePropertyChanged(ValueTree& /*v*/, const Identifier& /*id*/, const var& /*newValue*/)
 {
-	
+
 }
 
 void ScriptContentComponent::valueTreeChildAdded(ValueTree& /*parent*/, ValueTree& /*child*/)

@@ -388,7 +388,7 @@ bool ScriptCreatedComponentWrapper::setMouseCursorFromParentPanel(ScriptComponen
 	return setMouseCursorFromParentPanel(sc->getParentScriptComponent(), c);
 }
 
-void ScriptCreatedComponentWrapper::asyncValueTreePropertyChanged(ValueTree& v, const Identifier& id)
+void ScriptCreatedComponentWrapper::asyncValueTreePropertyChanged(ValueTree& v, const Identifier& id, const var& newValue)
 {
 	if (v != getScriptComponent()->getPropertyValueTree())
 		return;
@@ -396,7 +396,19 @@ void ScriptCreatedComponentWrapper::asyncValueTreePropertyChanged(ValueTree& v, 
 	jassert(v == getScriptComponent()->getPropertyValueTree());
 
 	auto idIndex = getScriptComponent()->getIndexForProperty(id);
-	auto value = v.getProperty(id, getScriptComponent()->getScriptObjectProperty(id));
+
+	// newValue is the snapshot captured on the writing thread inside
+	// AsyncValueTreePropertyListener::valueTreePropertyChanged. We must NOT re-read the live
+	// ValueTree here: this runs on the message thread (via the UpdateDispatcher drain) and the
+	// tree may be written concurrently by the sample loading thread during a preset load /
+	// scriptnode rebuild -> juce::ValueTree is not thread-safe and the copied var would dangle
+	// (use-after-free in ~var).
+	// A void snapshot means the property was removed (reset to default) at notification time; we
+	// resolve it from the thread-stable default set, never from the (possibly concurrently
+	// mutated) tree. Script properties are never legitimately stored as a void var, so treating
+	// void as "removed -> default" matches the previous behaviour.
+	auto value = newValue.isVoid() ? getScriptComponent()->getScriptObjectPropertyDefaultValue(id)
+								   : newValue;
 
 	if (idIndex == -1)
 	{

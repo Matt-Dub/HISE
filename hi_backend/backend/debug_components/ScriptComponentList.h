@@ -207,7 +207,7 @@ private:
 			fitsSearch = true;
 	}
 
-	void asyncValueTreePropertyChanged(ValueTree&, const Identifier&) override
+	void asyncValueTreePropertyChanged(ValueTree&, const Identifier&, const var&) override
 	{
 		repaintItem();
 	}

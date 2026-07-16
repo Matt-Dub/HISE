@@ -980,6 +980,16 @@ const var ScriptingApi::Content::ScriptComponent::getScriptObjectProperty(Identi
 	}
 }
 
+const var ScriptingApi::Content::ScriptComponent::getScriptObjectPropertyDefaultValue(const Identifier& id) const
+{
+	// Only reads the (init-time, stable) default set, never the propertyTree -> safe to call
+	// from the message thread while the tree may be written on another thread.
+	if (defaultValues.contains(id))
+		return defaultValues[id];
+
+	return var();
+}
+
 var ScriptingApi::Content::ScriptComponent::getNonDefaultScriptObjectProperties() const
 {
 	DynamicObject::Ptr clone = new DynamicObject();
