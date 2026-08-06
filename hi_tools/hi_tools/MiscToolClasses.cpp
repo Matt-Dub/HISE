@@ -1800,18 +1800,28 @@ void PooledUIUpdater::SimpleTimer::startOrStop(bool shouldStart)
 	if(updater == nullptr || isTimerRunning() == shouldStart)
 		return;
 
+	// Written here, on the caller's thread, while `this` is guaranteed to be alive: the callback
+	// below can run after the timer's owner was destroyed on another thread (the sample loading
+	// thread tearing a SampleMap down), so it must not write through the object any more.
+	isRunning = shouldStart;
+
 	WeakReference<SimpleTimer> safeThis(this);
+	WeakReference<PooledUIUpdater> safeUpdater(updater);
 
-	auto f = [safeThis, shouldStart]()
+	auto f = [safeThis, safeUpdater, shouldStart]()
 	{
-		if (safeThis.get() != nullptr)
+		// Both references can go stale between the post and this callback. Taking a weak reference
+		// to the updater instead of reading `safeThis->updater` avoids a load through a dangling
+		// timer, and it is null-checked: dereferencing it blind crashed on nullptr->simpleTimers.
+		if (auto u = safeUpdater.get())
 		{
-			safeThis->isRunning = shouldStart;
-
 			if(shouldStart)
-				safeThis.get()->updater->simpleTimers.addIfNotAlreadyThere(safeThis);
+			{
+				if(safeThis.get() != nullptr)
+					u->simpleTimers.addIfNotAlreadyThere(safeThis);
+			}
 			else
-				safeThis.get()->updater->simpleTimers.removeAllInstancesOf(safeThis);
+				u->simpleTimers.removeAllInstancesOf(safeThis);
 		}
 	};
 
