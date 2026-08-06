@@ -1872,7 +1872,11 @@ void PooledUIUpdater::timerCallback()
 		{
 			auto st = simpleTimers[i];
 
-			if (st.get() != nullptr)
+			// isTimerRunning() is cleared synchronously by stop(), while the removal from this array
+			// is posted asynchronously - so a timer that stopped itself (typically the first line of
+			// a subclass destructor) is skipped here right away instead of being called until the
+			// message queue catches up.
+			if (st.get() != nullptr && st->isTimerRunning())
 			{
 #if HISE_INCLUDE_PROFILING_TOOLKIT
 				if(debugSession != nullptr && debugSession->isRecordingMultithread())

@@ -677,7 +677,12 @@ public:
 
 		virtual ~Listener();;
 
-		virtual void handlePooledMessage(Broadcaster* b) = 0;
+		/** Not pure virtual on purpose: PooledUIUpdater::timerCallback() dispatches through a
+		    WeakReference, which only becomes null at the very end of ~Listener(). While the derived
+		    destructor is unwinding, the vtable slot already points at this class - a pure virtual
+		    there resolves to __cxa_pure_virtual and aborts the process. An empty body makes that
+		    window a no-op (the storage is still alive as long as the weak reference is valid). */
+		virtual void handlePooledMessage(Broadcaster* b) { ignoreUnused(b); }
 
 	private:
 
@@ -697,7 +702,10 @@ public:
 
 		bool isTimerRunning() const;;
 
-		virtual void timerCallback() = 0;
+		/** Not pure virtual on purpose - same reason as Listener::handlePooledMessage(): reaching
+		    this body means the object is between "derived destructor finished" and "weak reference
+		    cleared", so it deregisters itself instead of aborting with __cxa_pure_virtual. */
+		virtual void timerCallback() { isRunning = false; }
 
 		template <typename T> T* getProfileDataSource() { return dynamic_cast<T*>(profileData.get()); }
 
@@ -711,7 +719,9 @@ public:
 
 		JUCE_DECLARE_WEAK_REFERENCEABLE(SimpleTimer);
 
-		bool isRunning = false;
+		// Written by start()/stop() on the calling thread, read by the message thread in
+		// PooledUIUpdater::timerCallback(), so it has to be atomic.
+		std::atomic<bool> isRunning { false };
 		WeakReference<PooledUIUpdater> updater;
 	};
 
