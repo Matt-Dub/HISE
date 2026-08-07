@@ -292,7 +292,7 @@ public:
 
 	void changeListenerCallback(SafeChangeBroadcaster *b) override;
 
-	void asyncValueTreePropertyChanged(ValueTree& v, const Identifier& id) override;
+	void asyncValueTreePropertyChanged(ValueTree& v, const Identifier& id, const var& newValue) override;
 
 	void valueTreeChildAdded(ValueTree& parent, ValueTree& child) override;
 

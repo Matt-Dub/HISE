@@ -141,7 +141,16 @@ public:
 
 	void valueTreePropertyChanged(ValueTree& v, const Identifier& id) final override;;
 
-	virtual void asyncValueTreePropertyChanged(ValueTree& v, const Identifier& id) = 0;
+	/** Called asynchronously on the message thread when a listened property changed.
+	*
+	*	newValue is a snapshot of the property taken at notification time (i.e. synchronously
+	*	inside the setProperty call, on the thread that performed the write). Implementations
+	*	MUST use it instead of re-reading the ValueTree: reading the live tree here races with
+	*	concurrent writes from other threads (e.g. the sample loading thread during a preset
+	*	load / scriptnode rebuild) because juce::ValueTree is not thread-safe, which caused a
+	*	use-after-free on the copied var. A void newValue means the property was removed.
+	*/
+	virtual void asyncValueTreePropertyChanged(ValueTree& v, const Identifier& id, const var& newValue) = 0;
 
 	void valueTreeChildAdded(ValueTree&, ValueTree&) override;
 	void valueTreeChildRemoved(ValueTree&, ValueTree&, int) override;
@@ -154,13 +163,19 @@ private:
 
 	struct PropertyChange
 	{
-		PropertyChange(ValueTree v_, Identifier id_);;
+		PropertyChange(ValueTree v_, Identifier id_, var value_);;
 		PropertyChange();;
 
+		// Identity is (v, id) only: two changes to the same property coalesce into one entry
+		// (the stored value is updated to the latest, see valueTreePropertyChanged).
 		bool operator==(const PropertyChange& other) const;
 
 		ValueTree v;
 		Identifier id;
+
+		// Snapshot of the property value captured at notification time on the writing thread.
+		// Carried through the queue so the (message-thread) drain never reads the live tree.
+		var value;
 	};
 
 	struct AsyncHandler : public UpdateDispatcher::Listener
@@ -177,6 +192,15 @@ private:
 	AsyncHandler asyncHandler;
 
 	Array<PropertyChange, CriticalSection> pendingPropertyChanges;
+
+#if JUCE_DEBUG
+	// Confirmation guard (debug only, compiled out in release): asserts if two threads enter
+	// valueTreePropertyChanged for THIS listener concurrently. That would mean concurrent writers
+	// to the listened ValueTree, which would make the notification-time value snapshot itself racy
+	// (juce::ValueTree is single-writer). It validates at runtime the single-writer invariant the
+	// async snapshot relies on, surfacing any violation instead of assuming none.
+	std::atomic<int> writerReentryCount { 0 };
+#endif
 };
 
 template <int Offset, int Length> class StackTrace

@@ -823,9 +823,13 @@ public:
 			parent(parent_)
 		{}
 
-		void asyncValueTreePropertyChanged(ValueTree& v, const Identifier& id) override
+		void asyncValueTreePropertyChanged(ValueTree& v, const Identifier& id, const var& newValue) override
 		{
-			parent.lastValue = v.getProperty(id);
+			ignoreUnused(v, id);
+
+			// Use the snapshot delivered through the queue (captured at notification time) rather
+			// than re-reading the tree -- this also exercises the snapshot delivery path.
+			parent.lastValue = newValue;
 			parent.numCalled++;
 		}
 

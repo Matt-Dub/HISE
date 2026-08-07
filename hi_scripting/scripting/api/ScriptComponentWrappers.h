@@ -350,7 +350,7 @@ public:
 		AsyncValueTreePropertyListener::clearQueue();
 	}
 
-	virtual void asyncValueTreePropertyChanged(ValueTree& v, const Identifier& id);
+	virtual void asyncValueTreePropertyChanged(ValueTree& v, const Identifier& id, const var& newValue);
 
 	virtual void valueTreeParentChanged(ValueTree& v) override;
 

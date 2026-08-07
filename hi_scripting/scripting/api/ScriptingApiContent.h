@@ -454,6 +454,15 @@ public:
 
 		const var getScriptObjectProperty(Identifier id) const;
 
+		/** Returns the default value for a property WITHOUT reading the propertyTree.
+		*
+		*	Used by the async UI drain (message thread) to safely resolve a property that was
+		*	removed/reset at notification time. defaultValues is populated at construction and is
+		*	stable afterwards, so unlike getScriptObjectProperty() this never touches the (possibly
+		*	concurrently mutated) ValueTree. See ScriptCreatedComponentWrapper::asyncValueTreePropertyChanged.
+		*/
+		const var getScriptObjectPropertyDefaultValue(const Identifier& id) const;
+
 		var getNonDefaultScriptObjectProperties() const;
 
 		String getScriptObjectPropertiesAsJSON() const;
