@@ -731,7 +731,7 @@
 // juce_product_unlocking flags:
 
 #ifndef    JUCE_USE_BETTER_MACHINE_IDS
- #define   JUCE_USE_BETTER_MACHINE_IDS 0
+ #define   JUCE_USE_BETTER_MACHINE_IDS 1
 #endif
 
 //==============================================================================
