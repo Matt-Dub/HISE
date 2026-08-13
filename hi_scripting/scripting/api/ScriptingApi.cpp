@@ -2207,7 +2207,11 @@ var ScriptingApi::Engine::createThreadSafeStorage()
 
 juce::var ScriptingApi::Engine::createLicenseUnlocker()
 {
+#if HISE_USE_MOONBASE
+	return var(new MoonbaseUnlocker::RefObject(getScriptProcessor()));
+#else
 	return var(new ScriptUnlocker::RefObject(getScriptProcessor()));
+#endif
 }
 
 var ScriptingApi::Engine::createBeatportManager()
