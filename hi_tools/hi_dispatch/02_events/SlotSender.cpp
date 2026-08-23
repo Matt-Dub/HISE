@@ -155,6 +155,29 @@ void SlotSender::setNumSlots(uint8 newNumSlots)
 
 bool SlotSender::flush(DispatchType n)
 {
+	//! Fast path for the dominant case: nothing pending in any slot.
+	//!
+	//! SourceManager::timerCallback() calls flush() twice per tick (HiPriority then Async), and
+	//! flush() recurses: flush(Async) calls flush(Sync) and flush(HiPriority), which calls
+	//! flush(Sync) again. That is six invocations per SlotSender per tick, each one walking down
+	//! to its own `thisBitmap.isEmpty()` check before returning - and that check sits *after* the
+	//! recursion, so an idle plugin pays the whole tree every tick, per source, at 30ms.
+	//!
+	//! Profiling an idle-but-playing instance (32 mixer meters, UI open) put SlotSender::flush at
+	//! ~47% of all message-thread work under PooledUIUpdater::timerCallback.
+	//!
+	//! Bailing here is exact rather than approximate: with all three bitmaps empty, every level of
+	//! that recursion returns at its own isEmpty() check before touching the listener queue or
+	//! clearing anything, so the whole tree is a no-op returning false.
+	//!
+	//! Note this skips the jassertfalse that data.get() would hit for a dispatch type outside the
+	//! three real ones - flush() is only ever called with those, and the assert stays reachable on
+	//! any tick that actually has work.
+	if(data.get(DispatchType::sendNotificationSync).isEmpty() &&
+	   data.get(DispatchType::sendNotificationAsyncHiPriority).isEmpty() &&
+	   data.get(DispatchType::sendNotificationAsync).isEmpty())
+		return false;
+
 	auto doneSomething = false;
 
 	// make sure to flush the other slots first
