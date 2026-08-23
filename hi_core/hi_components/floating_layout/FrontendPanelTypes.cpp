@@ -351,10 +351,14 @@ namespace hise { using namespace juce;
 	float MatrixPeakMeter::getCoefficient(double sr, float timeMs)
 	{
 		if(sr <= 0.0)
-			return 1.0f;
-        
+			return 0.0f;
+
+		//! 0 ms = instant. Upstream 5ad80f27c inverted the smoothing semantics in
+		//! RoutableProcessor::MatrixData::setGainValues (coefficient ~1 = slow,
+		//! 0 = instant) but left this fast path at 1.0f, which froze the attack of
+		//! every MatrixPeakMeter using UpDecayTime = 0 (meters stuck at silence).
 		if(timeMs == 0.0f)
-			return 1.0f;
+			return 0.0f;
         
 		const float freq = 1000.0f / timeMs;
 		auto x = expf(-2.0f * float_Pi * freq / sr);
