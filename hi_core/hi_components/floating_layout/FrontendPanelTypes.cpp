@@ -162,7 +162,19 @@ namespace hise { using namespace juce;
 			return;
             
 		bool change = false;
-            
+
+		//! Repaints are gated at the resolution the meter can actually show. Anything finer than
+		//! one pixel of bar length is invisible, but the old gate was FloatSanitizers::isNotSilence,
+		//! i.e. HISE_SILENCE_THRESHOLD_DB - 1e-4 at the default 80 dB, roughly 80x finer than a pixel
+		//! on a 119 px strip. A 1000 ms DownDecayTime therefore repainted every 30 ms tick of the
+		//! global PooledUIUpdater long after the bar had stopped visibly moving, once per visible
+		//! meter (20 of them on the mixer page).
+		//!
+		//! Mirrors paint(): the bar runs along the longer axis, inside bounds reduced by paddingSize.
+		const auto isVerticalMeter = getWidth() < getHeight();
+		const auto fullSize = (float)(isVerticalMeter ? getHeight() : getWidth()) - 2.0f * paddingSize;
+		const auto pixelStep = fullSize > 1.0f ? 1.0f / fullSize : 0.0f;
+
 		const auto numTotalChannels = getSource ? data->getNumSourceChannels() :
 			                              data->getNumDestinationChannels();
             
@@ -200,10 +212,23 @@ namespace hise { using namespace juce;
 				}
 			}
                 
-			auto oldValue = currentPeaks[i];
-                
-			change |= FloatSanitizers::isNotSilence(thisValue - oldValue);
-			currentPeaks[i] = thisValue;
+			const auto oldValue = currentPeaks[i];
+
+			//! Compared against the last PAINTED value, not the last read one: currentPeaks is only
+			//! written when the gate opens. Writing it every tick would let a drift slower than one
+			//! pixel per tick accumulate without ever opening the gate, freezing the bar at a stale
+			//! position while the real level walked away from it.
+			const auto delta = std::abs(thisValue - oldValue);
+
+			//! The last sub-pixel step down to silence would never clear the gate on its own, leaving
+			//! one pixel of bar lit for good at the end of every decay tail.
+			const auto reachedSilence = FloatSanitizers::isSilence(thisValue) && oldValue != 0.0f;
+
+			if(delta > pixelStep || reachedSilence)
+			{
+				currentPeaks[i] = thisValue;
+				change = true;
+			}
 		}
             
 		if(change)
