@@ -347,6 +347,16 @@ struct Helpers
 		mutable AudioSampleBuffer windowBuffer;
 		mutable AudioSampleBuffer lastBuffer;
 
+		/** Cached FFT engine + scratch buffer. transformReadBuffer() previously
+			constructed a juce::dsp::FFT locally on every call: the AppleFFT backend
+			runs vDSP_create_fftsetup (twiddle tables, allocations) at every
+			PooledUIUpdater tick for each active analyser node (~30 Hz each), which
+			dominated UI-thread CPU in exported plugins. Recreate only when the
+			FFT size changes. transformReadBuffer only runs on the UI thread, so no
+			synchronisation is needed. */
+		std::unique_ptr<juce::dsp::FFT> fftEngine;
+		AudioSampleBuffer fftWorkBuffer;
+
 		bool usePeakDecay = false;
 	};
 

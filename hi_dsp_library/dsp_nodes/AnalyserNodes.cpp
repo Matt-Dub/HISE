@@ -57,10 +57,17 @@ void Helpers::FFT::transformReadBuffer(AudioSampleBuffer& b)
 
 	auto delta = roundToInt(overlap * size);
 
-	auto order = log2(size);
-	auto fft = juce::dsp::FFT(order);
+	// Order from the power-of-two size (roundToInt upstream keeps it exact).
+	const auto order = roundToInt(std::log2((double)size));
 
-	AudioSampleBuffer b2(2, size * 2);
+	if(fftEngine == nullptr || fftEngine->getSize() != size)
+		fftEngine.reset(new juce::dsp::FFT(order));
+
+	if(fftWorkBuffer.getNumChannels() != 2 || fftWorkBuffer.getNumSamples() != size * 2)
+		fftWorkBuffer.setSize(2, size * 2);
+
+	auto& fft = *fftEngine;
+	auto& b2 = fftWorkBuffer;
 
 	for(int offset = 0; offset < b.getNumSamples() - (size-1); offset += delta)
 	{
