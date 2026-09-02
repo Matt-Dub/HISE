@@ -723,6 +723,12 @@ struct ManualEventObject : public DebugableObjectBase
 		ADD_IF("cmdDown", "bool", "true if the cmd modifier is pressed");
 		ADD_IF("altDown", "bool", "true if the alt modifier is pressed");
 		ADD_IF("ctrlDown", "bool", "true if the ctrl modifier is pressed");
+		ADD_IF("mouseWheel", "bool", "true if this event was caused by the mouse wheel (not present on other events)");
+		ADD_IF("wheelDeltaX", "double", "the horizontal mouse wheel amount");
+		ADD_IF("wheelDeltaY", "double", "the vertical mouse wheel amount");
+		ADD_IF("wheelReversed", "bool", "true if the user has reversed the wheel direction");
+		ADD_IF("wheelSmooth", "bool", "true if the wheel has continuous, un-stepped motion");
+		ADD_IF("wheelInertial", "bool", "true if the event is part of the inertial phase after the wheel was released");
 #undef ADD_IF
 
 		return nullptr;

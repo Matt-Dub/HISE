@@ -1828,6 +1828,7 @@ public:
 			holdIsRightClick,
 			isPopupPanel,
             bufferToImage,
+			consumeMouseWheel,
 			numProperties
 		};
 
@@ -1908,7 +1909,16 @@ public:
 		/** Sets a paint routine (a function with one parameter). */
 		void setPaintRoutine(var paintFunction);
 
-		/** Sets a mouse callback. */
+		/** Sets a mouse callback.
+
+		    The function will be called with an event object that describes the mouse action. Which properties
+		    are filled in depends on the allowCallbacks property of the panel. If it is set to "All Callbacks",
+		    mouse wheel events are forwarded too: those carry the additional properties mouseWheel (always true,
+		    and not present on any other event), wheelDeltaX, wheelDeltaY, wheelReversed, wheelSmooth and
+		    wheelInertial. By default the wheel event is still passed on to the parent component, so a parent
+		    viewport keeps scrolling. Set the consumeMouseWheel property of the panel to true in order to swallow
+		    the event instead.
+		*/
 		void setMouseCallback(var mouseCallbackFunction);
 
 		/** Sets a file drop callback. */

@@ -215,7 +215,18 @@ struct ScriptCreatedComponentWrapper::AdditionalMouseCallback: public MouseListe
 		sendMessageOrAsync(event, MouseCallbackComponent::Action::MouseUp, MouseCallbackComponent::EnterState::Nothing);
 	}
 
-	void sendMessageOrAsync(const MouseEvent& event, MouseCallbackComponent::Action action, MouseCallbackComponent::EnterState state, int popupMenuIndex = -1)
+	void mouseWheelMove(const MouseEvent& event, const MouseWheelDetails& wheel)
+	{
+		if (data.mouseCallbackLevel < MouseCallbackComponent::CallbackLevel::AllCallbacks) return;
+
+		// A MouseListener can only observe the wheel event: JUCE has no way of letting a listener stop the
+		// component it is attached to from running its own mouseWheelMove(), so the default propagation to
+		// the parent viewport is always preserved here. Use the consumeMouseWheel property of a Panel if the
+		// event has to be swallowed.
+		sendMessageOrAsync(event, MouseCallbackComponent::Action::WheelMoved, MouseCallbackComponent::EnterState::Nothing, -1, &wheel);
+	}
+
+	void sendMessageOrAsync(const MouseEvent& event, MouseCallbackComponent::Action action, MouseCallbackComponent::EnterState state, int popupMenuIndex = -1, const MouseWheelDetails* wheel = nullptr)
 	{
 		dispatch::StringBuilder n;
 
@@ -226,22 +237,27 @@ struct ScriptCreatedComponentWrapper::AdditionalMouseCallback: public MouseListe
 		TRACE_EVENT("component", DYNAMIC_STRING_BUILDER(n));
 
 		if (data.delayMilliseconds == 0)
-			sendMessage(event, action, state, popupMenuIndex);
+			sendMessage(event, action, state, popupMenuIndex, wheel);
 		else
 		{
 			WeakReference<AdditionalMouseCallback> safeThis(this);
 
-			auto f = [safeThis, event, action, state, popupMenuIndex]()
+			// MouseWheelDetails is a small POD struct, so it has to be captured by value: the caller only
+			// passes a pointer to a stack object which is long gone by the time the timer fires.
+			const bool hasWheel = wheel != nullptr;
+			MouseWheelDetails wheelCopy = hasWheel ? *wheel : MouseWheelDetails();
+
+			auto f = [safeThis, event, action, state, popupMenuIndex, hasWheel, wheelCopy]()
 			{
 				if (safeThis != nullptr)
-					safeThis->sendMessage(event, action, state, popupMenuIndex);
+					safeThis->sendMessage(event, action, state, popupMenuIndex, hasWheel ? &wheelCopy : nullptr);
 			};
 
 			Timer::callAfterDelay(data.delayMilliseconds, f);
 		}
 	}
 
-	void sendMessage(const MouseEvent& event, MouseCallbackComponent::Action action, MouseCallbackComponent::EnterState state, int popupMenuIndex = -1)
+	void sendMessage(const MouseEvent& event, MouseCallbackComponent::Action action, MouseCallbackComponent::EnterState state, int popupMenuIndex = -1, const MouseWheelDetails* wheel = nullptr)
 	{
         auto mc = scriptComponent->getScriptProcessor()->getMainController_();
 
@@ -257,7 +273,7 @@ struct ScriptCreatedComponentWrapper::AdditionalMouseCallback: public MouseListe
 
                 if (data.mouseCallbackLevel != MouseCallbackComponent::CallbackLevel::PopupMenuOnly)
                 {
-                    MouseCallbackComponent::fillMouseCallbackObject(eventObject[(int)action], component.getComponent(), event, data.mouseCallbackLevel, action, state);
+                    MouseCallbackComponent::fillMouseCallbackObject(eventObject[(int)action], component.getComponent(), event, data.mouseCallbackLevel, action, state, wheel);
                     arguments[1] = eventObject[(int)action];
                     ComponentWithAdditionalMouseProperties::attachMousePropertyFromParent(event, arguments[1]);
                 }
@@ -2302,6 +2318,7 @@ void ScriptCreatedComponentWrappers::PanelWrapper::updateComponent()
 	bpc->repaint();
 
 	bpc->setAllowCallback(getScriptComponent()->getScriptObjectProperty(ScriptingApi::Content::ScriptPanel::allowCallbacks).toString());
+	bpc->setConsumeMouseWheel(sc->getScriptObjectProperty(ScriptingApi::Content::ScriptPanel::consumeMouseWheel));
 
 	contentComponent->repaint();
 }
@@ -2334,6 +2351,7 @@ void ScriptCreatedComponentWrappers::PanelWrapper::updateComponent(int propertyI
 		PROPERTY_CASE::ScriptPanel::stepSize : updateRange(bpc); break;
 		PROPERTY_CASE::ScriptPanel::enabled: break;
 		PROPERTY_CASE::ScriptPanel::allowCallbacks: bpc->setAllowCallback(newValue.toString()); break;
+		PROPERTY_CASE::ScriptPanel::consumeMouseWheel: bpc->setConsumeMouseWheel(newValue); break;
 	}
 }
 
@@ -2525,6 +2543,7 @@ void ScriptCreatedComponentWrappers::PanelWrapper::initPanel(ScriptingApi::Conte
 
 	
     bp->setBufferedToImage(panel->getScriptObjectProperty(ScriptingApi::Content::ScriptPanel::bufferToImage));
+	bp->setConsumeMouseWheel(panel->getScriptObjectProperty(ScriptingApi::Content::ScriptPanel::consumeMouseWheel));
 
 	component = bp;
 

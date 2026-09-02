@@ -77,6 +77,7 @@ public:
 		FileEnter,
 		FileExit,
 		FileDrop,
+		WheelMoved,
 		Nothing
 	};
 
@@ -94,6 +95,7 @@ public:
 		case Action::FileEnter: { RETURN_STATIC_IDENTIFIER("FileEnter"); }
 		case Action::FileExit: { RETURN_STATIC_IDENTIFIER("FileExit"); }
 		case Action::FileDrop: { RETURN_STATIC_IDENTIFIER("FileDrop"); }
+		case Action::WheelMoved: { RETURN_STATIC_IDENTIFIER("WheelMoved"); }
 		case Action::Nothing: { RETURN_STATIC_IDENTIFIER("Nothing"); }
 		default: return {};
 		}
@@ -203,7 +205,14 @@ public:
 	void removeCallbackListener(Listener *l);
 	void removeAllCallbackListeners();
 
-	static void fillMouseCallbackObject(var& clickInformation, Component* c, const MouseEvent& e, CallbackLevel level, Action action, EnterState state);
+	/** Fills the given object with the properties of the mouse event.
+
+	    The wheel details are passed in as an optional pointer (and not as a value or a reference) so that
+	    the existing call sites do not need to be changed and so that the wheel properties are only added
+	    to the event object when an actual mouse wheel event is being dispatched. This keeps the shape of
+	    the event objects for clicks, drags and hovering exactly as it was before.
+	*/
+	static void fillMouseCallbackObject(var& clickInformation, Component* c, const MouseEvent& e, CallbackLevel level, Action action, EnterState state, const MouseWheelDetails* wheel = nullptr);
 
 	void mouseDown(const MouseEvent& event) override;
 
@@ -226,6 +235,15 @@ public:
 	void mouseExit(const MouseEvent &event) override;
 	void mouseUp(const MouseEvent &event) override;
     void mouseDoubleClick(const MouseEvent &event) override;
+	void mouseWheelMove(const MouseEvent &event, const MouseWheelDetails &wheel) override;
+
+	/** If this is enabled (and the callback level is set to AllCallbacks), the mouse wheel event will not
+	    be passed on to the parent component, so a panel can implement its own wheel logic without scrolling
+	    a parent viewport. This has to be an explicit opt-in because the script callback is executed
+	    asynchronously on the scripting thread, so its return value is not available at the time when this
+	    component has to decide whether the event should be propagated.
+	*/
+	void setConsumeMouseWheel(bool shouldConsumeWheelEvents);
 
 	void setEnableFileDrop(const String& newCallbackLevel, const String& allowedWildcards);
 
@@ -255,6 +273,8 @@ private:
 
 	var clickInformation[(int)Action::Nothing];
 
+	bool consumeMouseWheel = false;
+
 	FileCallbackLevel fileCallbackLevel = FileCallbackLevel::NoCallbacks;
 	StringArray fileDropExtensions;
 
@@ -273,7 +293,7 @@ private:
 
 	void sendFileMessage(Action a, const StringArray& f, Point<int> pos);
 
-	void sendMessage(const MouseEvent &event, Action action, EnterState state = Nothing);
+	void sendMessage(const MouseEvent &event, Action action, EnterState state = Nothing, const MouseWheelDetails* wheel = nullptr);
 	void sendToListeners(var clickInformation);
 
 	const StringArray callbackLevels;
