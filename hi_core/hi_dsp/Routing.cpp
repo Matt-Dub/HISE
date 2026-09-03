@@ -34,6 +34,7 @@ namespace hise { using namespace juce;
 
 RoutableProcessor::MatrixData::MatrixData(RoutableProcessor *p) :
 owningProcessor(p),
+numAllowedConnections(-1),
 numSourceChannels(2),
 numDestinationChannels(2),
 resizeAllowed(false),
