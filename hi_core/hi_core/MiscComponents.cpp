@@ -93,12 +93,6 @@ StringArray MouseCallbackComponent::getCallbackPropertyNames()
     sa.add("cmdDown");
     sa.add("altDown");
     sa.add("ctrlDown");
-	sa.add("mouseWheel");
-	sa.add("wheelDeltaX");
-	sa.add("wheelDeltaY");
-	sa.add("wheelReversed");
-	sa.add("wheelSmooth");
-	sa.add("wheelInertial");
 	
 
 	return sa;
@@ -414,7 +408,7 @@ Result MouseCallbackComponent::validateEventObject(const var& objectToTest, cons
 		if (e->hasProperty(id) && cl < expected)
 		{
 			String errorMessage;
-			errorMessage << "property '" << id.toString() << "' requires callback level >= " << getCallbackLevels()[(int)expected].quoted();
+			errorMessage << "property '" << id.toString() << "' requires callback level >= " << getCallbackLevels()[(int)CallbackLevel::ClicksAndEnter].quoted();
 			throw Result::fail(errorMessage);
 		}
 	};
@@ -427,12 +421,6 @@ Result MouseCallbackComponent::validateEventObject(const var& objectToTest, cons
 		checkAdvancedProperty("isDragOnly", CallbackLevel::Drag);
 		checkAdvancedProperty("dragX", CallbackLevel::Drag);
 		checkAdvancedProperty("dragY", CallbackLevel::Drag);
-		checkAdvancedProperty("mouseWheel", CallbackLevel::AllCallbacks);
-		checkAdvancedProperty("wheelDeltaX", CallbackLevel::AllCallbacks);
-		checkAdvancedProperty("wheelDeltaY", CallbackLevel::AllCallbacks);
-		checkAdvancedProperty("wheelReversed", CallbackLevel::AllCallbacks);
-		checkAdvancedProperty("wheelSmooth", CallbackLevel::AllCallbacks);
-		checkAdvancedProperty("wheelInertial", CallbackLevel::AllCallbacks);
 		return Result::ok();
 	}
 	catch (Result& r)
@@ -468,29 +456,6 @@ void MouseCallbackComponent::mouseMove(const MouseEvent& event)
 	if (callbackLevel < CallbackLevel::AllCallbacks) return;
 
 	sendMessage(event, Action::Moved, EnterState::Nothing);
-}
-
-void MouseCallbackComponent::setConsumeMouseWheel(bool shouldConsumeWheelEvents)
-{
-	consumeMouseWheel = shouldConsumeWheelEvents;
-}
-
-void MouseCallbackComponent::mouseWheelMove(const MouseEvent& event, const MouseWheelDetails& wheel)
-{
-	// Use the same bar as mouseMove: everything below that level is not interested in wheel events.
-	if (callbackLevel < CallbackLevel::AllCallbacks)
-	{
-		Component::mouseWheelMove(event, wheel);
-		return;
-	}
-
-	sendMessage(event, Action::WheelMoved, EnterState::Nothing, &wheel);
-
-	// The script callback is dispatched asynchronously, so its return value can never be used to decide
-	// whether the event was consumed. Consuming has to be an explicit opt-in, otherwise the default
-	// implementation must run so that a parent viewport keeps scrolling.
-	if (!consumeMouseWheel)
-		Component::mouseWheelMove(event, wheel);
 }
 
 
@@ -595,7 +560,7 @@ void MouseCallbackComponent::sendFileMessage(Action a, const StringArray& f, Poi
 
 
 
-void MouseCallbackComponent::fillMouseCallbackObject(var& clickInformation, Component* c, const MouseEvent& event, CallbackLevel callbackLevel, Action action, EnterState state, const MouseWheelDetails* wheel)
+void MouseCallbackComponent::fillMouseCallbackObject(var& clickInformation, Component* c, const MouseEvent& event, CallbackLevel callbackLevel, Action action, EnterState state)
 {
 	auto e = clickInformation.getDynamicObject();
 
@@ -656,26 +621,9 @@ void MouseCallbackComponent::fillMouseCallbackObject(var& clickInformation, Comp
 		e->setProperty(dragX, event.getDistanceFromDragStartX());
 		e->setProperty(dragY, event.getDistanceFromDragStartY());
 	}
-
-	if (wheel != nullptr)
-	{
-		static const Identifier mouseWheel("mouseWheel");
-		static const Identifier wheelDeltaX("wheelDeltaX");
-		static const Identifier wheelDeltaY("wheelDeltaY");
-		static const Identifier wheelReversed("wheelReversed");
-		static const Identifier wheelSmooth("wheelSmooth");
-		static const Identifier wheelInertial("wheelInertial");
-
-		e->setProperty(mouseWheel, true);
-		e->setProperty(wheelDeltaX, (double)wheel->deltaX);
-		e->setProperty(wheelDeltaY, (double)wheel->deltaY);
-		e->setProperty(wheelReversed, wheel->isReversed);
-		e->setProperty(wheelSmooth, wheel->isSmooth);
-		e->setProperty(wheelInertial, wheel->isInertial);
-	}
 }
 
-void MouseCallbackComponent::sendMessage(const MouseEvent &e, Action action, EnterState state, const MouseWheelDetails* wheel)
+void MouseCallbackComponent::sendMessage(const MouseEvent &e, Action action, EnterState state)
 {
 	if (callbackLevel == CallbackLevel::NoCallbacks) 
 		return;
@@ -686,7 +634,7 @@ void MouseCallbackComponent::sendMessage(const MouseEvent &e, Action action, Ent
 	
 	TRACE_EVENT("component", DYNAMIC_STRING_BUILDER(n));
 
-	fillMouseCallbackObject(clickInformation[(int)action], this, e, callbackLevel, action, state, wheel);
+	fillMouseCallbackObject(clickInformation[(int)action], this, e, callbackLevel, action, state);
 
 	sendToListeners(clickInformation[(int)action]);
 	repaint();
