@@ -12,7 +12,9 @@ HISE (Hart Instruments Sampling Engine) is a cross-platform C++17 audio framewor
 
 HISE uses **Projucer** (JUCE's project tool) to generate IDE projects from `.jucer` files. There is no CMake build at the project level.
 
-**IMPORTANT: Never attempt to build HISE yourself. The maintainer (Christoph) always builds. Never touch git either -- Christoph handles all commits.**
+**IMPORTANT: Never attempt to build HISE yourself. The maintainer (Christoph) always builds.**
+
+**Git:** this checkout is a personal fork of HISE (`origin` = `Matt-Dub/HISE`), not Christoph's repository. Git operations on the fork are allowed: commit, merge, pull and push on the personal dev branch `custom-develop` and on any branch of `origin`. What stays off limits is anything targeting `upstream` (`christophhart/HISE`) -- never push there, and never rewrite published history. Christoph handles all commits on the upstream repository.
 
 ### Build Configurations
 
