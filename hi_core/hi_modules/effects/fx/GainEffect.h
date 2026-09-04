@@ -348,6 +348,12 @@ public:
 
 	bool hasTail() const override { return false; };
 
+	/** Gain, balance and width are memoryless, and the optional delay is a DelayLine<16384> -
+	    at most 341ms at 48kHz, so it can never still hold a signal after the 1000ms of silent
+	    output that a suspension requires. Suspending is therefore inaudible, and it matters
+	    because a gain stage is the module a signal chain has the most copies of. */
+	bool isSuspendedOnSilence() const override { return true; };
+
 	Processor *getChildProcessor(int processorIndex) override
     {
         switch(processorIndex)

@@ -408,7 +408,7 @@ Result MouseCallbackComponent::validateEventObject(const var& objectToTest, cons
 		if (e->hasProperty(id) && cl < expected)
 		{
 			String errorMessage;
-			errorMessage << "property '" << id.toString() << "' requires callback level >= " << getCallbackLevels()[(int)CallbackLevel::ClicksAndEnter].quoted();
+			errorMessage << "property '" << id.toString() << "' requires callback level >= " << getCallbackLevels()[(int)expected].quoted();
 			throw Result::fail(errorMessage);
 		}
 	};
