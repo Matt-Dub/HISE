@@ -118,3 +118,60 @@ to tell which commit a running HISE was built from. Compare the binary's mtime a
 
 **To do**
 - [ ] Regenerate the hash as a build step, or drop the field rather than report it wrong.
+
+---
+
+## NOTE 4 -- a soft bypassed synth freezes every meter attached to it -- *patched, unverified*
+
+Found on the Dread Drumz mixer: a channel whose BP button is switched off leaves its VU meter lit
+at the level of the last block it played, instead of falling to silence. It stays there for as long
+as the channel is bypassed.
+
+**Cause.** The peaks a `MatrixPeakMeter` reads live in `RoutableProcessor::MatrixData`, and the only
+thing that writes them is `MatrixData::handleDisplayValues` (`hi_core/hi_dsp/Routing.cpp:459`),
+called from the render callback -- `ModulatorSynthChain.cpp:415`, `ModulatorSynth.cpp:681`. A soft
+bypassed chain returns before that:
+
+```cpp
+// ModulatorSynthChain::renderNextBlockWithModulators, ModulatorSynthChain.cpp:257
+if (isSoftBypassed()) return;
+```
+
+So the array keeps its last value. The decay does not save it either: `UpDecayTime` /
+`DownDecayTime` are applied inside `MatrixData::setGainValues` (`Routing.cpp:516`), which is reached
+only through that same `handleDisplayValues`. No render, no decay. On the meter side
+`MatrixPeakMeter::InternalComp::timerCallback` keeps ticking and keeps reading the same frozen
+number, so nothing is wrong there.
+
+**Fix.** `MatrixData::clearDisplayValues()` zeroes both `sourceGainValues` and `targetGainValues`,
+and `ModulatorSynth::softBypassStateChanged` calls it when the synth goes into bypass. That callback
+already runs on the sample loading thread with the voices killed, which is the same place the
+bypass state itself is stored. Unbypassing needs nothing: the render callback starts writing again.
+
+The meter drops to silence at once rather than decaying -- there is no audio left to decay from.
+`ShowMaxPeak` clears on its own, its counter is driven by the meter's own timer.
+
+Two things the first cut got wrong, both fixed on 2026-09-05:
+
+- `clearDisplayValues` took a `ScopedTryReadLock` and returned silently when it failed, copying
+  `setGainValues`. That is right for `setGainValues`, which runs every block and gets another
+  chance on the next one; it is wrong here, because this is the *last* write the matrix ever gets
+  before the processor stops rendering. A dropped try lock froze the meter for good. It now takes
+  the blocking `ScopedReadLock` -- the same lock `setGainValues` writes under, the write lock only
+  guarding a channel count change -- which is allowed because this is never the audio thread.
+- Only the bypassed synth's own matrix was cleared. `ModulatorSynthChain` skips a bypassed child
+  *before* `renderNextBlockWithModulators` (`ModulatorSynthChain.cpp:364`), so everything below the
+  bypass stops rendering without ever getting a `softBypassStateChanged` of its own, and every
+  `RoutableProcessor` down there freezes identically. `clearDisplayValuesRecursive` now walks the
+  whole subtree. It walks `getChildProcessor` directly rather than using `Processor::Iterator`,
+  whose constructor takes the iterator lock: this runs on the sample loading thread, which may hold
+  the sample lock, and `LockHelpers` gives those two the same priority so they must not be nested.
+
+  This one is engine-side only today. All 32 `MatrixPeakMeter` tiles in the Dread Drumz UI bind
+  `containerChN`, `gainMaster` or a `send*Channel`, never a processor *inside* a container, so the
+  channel bypass never hit the gap on this project. It would bite the moment a meter is pointed at
+  an effect or a sampler under a container that can be bypassed.
+
+**Not verified in a build yet.** The report that the bug was still live came from HISE built
+2026-09-04 09:48 and `Dread Drumz.vst3` built 2026-09-05 08:57, both older than the 09:32 source
+edit. Compare the binary mtime against the source before concluding anything about this one.

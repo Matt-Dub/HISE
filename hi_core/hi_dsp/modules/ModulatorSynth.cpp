@@ -1131,11 +1131,42 @@ void ModulatorSynth::setBypassed(bool shouldBeBypassed, NotificationType notifyC
 	}
 }
 
+/** Zeroes the peak values of p and of every processor below it.
+
+	Walks the children directly rather than through Processor::Iterator: this runs on the sample
+	loading thread inside killVoicesAndCall, which may already hold the sample lock, and the iterator
+	takes the iterator lock - the two share a priority and must not be nested. The voices are killed
+	for the duration, so the tree is not being rebuilt underneath.
+*/
+static void clearDisplayValuesRecursive(Processor* p)
+{
+	if (p == nullptr)
+		return;
+
+	if (auto rp = dynamic_cast<RoutableProcessor*>(p))
+		rp->getMatrix().clearDisplayValues();
+
+	for (int i = 0; i < p->getNumChildProcessors(); i++)
+		clearDisplayValuesRecursive(p->getChildProcessor(i));
+}
+
 void ModulatorSynth::softBypassStateChanged(bool isBypassedNow)
 {
 	bypassState.store(isBypassedNow);
 
-	
+	// renderNextBlockWithModulators returns on isSoftBypassed() before it reaches
+	// handleDisplayValues, so the matrix would keep the peaks of the last rendered block for as
+	// long as the bypass lasts: every meter attached to this synth would stay lit at that level
+	// instead of falling to silence. Nothing renders it back down either, since the decay in
+	// setGainValues is driven by that same call.
+	//
+	// The whole subtree goes silent with it, not just this synth: ModulatorSynthChain skips a
+	// bypassed child before renderNextBlockWithModulators, so the child synths, their effects and
+	// their own child chains stop rendering too without ever getting a softBypassStateChanged of
+	// their own. Their matrices freeze exactly the same way, which is what a meter attached to an
+	// effect inside a bypassed container shows.
+	if (isBypassedNow)
+		clearDisplayValuesRecursive(this);
 }
 
 void ModulatorSynth::setSoftBypass(bool shouldBeBypassed, bool bypassFXToo)

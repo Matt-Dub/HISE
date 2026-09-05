@@ -489,6 +489,19 @@ void RoutableProcessor::MatrixData::handleDisplayValues(const AudioSampleBuffer&
 	}
 }
 
+void RoutableProcessor::MatrixData::clearDisplayValues()
+{
+	// Blocking, unlike the try lock in setGainValues: this is the last write the matrix gets before
+	// the owning processor stops rendering, so dropping it on a failed try lock would leave the
+	// meters frozen for good with nothing to retry it. The read lock is the same one setGainValues
+	// writes under - the write lock only guards a channel count change - and this never runs on the
+	// audio thread, so waiting for it is allowed.
+	SimpleReadWriteLock::ScopedReadLock sl(getLock());
+
+	FloatVectorOperations::clear(sourceGainValues, NUM_MAX_CHANNELS);
+	FloatVectorOperations::clear(targetGainValues, NUM_MAX_CHANNELS);
+}
+
 SimpleReadWriteLock& RoutableProcessor::MatrixData::getLock() const
 {
 	return lock;

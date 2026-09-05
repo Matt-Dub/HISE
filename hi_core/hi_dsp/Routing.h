@@ -105,6 +105,13 @@ public:
 
 		void handleDisplayValues(const AudioSampleBuffer& input, const AudioSampleBuffer& output, bool useOutput);
 
+		/** Zeroes the peak values shown by the meters attached to this matrix.
+
+			handleDisplayValues is only reached while the owning processor renders, so a processor
+			that stops rendering - a soft bypassed synth - leaves its last block in there for good.
+		*/
+		void clearDisplayValues();
+
 		SimpleReadWriteLock& getLock() const;
 
 		int getNumSourceChannels() const;
