@@ -545,26 +545,12 @@ void ConvolutionEffectBase::processBase(ProcessDataDyn& d)
 			{
 				if (predelayMs != 0.0f)
 				{
-					float* outL = wetBuffer.getWritePointer(0);
-					float* outR = numChannels > 1 ? wetBuffer.getWritePointer(1) : nullptr;
-
-					const float* inL = convolutedL;
-					const float* inR = convolutedR;
-
-					for (int i = 0; i < availableSamples; i++)
-					{
-						*outL++ = leftPredelay.getDelayedValue(*inL++);
-
-						if (numChannels > 1)
-							*outR++ = rightPredelay.getDelayedValue(*inR++);
-					}
-				}
-				else
-				{
-					FloatVectorOperations::copy(wetBuffer.getWritePointer(0), convolutedL, availableSamples);
+					// Block based predelay (one lock per block instead of a
+					// SpinLock for every sample via getDelayedValue)
+					leftPredelay.processBlock(convolutedL, availableSamples);
 
 					if (numChannels > 1)
-						FloatVectorOperations::copy(wetBuffer.getWritePointer(1), convolutedR, availableSamples);
+						rightPredelay.processBlock(convolutedR, availableSamples);
 				}
 
 				smoothedGainerWet.processBlock(wetBuffer.getArrayOfWritePointers(), numChannels, availableSamples);
