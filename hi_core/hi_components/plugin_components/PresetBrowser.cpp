@@ -2045,7 +2045,7 @@ juce::Identifier PresetBrowser::DataBaseHelpers::getIdForFile(const File& preset
 		s = s.replaceCharacter('\\', '_');
 		s = s.replaceCharacter('\'', '_');
 
-		s = s.removeCharacters(" \t!+&");
+		s = s.removeCharacters(" \t!+&()");
 
 		if (Identifier::isValidIdentifier(s))
 		{
