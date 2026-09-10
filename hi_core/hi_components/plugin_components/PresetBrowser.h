@@ -210,6 +210,15 @@ public:
 
 	void showLoadedPreset();
 
+	/** Points the bank (and, in a three column layout, the category) column at the directories
+	 *	`preset` lives in, without re-rooting them.
+	 *
+	 *	showLoadedPreset() does the same thing but re-roots the columns as it goes, which scrolls
+	 *	the user away from wherever they were browsing. Use this when the columns already list the
+	 *	right directories and only the selection is stale.
+	 */
+	void selectParentColumnsFor(const File& preset);
+
 	struct DataBaseHelpers
 	{
 		static void setFavorite(const var& database, const File& presetFile, bool isFavorite);
