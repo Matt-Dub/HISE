@@ -223,4 +223,6 @@ matches (blank bank column at startup, and after `Engine.loadUserPreset`), and r
 through `setContentData` -- constructor, hence `showLoadedPreset()` under the wrong column count --
 did not restore it either, which is what pointed at the constructor ordering.
 
-**Not verified in a build yet.**
+**Verified 2026-09-11.** In the HISE IDE: the bank column selects correctly both when a preset is
+loaded by script and when the load lands in a different bank, with the preset column re-rooting as
+before. The Dread Drumz author then confirmed the exported plugin compiles and works in REAPER.
