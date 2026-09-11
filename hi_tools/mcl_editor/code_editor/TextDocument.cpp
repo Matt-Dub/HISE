@@ -1209,7 +1209,10 @@ juce::Array<juce::Line<float>> mcl::TextDocument::getUnderlines(const Selection&
 
 	for (int l = lineRange.getStart(); l < lineRange.getEnd(); l++)
 	{
-		if (isPositiveAndBelow(l, getNumRows()) && !foldManager.isFolded(l))
+		// Bound against the glyph cache, not getNumRows(): that returns doc.getNumLines(), and
+		// the CodeDocument is updated before lines is resynced. An index taken from the document
+		// passes the old check, then lines.lines[l] hands back a null Entry::Ptr.
+		if (isPositiveAndBelow(l, lines.size()) && !foldManager.isFolded(l))
 		{
 			int left = 0;
 			int right = getNumColumns(l);

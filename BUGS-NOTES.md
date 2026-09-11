@@ -9,7 +9,7 @@ trigger is gone), **fixed** (patched here, with the commit).
 
 ---
 
-## NOTE 1 -- `mcl::TextEditor::Error::rebuild()` segfaults on an error underline -- *latent*
+## NOTE 1 -- `mcl::TextEditor::Error::rebuild()` segfaults on an error underline -- *fixed, not yet rebuilt*
 
 Cross-reference: BUG 68 in the Dread Drumz tracker.
 
@@ -25,18 +25,29 @@ mcl::TextEditor::updateAfterTextChange(juce::Range<int>)::$_0
 juce::MessageQueue::runLoopSourceCallback
 ```
 
-**Two unguarded dereferences on that path**, one of them the culprit:
+**One null dereference on that path.** `hi_tools/mcl_editor/code_editor/TextDocument.cpp:1223` --
+`lines.lines[l]->getUnderlines({ left, right }, !s.isSingular())`. The index `l` is validated with
+`isPositiveAndBelow(l, getNumRows())`, but the subscript happens on `lines.lines`, a *different*
+array: `getNumRows()` returns `doc.getNumLines()` (`TextDocument.cpp:31`, the `CodeDocument`),
+while `lines.lines` is the `GlyphArrangementArray` glyph cache (`GlyphArrangementArray.h:116`),
+resynced separately. In the window between the two, the index passes the guard and leaves the
+cache.
 
-- `hi_tools/mcl_editor/code_editor/TextDocument.cpp:1223` --
-  `lines.lines[l]->getUnderlines({ left, right }, !s.isSingular())`. The index `l` is validated
-  with `isPositiveAndBelow(l, getNumRows())`, but the subscript happens on `lines.lines`, a
-  *different* array. When the document has been replaced and `lines.lines` has not been
-  re-synchronised yet, the index passes the guard and reads out of bounds. The crash report points
-  here.
-- `hi_tools/mcl_editor/code_editor/TextEditor.cpp:1099` and `:1104` --
-  `errorLines[0].getLength()` and `document.getSelectionRegion(errorWord).getRectangle(0)`, neither
-  checked for an empty array. `getUnderlines` returns empty when every targeted row is folded or
-  out of range, i.e. exactly the case above.
+It is *not* an out-of-bounds read. `ReferenceCountedArray::operator[]`
+(`JUCE/modules/juce_core/containers/juce_ReferenceCountedArray.h:181` -> `:205` ->
+`juce_ArrayBase.h:155`) is bounds-checked and returns a default `ObjectClassPtr`, i.e. **nullptr**;
+the `->getUnderlines(...)` then calls through it. That matches the crash report exactly:
+`KERN_INVALID_ADDRESS at 0x10` is an offset from a null `this`, not a wild out-of-bounds address.
+`GlyphArrangementArray::operator[]` (`GlyphArrangementArray.cpp:273`) guards this very case;
+`lines.lines[l]` is the one access in the file that bypasses it.
+
+**Corrected: the two `Error::rebuild` sites are harmless.**
+`hi_tools/mcl_editor/code_editor/TextEditor.cpp:1099` and `:1104` -- `errorLines[0].getLength()`
+and `document.getSelectionRegion(errorWord).getRectangle(0)` -- were listed here as unguarded.
+Both are bounds-checked inside JUCE: `Array::operator[]` (`juce_Array.h:237`) and
+`RectangleList::getRectangle` (`juce_RectangleList.h:92`) route through `getValueWithDefault` and
+return a default-constructed `Line<float>` / `Rectangle<float>`. An empty `errorLines` yields an
+empty `area` and an invisible marker -- cosmetic, never a segfault. No fix needed.
 
 Working hypothesis: an `Error` left over from a previous compile keeps line/column positions into
 a document the recompile has since replaced, and `updateAfterTextChange` rebuilds it against the
@@ -73,11 +84,29 @@ head-on -- a real syntax error injected into `scriptFlamCatcher.onNoteOn` throug
 process down; 3 further recompiles with the error marker live, then 5 other modules recompiled on
 top, all survived.
 
-**To do**
-- [ ] Bound the subscript on `lines.lines` in `getUnderlines`, rather than trusting `getNumRows()`.
-- [ ] Guard `errorLines` / `getSelectionRegion` against an empty array in `Error::rebuild`.
-- [ ] Decide whether a stale error marker should simply be invalidated when the document is
-      reloaded, instead of rebuilt.
+**Fixed on 2026-09-11**, `TextDocument.cpp:1215`:
+
+```cpp
+if (isPositiveAndBelow(l, lines.size()) && !foldManager.isFolded(l))
+```
+
+`GlyphArrangementArray::size()` (`GlyphArrangementArray.cpp:17`) returns `lines.size()`, so the
+guard and the subscript finally address the same array. A stale index now skips its row instead of
+calling through a null `Entry::Ptr`: the error marker loses a line of underline for one paint and
+comes back on the next `rebuild()`, once the cache is resynced.
+
+That also answers the third item below -- with the guard in place the rebuild is harmless, so a
+stale marker does not need to be invalidated on reload.
+
+- [x] Bound the subscript on `lines.lines` in `getUnderlines`, rather than trusting `getNumRows()`.
+- [x] Guard `errorLines` / `getSelectionRegion` against an empty array in `Error::rebuild` --
+      dropped: JUCE already bounds-checks both, see above.
+- [x] Decide whether a stale error marker should simply be invalidated when the document is
+      reloaded, instead of rebuilt -- no, the bounded guard covers it.
+
+**Not yet rebuilt or re-verified at runtime.** The trigger has been absent since `07b0614ee`, so
+the crash cannot be reproduced to confirm the fix against it; what the guard removes is the null
+call itself. Needs a HISE rebuild before the next dev session relies on it.
 
 ---
 
