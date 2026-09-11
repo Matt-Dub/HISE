@@ -32,9 +32,6 @@ TwoStageFFTConvolver::TwoStageFFTConvolver(audiofft::ImplementationType fftType)
   _headBlockSize(0),
   _tailBlockSize(0),
   _headConvolver(fftType),
-  _tailConvolver0(fftType),
-  _tailOutput0(),
-  _tailPrecalculated0(0),
   _tailConvolver(fftType),
   _tailOutput(),
   _tailPrecalculated(0),
@@ -57,10 +54,7 @@ void TwoStageFFTConvolver::reset()
   _headBlockSize = 0;
   _tailBlockSize = 0;  
   _headConvolver.reset();
-  _tailConvolver0.reset();
-  _tailOutput0.clear();
-  _tailPrecalculated0.clear();
-  _tailConvolver.reset();  
+  _tailConvolver.reset();
   _tailOutput.clear();
   _tailPrecalculated.clear();
   _tailInput.clear();
@@ -75,10 +69,7 @@ void TwoStageFFTConvolver::cleanPipeline()
 {
 	_tailOutput.setZero();
 	_tailInput.setZero();
-	_tailConvolver0.resetInput();
-	_tailOutput0.setZero();
 	_tailPrecalculated.setZero();
-	_tailPrecalculated0.setZero();
 	_backgroundProcessingInput.setZero();
 	_tailInputFill = 0;
 	_precalculatedPos = 0;
@@ -121,16 +112,17 @@ bool TwoStageFFTConvolver::init(size_t headBlockSize,
   _headBlockSize = NextPowerOf2(headBlockSize);
   _tailBlockSize = NextPowerOf2(tailBlockSize);
 
-  const size_t headIrLen = jmin(irLen, _tailBlockSize);
+  // The head convolver covers the first two tail blocks of the IR with head
+  // sized partitions. It used to be split into a head convolver
+  // (IR[0..tailBlockSize)) plus a separate first tail convolver
+  // (IR[tailBlockSize..2*tailBlockSize)) that ran on the audio thread; both
+  // performed the same forward FFT of the same input blocks, so merging them
+  // halves the FFT work of the realtime stages. The output is identical:
+  // the partitioned overlap-add of the merged convolver delivers the
+  // IR[tailBlockSize..2*tailBlockSize) contributions at exactly the sample
+  // positions the removed precalculated-swap mechanism delivered them.
+  const size_t headIrLen = jmin(irLen, 2 * _tailBlockSize);
   _headConvolver.init(_headBlockSize, ir, headIrLen);
-
-  if (irLen > _tailBlockSize)
-  {
-    const size_t conv1IrLen = jmin(irLen-_tailBlockSize, _tailBlockSize);
-    _tailConvolver0.init(_headBlockSize, ir+_tailBlockSize, conv1IrLen);
-    _tailOutput0.resize(_tailBlockSize);
-    _tailPrecalculated0.resize(_tailBlockSize);
-  }
 
   if (irLen > 2 * _tailBlockSize)
   {
@@ -139,12 +131,9 @@ bool TwoStageFFTConvolver::init(size_t headBlockSize,
     _tailOutput.resize(_tailBlockSize);
     _tailPrecalculated.resize(_tailBlockSize);
     _backgroundProcessingInput.resize(_tailBlockSize);
-  }
-
-  if (_tailPrecalculated0.size() > 0 || _tailPrecalculated.size() > 0)
-  {
     _tailInput.resize(_tailBlockSize);
   }
+
   _tailInputFill = 0;
   _precalculatedPos = 0;
 
@@ -168,32 +157,15 @@ void TwoStageFFTConvolver::process(const Sample* input, Sample* output, size_t l
       const size_t processing = jmin(remaining, _headBlockSize - (_tailInputFill % _headBlockSize));
       assert(_tailInputFill + processing <= _tailBlockSize);
 
-      // Sum head and tail
-      const size_t sumBegin = processed;
-      const size_t sumEnd = processed + processing;
+      // Sum: tail block
+      if (_tailPrecalculated.size() > 0)
       {
-        // Sum: 1st tail block
-        if (_tailPrecalculated0.size() > 0)
-        {      
-          size_t precalculatedPos = _precalculatedPos;
-          for (size_t i=sumBegin; i<sumEnd; ++i)
-          {
-            output[i] += _tailPrecalculated0[precalculatedPos];
-            ++precalculatedPos;
-          }
+        size_t precalculatedPos = _precalculatedPos;
+        for (size_t i=processed; i<processed+processing; ++i)
+        {
+          output[i] += _tailPrecalculated[precalculatedPos];
+          ++precalculatedPos;
         }
-
-        // Sum: 2nd-Nth tail block
-        if (_tailPrecalculated.size() > 0)
-        {      
-          size_t precalculatedPos = _precalculatedPos;
-          for (size_t i=sumBegin; i<sumEnd; ++i)
-          {
-            output[i] += _tailPrecalculated[precalculatedPos];
-            ++precalculatedPos;
-          }
-        }
-
         _precalculatedPos += processing;
       }
 
@@ -201,18 +173,6 @@ void TwoStageFFTConvolver::process(const Sample* input, Sample* output, size_t l
       ::memcpy(_tailInput.data()+_tailInputFill, input+processed, processing * sizeof(Sample));
       _tailInputFill += processing;
       assert(_tailInputFill <= _tailBlockSize);
-
-      // Convolution: 1st tail block
-      if (_tailPrecalculated0.size() > 0 && _tailInputFill % _headBlockSize == 0)
-      {
-        assert(_tailInputFill >= _headBlockSize);
-        const size_t blockOffset = _tailInputFill - _headBlockSize;
-        _tailConvolver0.process(_tailInput.data()+blockOffset, _tailOutput0.data()+blockOffset, _headBlockSize);
-        if (_tailInputFill == _tailBlockSize)
-        {          
-          SampleBuffer::Swap(_tailPrecalculated0, _tailOutput0);
-        }
-      }
 
       // Convolution: 2nd-Nth tail block (might be done in some background thread)
       if (_tailPrecalculated.size() > 0 &&

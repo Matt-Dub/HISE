@@ -35,9 +35,11 @@ namespace fftconvolver
 *
 * The 2-stage convolver consists internally of two convolvers:
 *
-* - A head convolver, which processes the only the begin of the impulse response.
+* - A head convolver, which processes the begin of the impulse response
+*   (the first two tail blocks) with head sized partitions and zero latency.
 *
-* - A tail convolver, which processes the rest and major amount of the impulse response.
+* - A tail convolver, which processes the rest and major amount of the impulse
+*   response with tail sized partitions, optionally on a background thread.
 *
 * Using a short block size for the head convolver and a long block size for
 * the tail convolver results in much less CPU usage, while keeping the
@@ -111,9 +113,6 @@ private:
   size_t _headBlockSize;
   size_t _tailBlockSize;
   FFTConvolver _headConvolver;
-  FFTConvolver _tailConvolver0;
-  SampleBuffer _tailOutput0;
-  SampleBuffer _tailPrecalculated0;
   FFTConvolver _tailConvolver;
   SampleBuffer _tailOutput;
   SampleBuffer _tailPrecalculated;

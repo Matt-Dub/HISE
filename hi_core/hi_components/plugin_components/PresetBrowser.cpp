@@ -827,6 +827,15 @@ void PresetBrowser::presetChanged(const File& newPreset)
 		allPresets[currentlyLoadedPreset] == newPreset)
 	{
 		presetColumn->setSelectedFile(allPresets[currentlyLoadedPreset]);
+
+		// The preset column alone does not say where the preset lives - that is what the bank
+		// and category columns are for. A preset loaded from outside the browser (the host
+		// recalling a state, a prev/next button, a script call) reaches this callback with
+		// currentlyLoadedPreset already pointing at it, so this early-out is the common path,
+		// not the exception: it left the user able to read which preset is loaded but not which
+		// bank it belongs to. Selecting only, never re-rooting - the columns already list the
+		// right directories, and re-rooting here would scroll the user's browsing away.
+		selectParentColumnsFor(newPreset);
 		return;
 	}
 
@@ -1248,7 +1257,24 @@ void PresetBrowser::setNumColumns(int newNumColumns)
 		resized();
 
 		if (numColumns == 1)
+		{
 			rebuildAllPresets();
+		}
+		else
+		{
+			// showLoadedPreset() reads numColumns to work out what "bank" means, and the
+			// constructor already ran it - under the default of three columns, before setOptions
+			// applied the layout the interface actually asks for. A two column browser therefore
+			// started up having looked for the preset's *grandparent* directory in a column that
+			// lists its parents, found nothing, and deselected the bank column; nothing selected
+			// it again afterwards. Re-running it here settles the columns against the layout now
+			// in force.
+			//
+			// Not in single column mode: rebuildAllPresets() has just re-rooted the preset column
+			// at the library root so it lists every preset flat, and showLoadedPreset() would
+			// narrow it back down to the loaded preset's own folder.
+			showLoadedPreset();
+		}
 	}
 }
 
@@ -1403,6 +1429,24 @@ void PresetBrowser::showLoadedPreset()
 				
 		}
 	}
+}
+
+void PresetBrowser::selectParentColumnsFor(const File& preset)
+{
+	// One column means the preset column is the only one there is.
+	if (numColumns <= 1)
+		return;
+
+	auto category = preset.getParentDirectory();
+
+	// Two columns collapse bank and category onto the preset's own directory; three keep them
+	// apart. Same rule showLoadedPreset() applies, kept in step with it by hand.
+	auto bank = numColumns > 2 ? category.getParentDirectory() : category;
+
+	bankColumn->setSelectedFile(bank, dontSendNotification);
+
+	if (numColumns > 2)
+		categoryColumn->setSelectedFile(category, dontSendNotification);
 }
 
 void PresetBrowser::setOptions(const Options& newOptions)
@@ -2045,7 +2089,7 @@ juce::Identifier PresetBrowser::DataBaseHelpers::getIdForFile(const File& preset
 		s = s.replaceCharacter('\\', '_');
 		s = s.replaceCharacter('\'', '_');
 
-		s = s.removeCharacters(" \t!+&");
+		s = s.removeCharacters(" \t!+&()");
 
 		if (Identifier::isValidIdentifier(s))
 		{

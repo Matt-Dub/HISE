@@ -175,3 +175,54 @@ Two things the first cut got wrong, both fixed on 2026-09-05:
 **Not verified in a build yet.** The report that the bug was still live came from HISE built
 2026-09-04 09:48 and `Dread Drumz.vst3` built 2026-09-05 08:57, both older than the 09:32 source
 edit. Compare the binary mtime against the source before concluding anything about this one.
+
+## NOTE 5 -- a two column preset browser never selects its bank column -- *patched, unverified*
+
+Found on Dread Drumz (BUG 72): the kit browser comes up with the preset selected on the right and
+**nothing** selected in the bank column on the left, so the user can read which preset is loaded but
+not which bank it belongs to. `NumColumns: 2` in the floating tile data.
+
+**Cause, two paths.**
+
+*Construction.* `numColumns` is `3` by default (`PresetBrowser.h:292`). The constructor calls
+`showLoadedPreset()` (`PresetBrowser.cpp:586`) **before** `setOptions()` applies the layout the
+interface actually asks for. Under three columns that function computes
+
+```cpp
+File category = f.getParentDirectory();
+File bank = category.getParentDirectory();
+if (numColumns == 2) bank = category;      // not taken: numColumns is still 3
+bankColumn->setSelectedFile(bank, dontSendNotification);
+```
+
+so it looks for the preset's *grandparent* directory in a column that lists its *parents*.
+`ColumnListModel::getIndexForFile` returns -1 and `setSelectedFile` falls through to
+`listbox->deselectAllRows()`. `setNumColumns()` then only called `resized()`, so nothing ever
+selected it again.
+
+*Every later load.* `presetChanged()` (`PresetBrowser.cpp:822`) short-circuits to the preset column
+alone when `allPresets[currentlyLoadedPreset] == newPreset`. That is not the exception, it is the
+common path: a preset loaded from outside the browser -- a host restoring its state, the prev/next
+buttons, a script call -- reaches the callback with `currentlyLoadedPreset` already pointing at it.
+The bank column was never touched.
+
+**Fix.** Three pieces:
+
+- `setNumColumns()` re-runs `showLoadedPreset()` when the count changes, so the columns are settled
+  against the layout now in force. Guarded to skip single column mode, where `rebuildAllPresets()`
+  has just re-rooted the preset column at the library root to list every preset flat and
+  `showLoadedPreset()` would narrow it back to one folder.
+- the short-circuit in `presetChanged()` calls the new `selectParentColumnsFor(newPreset)`.
+- `selectParentColumnsFor()` selects the bank (and, with three columns, the category) column
+  *without* re-rooting. `showLoadedPreset()` re-roots as it goes, which would scroll the user away
+  from whatever they were browsing -- fine when the browser is being set up, wrong on every preset
+  change.
+
+Both paths were read off the source rather than observed under a debugger: the plugin-side symptom
+matches (blank bank column at startup, and after `Engine.loadUserPreset`), and rebuilding the tile
+through `setContentData` -- constructor, hence `showLoadedPreset()` under the wrong column count --
+did not restore it either, which is what pointed at the constructor ordering.
+
+**Verified 2026-09-11.** In the HISE IDE: the bank column selects correctly both when a preset is
+loaded by script and when the load lands in a different bank, with the preset column re-rooting as
+before. The Dread Drumz author then confirmed the exported plugin compiles and works in REAPER.

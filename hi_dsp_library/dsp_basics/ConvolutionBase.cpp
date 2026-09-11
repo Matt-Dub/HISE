@@ -357,16 +357,26 @@ void ConvolutionEffectBase::prepareBase(double sampleRate, int samplesPerBlock)
 		wetBuffer.clear();
 	}
 
+	// The impulse reload at the end only depends on the sample rate and the
+	// block size (they define the convolver partitioning), so it can be
+	// skipped when neither changed. prepareToPlay is called on every playback
+	// restart and reloading means resampling the IR and building two new
+	// convolver engines with full FFT partition setup. Impulse content
+	// changes still arrive via setImpulse (bufferWasLoaded /
+	// bufferWasModified), damping / HiCut / FFTType changes call setImpulse
+	// directly.
+	const bool configUnchanged = prepareCalledOnce &&
+		sampleRate == lastSampleRate &&
+		samplesPerBlock == lastBlockSize;
+
 	lastBlockSize = samplesPerBlock;
 
-    
-    
 	if (sampleRate != lastSampleRate)
 	{
 		lastSampleRate = sampleRate;
 
         fadeDelta = 1.0f / (0.02f * (float)sampleRate);
-        
+
 		smoothedGainerWet.prepareToPlay(sampleRate, samplesPerBlock);
 		smoothedGainerDry.prepareToPlay(sampleRate, samplesPerBlock);
 
@@ -375,6 +385,10 @@ void ConvolutionEffectBase::prepareBase(double sampleRate, int samplesPerBlock)
 	}
 
 	prepareCalledOnce = sampleRate > 0.0;
+
+	if (configUnchanged)
+		return;
+
 	setImpulse(sendNotificationSync);
 }
 
@@ -545,26 +559,12 @@ void ConvolutionEffectBase::processBase(ProcessDataDyn& d)
 			{
 				if (predelayMs != 0.0f)
 				{
-					float* outL = wetBuffer.getWritePointer(0);
-					float* outR = numChannels > 1 ? wetBuffer.getWritePointer(1) : nullptr;
-
-					const float* inL = convolutedL;
-					const float* inR = convolutedR;
-
-					for (int i = 0; i < availableSamples; i++)
-					{
-						*outL++ = leftPredelay.getDelayedValue(*inL++);
-
-						if (numChannels > 1)
-							*outR++ = rightPredelay.getDelayedValue(*inR++);
-					}
-				}
-				else
-				{
-					FloatVectorOperations::copy(wetBuffer.getWritePointer(0), convolutedL, availableSamples);
+					// Block based predelay (one lock per block instead of a
+					// SpinLock for every sample via getDelayedValue)
+					leftPredelay.processBlock(convolutedL, availableSamples);
 
 					if (numChannels > 1)
-						FloatVectorOperations::copy(wetBuffer.getWritePointer(1), convolutedR, availableSamples);
+						rightPredelay.processBlock(convolutedR, availableSamples);
 				}
 
 				smoothedGainerWet.processBlock(wetBuffer.getArrayOfWritePointers(), numChannels, availableSamples);

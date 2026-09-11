@@ -229,8 +229,15 @@ public:
 
 	void waitForBackgroundProcessing() override
 	{
+		// Called on the audio thread when the background thread has not
+		// finished the tail block yet. Blocking is not allowed here, so all
+		// it can do is spin until the job is done. A late background thread
+		// is a performance problem (only happens under heavy load), not a
+		// logic error, so no jassertfalse in the loop (it fired once per
+		// spin iteration in debug builds).
         while (pending.load())
-            jassertfalse;
+        {
+        }
 	}
 
 	static bool prepareImpulseResponse(const AudioSampleBuffer& originalBuffer, AudioSampleBuffer& buffer, bool* abortFlag, Range<int> range, double resampleRatio);

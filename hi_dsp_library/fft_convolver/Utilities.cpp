@@ -21,6 +21,15 @@
 
 #include "Utilities.h"
 
+// SIMD headers for the single-pass complex multiply below.
+// ARM: native NEON intrinsics (fused multiply-add on aarch64).
+// Intel: SSE2 with FMA3 when the build enables it.
+#if defined(__ARM_NEON__) || defined(__aarch64__) || defined(_M_ARM64)
+  #include <arm_neon.h>
+#elif JUCE_INTEL && !HI_ENABLE_LEGACY_CPU_SUPPORT
+  #include <immintrin.h>
+#endif
+
 
 namespace fftconvolver
 {
@@ -86,11 +95,46 @@ void ComplexMultiplyAccumulate(Sample* FFTCONVOLVER_RESTRICT re,
 
 #if USE_JUCE_SSE
 
-	FloatVectorOperations::addWithMultiply(re, reA, reB, len);
-	FloatVectorOperations::subtractWithMultiply(re, imA, imB, len);
+	// Manually enabled fallback (four vector passes), kept for builds that
+	// define USE_JUCE_SSE themselves
+	FloatVectorOperations::addWithMultiply(re, reA, reB, (int)len);
+	FloatVectorOperations::subtractWithMultiply(re, imA, imB, (int)len);
 
-	FloatVectorOperations::addWithMultiply(im, reA, imB, len);
-	FloatVectorOperations::subtractWithMultiply(im, imA, reB, len);
+	FloatVectorOperations::addWithMultiply(im, reA, imB, (int)len);
+	FloatVectorOperations::subtractWithMultiply(im, imA, reB, (int)len);
+
+#elif defined(__ARM_NEON__) || defined(__aarch64__) || defined(_M_ARM64)
+
+  // Native NEON single pass instead of the sse2neon emulated SSE path:
+  // one traversal of the six input arrays with fused multiply-add on aarch64
+  const size_t end4 = 4 * (len / 4);
+  for (size_t i=0; i<end4; i+=4)
+  {
+    const float32x4_t ra = vld1q_f32(&reA[i]);
+    const float32x4_t rb = vld1q_f32(&reB[i]);
+    const float32x4_t ia = vld1q_f32(&imA[i]);
+    const float32x4_t ib = vld1q_f32(&imB[i]);
+    float32x4_t real = vld1q_f32(&re[i]);
+    float32x4_t imag = vld1q_f32(&im[i]);
+#if defined(__aarch64__) || defined(_M_ARM64)
+    real = vfmaq_f32(real, ra, rb);
+    real = vfmsq_f32(real, ia, ib);
+    imag = vfmaq_f32(imag, ra, ib);
+    imag = vfmaq_f32(imag, ia, rb);
+#else
+    real = vmlaq_f32(real, ra, rb);
+    real = vmlsq_f32(real, ia, ib);
+    imag = vmlaq_f32(imag, ra, ib);
+    imag = vmlaq_f32(imag, ia, rb);
+#endif
+    vst1q_f32(&re[i], real);
+    vst1q_f32(&im[i], imag);
+  }
+  for (size_t i=end4; i<len; ++i)
+  {
+    re[i] += reA[i] * reB[i] - imA[i] * imB[i];
+    im[i] += reA[i] * imB[i] + imA[i] * reB[i];
+  }
 
 #elif FFTCONVOLVER_USE_SSE && !HI_ENABLE_LEGACY_CPU_SUPPORT
   const size_t end4 = 4 * (len / 4);
@@ -102,11 +146,18 @@ void ComplexMultiplyAccumulate(Sample* FFTCONVOLVER_RESTRICT re,
     const __m128 ib = _mm_load_ps(&imB[i]);
     __m128 real = _mm_load_ps(&re[i]);
     __m128 imag = _mm_load_ps(&im[i]);
+#if defined(__FMA__)
+    real = _mm_fmadd_ps(ra, rb, real);
+    real = _mm_fnmadd_ps(ia, ib, real);
+    imag = _mm_fmadd_ps(ra, ib, imag);
+    imag = _mm_fmadd_ps(ia, rb, imag);
+#else
     real = _mm_add_ps(real, _mm_mul_ps(ra, rb));
     real = _mm_sub_ps(real, _mm_mul_ps(ia, ib));
-    _mm_store_ps(&re[i], real);
     imag = _mm_add_ps(imag, _mm_mul_ps(ra, ib));
     imag = _mm_add_ps(imag, _mm_mul_ps(ia, rb));
+#endif
+    _mm_store_ps(&re[i], real);
     _mm_store_ps(&im[i], imag);
   }
   for (size_t i=end4; i<len; ++i)
