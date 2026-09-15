@@ -431,6 +431,9 @@ public:
 
 	void renderNextBlockWithModulators(AudioSampleBuffer& outputAudio, const HiseEventBuffer& inputMidi) override;
 
+	/** Without voices a sampler renders nothing that other processors read. */
+	bool canSkipIdleBlocks() const override { return true; }
+
 	SampleThreadPool *getBackgroundThreadPool();
 	String getMemoryUsage() const;;
 

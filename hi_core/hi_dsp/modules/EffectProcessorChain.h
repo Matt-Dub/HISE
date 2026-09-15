@@ -92,6 +92,10 @@ public:
 
 	bool hasTailingPolyEffects() const;
 
+	/** true if rendering this chain on a silent buffer without voices would leave the buffer silent
+	*	and change no effect state, so the owning synth can skip the block. */
+	bool leavesSilentBufferUntouched() const;
+
 	void killMasterEffects();
 
 	void updateSoftBypassState();

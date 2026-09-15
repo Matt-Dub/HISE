@@ -203,6 +203,17 @@ public:
 
 	bool isCurrentlySuspended() const final override;
 
+	/** true if rendering a silent buffer would leave it untouched: the effect is soft-bypassed, or it
+	*	was suspended on silence in the last block with no bypass fade running and no inactive
+	*	modulation to render. */
+	bool leavesSilentBufferUntouched() const noexcept
+	{
+		if (softBypassState == Bypassed)
+			return true;
+
+		return softBypassState == Inactive && masterState.currentlySuspended && !shouldRenderInactiveMods();
+	}
+
 	void prepareToPlay(double sampleRate, int samplesPerBlock) override;
 
 	void setEventBuffer(HiseEventBuffer* eventBufferFromSynth);

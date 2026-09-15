@@ -567,13 +567,25 @@ void ModulatorSynth::renderNextBlockWithModulators(AudioSampleBuffer& outputBuff
 
 	int startSample = 0;
 
-	
-	initRenderCallback();
-
 	{
 		Profiler mp(*this, (int)ProfileEnumIds::ProcessMidi);
 		processHiseEventBuffer(inputMidiBuffer, numSamplesFixed);
 	}
+
+#if HISE_SKIP_IDLE_SYNTH_BLOCKS
+	skippedIdleBlock = canSkipIdleBlocks() && isIdleThisBlock();
+
+	if (skippedIdleBlock)
+	{
+		// No voice and every effect suspended: the block would clear the buffer, run the effects on
+		// silence and add silence to the output. The effects stay suspended and wake up on the next
+		// block that renders a voice, exactly as if they had been called with this silent block.
+		clearDisplayValuesForIdleBlock();
+		return;
+	}
+#endif
+
+	initRenderCallback();
 
 	HiseEventBuffer::Iterator eventIterator(eventBuffer);
 
@@ -683,6 +695,37 @@ void ModulatorSynth::renderNextBlockWithModulators(AudioSampleBuffer& outputBuff
 	
 
 	handlePeakDisplay(numSamplesFixed);
+}
+
+bool ModulatorSynth::isIdleThisBlock()
+{
+	if (!activeVoices.isEmpty() || !pendingRemoveVoices.isEmpty() || !delayedSounds.isEmpty())
+		return false;
+
+	// an ignored event is skipped by the render loop as well
+	HiseEventBuffer::Iterator eventIterator(eventBuffer);
+
+	if (eventIterator.getNextConstEventPointer(true, false) != nullptr)
+		return false;
+
+	return effectChain->leavesSilentBufferUntouched();
+}
+
+void ModulatorSynth::clearDisplayValuesForIdleBlock()
+{
+	if (getMatrix().anyChannelActive())
+	{
+		float silentGainValues[NUM_MAX_CHANNELS];
+		memset(silentGainValues, 0, sizeof(silentGainValues));
+
+		getMatrix().setGainValues(silentGainValues, true);
+		getMatrix().setGainValues(silentGainValues, false);
+	}
+
+#if ENABLE_ALL_PEAK_METERS
+	currentValues.outL = 0.0f;
+	currentValues.outR = 0.0f;
+#endif
 }
 
 void ModulatorSynth::preVoiceRendering(int startSample, int numThisTime)

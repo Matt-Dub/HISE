@@ -162,6 +162,30 @@ bool EffectProcessorChain::hasTailingPolyEffects() const
 	return false;
 }
 
+bool EffectProcessorChain::leavesSilentBufferUntouched() const
+{
+	if (isBypassed())
+		return true;
+
+	// a kill fade is running, renderMasterEffects() has to count it down
+	if (hasTailingMasterEffects() || hasTailingPolyEffects())
+		return false;
+
+	for (auto fx : monoEffects)
+	{
+		if (!fx->isBypassed())
+			return false;
+	}
+
+	for (auto fx : masterEffects)
+	{
+		if (!fx->leavesSilentBufferUntouched())
+			return false;
+	}
+
+	return true;
+}
+
 void EffectProcessorChain::killMasterEffects()
 {
 	if (hasTailingMasterEffects())

@@ -1298,6 +1298,8 @@ void ModulatorSampler::renderNextBlockWithModulators(AudioSampleBuffer& outputAu
 {
 	if (purged)
 	{
+		// nothing is rendered, so a parent chain may skip its block like for an idle sampler
+		skippedIdleBlock = true;
 		return;
 	}
 

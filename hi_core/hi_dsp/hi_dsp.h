@@ -116,6 +116,13 @@ class ProcessorEditor;
 #define HISE_SUSPENSION_TAIL_MS 1000
 #endif
 
+/** If enabled, samplers and non-root containers skip their whole block (buffer clear, modulators,
+	effects, mixing into the parent) while they have no voice, no event and every effect is suspended
+	on silence or bypassed. Time-variant monophonic modulators don't advance during a skipped block. */
+#ifndef HISE_SKIP_IDLE_SYNTH_BLOCKS
+#define HISE_SKIP_IDLE_SYNTH_BLOCKS 0
+#endif
+
 
 
 #endif  // HI_DSP_H_INCLUDED

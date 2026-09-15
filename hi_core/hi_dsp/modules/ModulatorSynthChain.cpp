@@ -250,6 +250,17 @@ void ModulatorSynthChain::compileAllScripts()
 	}
 }
 
+bool ModulatorSynthChain::areAllChildSynthsIdle() const
+{
+	for (auto s : synths)
+	{
+		if (!s->isSoftBypassed() && !s->hasSkippedIdleBlock())
+			return false;
+	}
+
+	return true;
+}
+
 void ModulatorSynthChain::renderNextBlockWithModulators(AudioSampleBuffer &buffer, const HiseEventBuffer &inputMidiBuffer)
 {
 	jassert(isOnAir());
@@ -280,7 +291,20 @@ void ModulatorSynthChain::renderNextBlockWithModulators(AudioSampleBuffer &buffe
 
 	jassert(numSamples <= buffer.getNumSamples());
 
+#if HISE_SKIP_IDLE_SYNTH_BLOCKS && !FRONTEND_IS_PLUGIN
+	// A skipped block writes nothing into the internal buffer, so it is still silent from the
+	// block before and the clear can go as well, as long as the block size didn't change
+	// (setSize() below doesn't clear the part a bigger block adds).
+	const bool internalBufferIsSilent = skippedIdleBlock &&
+										internalBuffer.getNumSamples() == numSamples &&
+										internalBuffer.getNumChannels() == getMatrix().getNumSourceChannels();
+	skippedIdleBlock = false;
+
+	if (!internalBufferIsSilent)
+		initRenderCallback();
+#else
 	initRenderCallback();
+#endif
 
 #if FRONTEND_IS_PLUGIN
 
@@ -379,6 +403,17 @@ void ModulatorSynthChain::renderNextBlockWithModulators(AudioSampleBuffer &buffe
 
 		handleHiseEvent(*e);
 	}
+
+#if HISE_SKIP_IDLE_SYNTH_BLOCKS
+	if (!isRoot && areAllChildSynthsIdle() && effectChain->leavesSilentBufferUntouched())
+	{
+		// The children added nothing and every effect of this chain is suspended: the rest of the
+		// block would run the effects on silence and add silence to the parent buffer.
+		skippedIdleBlock = true;
+		clearDisplayValuesForIdleBlock();
+		return;
+	}
+#endif
 
 	modChains[GainModulation-1].calculateMonophonicModulationValues(0, numSamples);
 

@@ -202,6 +202,12 @@ public:
 	virtual void handlePeakDisplay(int numSamplesInOutputBuffer);
 	void setPeakValues(float l, float r);
 
+	/** true if the last renderNextBlockWithModulators call left the output untouched because the synth
+	*	had nothing to render (see HISE_SKIP_IDLE_SYNTH_BLOCKS). A parent chain reads it after rendering
+	*	its children to decide whether it can skip its own block too.
+	*/
+	bool hasSkippedIdleBlock() const noexcept { return skippedIdleBlock; }
+
 	// ===================================================================================================================
 
 	void setIconColour(Colour newIconColour);;
@@ -480,10 +486,22 @@ protected:
 	
 	void finaliseModChains();
 	bool wasVoiceRenderedInCurrentBlock() const { return voiceRenderedInCurrentBlock; }
-	
+
+	/** Override and return true if a block without voices, events or audible effects can be skipped
+	*	without side effects. Synths that compute values other processors read during their block
+	*	(eg. global modulators) must keep the default. */
+	virtual bool canSkipIdleBlocks() const { return false; }
+
+	/** Checks the conditions under which rendering this block would only produce silence. Call it
+	*	after processHiseEventBuffer(). */
+	bool isIdleThisBlock();
+
+	/** Replaces the display updates of a skipped block: the meters read silence. */
+	void clearDisplayValuesForIdleBlock();
 
 	bool finalised = false;
 	bool voiceRenderedInCurrentBlock = false;
+	bool skippedIdleBlock = false;
 
 	bool checkTimerCallback(int timerIndex, int numSamplesThisBlock) const noexcept;;
 	

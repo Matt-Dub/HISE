@@ -182,6 +182,9 @@ public:
 	*/
 	void renderNextBlockWithModulators(AudioSampleBuffer &buffer, const HiseEventBuffer &inputMidiBuffer) override;;
 
+	/** true if every child synth that isn't bypassed skipped its last block (see HISE_SKIP_IDLE_SYNTH_BLOCKS). */
+	bool areAllChildSynthsIdle() const;
+
 	int getVoiceAmount() const;;
 
 	int getNumActiveVoices() const override;
