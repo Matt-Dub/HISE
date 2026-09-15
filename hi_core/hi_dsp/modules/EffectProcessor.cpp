@@ -366,7 +366,13 @@ void MasterEffectProcessor::renderWholeBuffer(AudioSampleBuffer& buffer)
 					masterState.currentlySuspended = true;
 					return;
 				}
-						
+
+				// Waking up: the input carries signal again, so the silence window has to restart
+				// (HardcodedMasterFX's mono path already does this). Without it the counter is still
+				// past the limit, so an effect whose output lags its input - a delay line, a
+				// pre-delay - re-suspends as soon as a short input ends and traps the signal inside,
+				// releasing it on the next wake-up.
+				masterState.numSilentBuffers = 0;
 			}
 
 			masterState.currentlySuspended = false;
