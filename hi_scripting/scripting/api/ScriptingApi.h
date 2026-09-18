@@ -363,6 +363,10 @@ public:
 		/** sets the latency of the plugin as reported to the host. Default is 0. */
 		void setLatencySamples(int latency);
 
+		/** Renames an output bus (0-based, one per stereo pair) and notifies the host.
+			No-op if busIndex is out of range or the host build has no output buses (MIDI FX). */
+		void setOutputBusName(int busIndex, String newName);
+
 		/** Converts MIDI note number to Midi note name ("C3" for middle C). */
 		String getMidiNoteName(int midiNumber) const { return MidiMessage::getMidiNoteName(midiNumber, true, true, 3); };
 

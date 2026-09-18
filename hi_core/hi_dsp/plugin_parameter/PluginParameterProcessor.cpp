@@ -639,11 +639,30 @@ AudioProcessor::BusesProperties PluginParameterAudioProcessor::getHiseBusPropert
 #endif
     
 	for (int i = 0; i < numChannels; i += 2)
-		busProp = busProp.withOutput("Channel " + String(i + 1) + "+" + String(i + 2), AudioChannelSet::stereo());
+		busProp = busProp.withOutput(getDefaultOutputBusName(i / 2), AudioChannelSet::stereo());
+
 
 	return busProp;
 
 #endif
+}
+
+String PluginParameterAudioProcessor::getDefaultOutputBusName(int outputBusIndex)
+{
+	auto firstChannel = outputBusIndex * 2;
+	return "Channel " + String(firstChannel + 1) + "+" + String(firstChannel + 2);
+}
+
+bool PluginParameterAudioProcessor::setOutputBusName(int outputBusIndex, const String& newName)
+{
+	if (auto* bus = getBus(false, outputBusIndex))
+	{
+		bus->setName(newName.isNotEmpty() ? newName : getDefaultOutputBusName(outputBusIndex));
+		updateHostDisplay(ChangeDetails{}.withIoChanged(true));
+		return true;
+	}
+
+	return false;
 }
 
 bool PluginParameterAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const

@@ -1189,6 +1189,7 @@ struct ScriptingApi::Engine::Wrapper
 	API_METHOD_WRAPPER_1(Engine, getMacroName);
   API_VOID_METHOD_WRAPPER_1(Engine, setFrontendMacros)
 	API_VOID_METHOD_WRAPPER_2(Engine, setKeyColour);
+	API_VOID_METHOD_WRAPPER_2(Engine, setOutputBusName);
 	API_VOID_METHOD_WRAPPER_3(Engine, showMessageBox);
 	API_VOID_METHOD_WRAPPER_2(Engine, showErrorMessage);
 	API_VOID_METHOD_WRAPPER_1(Engine, showMessage);
@@ -1442,6 +1443,7 @@ parentMidiProcessor(dynamic_cast<ScriptBaseMidiProcessor*>(p))
 	ADD_API_METHOD_0(createErrorHandler);
 	ADD_API_METHOD_1(setLatencySamples);
 	ADD_API_METHOD_0(getLatencySamples);
+	ADD_API_METHOD_2(setOutputBusName);
 	ADD_API_METHOD_2(getDspNetworkReference);
 	ADD_API_METHOD_0(createExpansionHandler);
 	ADD_API_METHOD_1(createModulationMatrix);
@@ -2450,6 +2452,12 @@ void ScriptingApi::Engine::setLatencySamples(int latency)
 {
 	auto ap = dynamic_cast<AudioProcessor*>(getScriptProcessor()->getMainController_());
 	ap->setLatencySamples(latency);
+}
+
+void ScriptingApi::Engine::setOutputBusName(int busIndex, String newName)
+{
+	if (auto pp = dynamic_cast<PluginParameterAudioProcessor*>(getScriptProcessor()->getMainController_()))
+		pp->setOutputBusName(busIndex, newName);
 }
 
 int ScriptingApi::Engine::getMidiNoteFromName(String midiNoteName) const

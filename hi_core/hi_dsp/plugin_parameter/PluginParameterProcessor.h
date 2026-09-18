@@ -81,6 +81,14 @@ public:
 
 	BusesProperties getHiseBusProperties() const;
 
+	/** The default label for an output bus ("Channel 13+14") when no user name is set. */
+	static String getDefaultOutputBusName(int outputBusIndex);
+
+	/** Renames an output bus and notifies the host (VST3: restartComponent(kIoTitlesChanged)).
+		An empty newName resets the bus to its default label. Returns false if outputBusIndex
+		is out of range. */
+	bool setOutputBusName(int outputBusIndex, const String& newName);
+
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
 
     virtual ~PluginParameterAudioProcessor();;
