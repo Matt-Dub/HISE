@@ -31,6 +31,21 @@
 
 #include "faust/export.h"
 
+/** The wrapper classes in this folder are never instantiated: pointers returned
+    by libfaust are cast onto them, so their virtual function order must match
+    the real faust headers exactly. A missing virtual shifts every following
+    vtable slot by one and silently dispatches calls to the wrong function.
+
+    Current faust releases (verified against 2.88.0) declare getJSON() in
+    dsp_factory between getWarningMessages() and createDSPInstance(). Without it
+    createDSPInstance() lands on getJSON(), which reads "this" from the wrong
+    register and segfaults. Set this to 0 when linking an older libfaust whose
+    dsp_factory does not declare getJSON().
+*/
+#ifndef HISE_FAUST_DSP_FACTORY_HAS_JSON
+#define HISE_FAUST_DSP_FACTORY_HAS_JSON 1
+#endif
+
 
 
 
@@ -282,6 +297,11 @@ class FAUST_API dsp_factory {
 #if !FAUST_NO_WARNING_MESSAGES
         /* Get warning messages list for a given compilation */
         virtual std::vector<std::string> getWarningMessages() = 0;
+#endif
+    
+#if HISE_FAUST_DSP_FACTORY_HAS_JSON
+        /* Return JSON description of the DSP (UI + metadata) */
+        virtual std::string getJSON() = 0;
 #endif
     
         /* Create a new DSP instance, to be deleted with C++ 'delete' */
