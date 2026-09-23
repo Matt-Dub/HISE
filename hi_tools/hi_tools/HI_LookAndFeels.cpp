@@ -32,6 +32,13 @@
 
 namespace hise { using namespace juce;
 
+// HiseColourScheme is declared in hi_tools/Macros.h and read by the look and feel
+// code in this file, so its static member has to be defined in hi_tools as well.
+// Defining it in hi_core instead left it undefined in every build that compiles
+// hi_tools without hi_core - most notably the project DLL, which then failed to
+// load with "undefined symbol: hise::HiseColourScheme::currentColourScheme".
+HiseColourScheme::Scheme HiseColourScheme::currentColourScheme = HiseColourScheme::Dark;
+
 	FilmstripLookAndFeel::FilmstripLookAndFeel():
 		imageToUse(Image()),
 		isVertical(true),

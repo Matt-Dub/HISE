@@ -28,7 +28,6 @@
 #include "Foundation/NSString.h"
 #endif
 
-hise::HiseColourScheme::Scheme hise::HiseColourScheme::currentColourScheme = Dark;
 
 #include "hi_core/hi_core.cpp"
 
