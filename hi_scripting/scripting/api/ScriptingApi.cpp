@@ -1278,6 +1278,8 @@ struct ScriptingApi::Engine::Wrapper
 	API_VOID_METHOD_WRAPPER_0(Engine, quit);
 	API_VOID_METHOD_WRAPPER_0(Engine, undo);
 	API_VOID_METHOD_WRAPPER_0(Engine, redo);
+	API_METHOD_WRAPPER_0(Engine, canUndo);
+	API_METHOD_WRAPPER_0(Engine, canRedo);
     API_VOID_METHOD_WRAPPER_0(Engine, clearUndoHistory);
 	API_METHOD_WRAPPER_2(Engine, performUndoAction);
 	API_METHOD_WRAPPER_0(Engine, getExtraDefinitionsInBackend);
@@ -1429,6 +1431,8 @@ parentMidiProcessor(dynamic_cast<ScriptBaseMidiProcessor*>(p))
 	ADD_API_METHOD_0(quit);
 	ADD_API_METHOD_0(undo);
 	ADD_API_METHOD_0(redo);
+	ADD_API_METHOD_0(canUndo);
+	ADD_API_METHOD_0(canRedo);
     ADD_API_METHOD_0(clearUndoHistory);
 	ADD_TYPED_API_METHOD_2(performUndoAction, VarTypeChecker::JSON, VarTypeChecker::Function);
 	ADD_API_METHOD_0(getExtraDefinitionsInBackend);
@@ -3729,6 +3733,16 @@ void ScriptingApi::Engine::clearUndoHistory()
     }
     
     um->clearUndoHistory();
+}
+
+bool ScriptingApi::Engine::canUndo()
+{
+	return getScriptProcessor()->getMainController_()->getControlUndoManager()->canUndo();
+}
+
+bool ScriptingApi::Engine::canRedo()
+{
+	return getScriptProcessor()->getMainController_()->getControlUndoManager()->canRedo();
 }
 
 void ScriptingApi::Engine::redo()

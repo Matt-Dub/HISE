@@ -696,6 +696,12 @@ public:
 
         /** Clears the undo history. */
         void clearUndoHistory();
+
+		/** Returns true if the control undo history holds a step that Engine.undo() would revert. */
+		bool canUndo();
+
+		/** Returns true if the control undo history holds a step that Engine.redo() would restore. */
+		bool canRedo();
         
 		/** Returns a fully described string of this date and time in ISO-8601 format (using the local timezone) with or without divider characters. */
 		String getSystemTime(bool includeDividerCharacters);
