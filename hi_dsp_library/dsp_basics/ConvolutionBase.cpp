@@ -499,16 +499,19 @@ void ConvolutionEffectBase::processBase(ProcessDataDyn& d)
                 
                 if (fadeOutConvolverL != nullptr)
                     fadeOutConvolverL->process(l, fadeL, numSamples);
-                if (fadeOutConvolverR != nullptr)
+                // r, fadeR and convolutedR are nullptr on a single-channel path
+                if (fadeOutConvolverR != nullptr && numChannels > 1)
                     fadeOutConvolverR->process(r, fadeR, numSamples);
-                
+
                 for(int i = 0; i < numSamples; i++)
                 {
                     float g = jlimit(0.0f, 1.0f, fadeValue);
                     g = 1.0f - g;
                     g *= g;
                     convolutedL[i] += fadeL[i] * g;
-                    convolutedR[i] += fadeR[i] * g;
+
+                    if (numChannels > 1)
+                        convolutedR[i] += fadeR[i] * g;
                     
                     fadeValue += fadeDelta;
                 }
