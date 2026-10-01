@@ -85,9 +85,12 @@ void convolution::setMultithread(double shouldBeMultithreaded)
 
 void convolution::setDamping(double targetSustainDb)
 {
-	if (damping != targetSustainDb)
+	// damping is stored as gain: compare in gain, or every call rebuilds the IR
+	auto newDamping = (float)Decibels::decibelsToGain(targetSustainDb);
+
+	if (damping != newDamping)
 	{
-		damping = Decibels::decibelsToGain(targetSustainDb);
+		damping = newDamping;
 		calcCutoff();
 	}
 }

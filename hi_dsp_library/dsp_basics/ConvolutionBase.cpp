@@ -136,6 +136,10 @@ bool MultithreadedConvolver::prepareImpulseResponse(const AudioSampleBuffer& ori
 		resampler.process(1.0 / resampleRatio, l, buffer.getWritePointer(0), resampledLength);
 		resampler.reset();
 		resampler.process(1.0 / resampleRatio, r, buffer.getWritePointer(1), resampledLength);
+
+		// Resampling by N stretches the IR over N times more samples: scale by 1/N so the
+		// convolution gain does not depend on the playback sample rate.
+		buffer.applyGain((float)(1.0 / resampleRatio));
 	}
 	else
 	{

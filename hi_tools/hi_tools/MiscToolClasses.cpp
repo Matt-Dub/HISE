@@ -637,6 +637,12 @@ ScopedNoDenormals::ScopedNoDenormals()
 	oldMXCSR = _mm_getcsr();
 	int newMXCSR = oldMXCSR | 0x8040;
 	_mm_setcsr(newMXCSR);
+#elif defined (__arm64__) || defined (__aarch64__)
+	// FPCR bits 32-63 are reserved (zero), so the int member holds the whole register. FZ = bit 24.
+	intptr_t fpcr;
+	asm volatile("mrs %0, fpcr" : "=r" (fpcr));
+	oldMXCSR = (int)fpcr;
+	asm volatile("msr fpcr, %0" : : "r" (fpcr | (1 << 24)));
 #endif
 }
 
@@ -644,6 +650,9 @@ ScopedNoDenormals::~ScopedNoDenormals()
 {
 #if !JUCE_ARM
 	_mm_setcsr(oldMXCSR);
+#elif defined (__arm64__) || defined (__aarch64__)
+	intptr_t fpcr = (intptr_t)(uint32)oldMXCSR;
+	asm volatile("msr fpcr, %0" : : "r" (fpcr));
 #endif
 }
 
