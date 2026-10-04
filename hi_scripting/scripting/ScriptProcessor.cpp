@@ -49,11 +49,19 @@ namespace hise { using namespace juce;
 			content->resetContentProperties();
 		}
 
+		// Append in place: withParameter() copies the whole metadata on every call, which made
+		// this loop quadratic (~1 s per call for an interface with ~1000 components).
+		md.parameters.ensureStorageAllocated(md.parameters.size() + content->getNumComponents());
+
 		for (int i = 0; i < content->getNumComponents(); i++)
 		{
 			auto sc = content->getComponent(i);
+			auto parameterMetadata = sc->createParameterMetadata(i);
 
-			md = md.withParameter(sc->createParameterMetadata(i));
+			// parameterIndex must equal the position in the array (same check as withParameter()).
+			jassert(parameterMetadata.parameterIndex == md.parameters.size());
+
+			md.parameters.add(parameterMetadata);
 		}
 
 		return md;
