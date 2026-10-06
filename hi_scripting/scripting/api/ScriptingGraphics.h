@@ -851,6 +851,8 @@ namespace ScriptingObjects
 
 			int getAlertWindowMargin() override;
 
+			int getAlertBoxWindowFlags() override;
+
 			Font getAlertWindowMessageFont() override;
 			Font getAlertWindowTitleFont() override;
 			Font getTextButtonFont(TextButton &, int) override;

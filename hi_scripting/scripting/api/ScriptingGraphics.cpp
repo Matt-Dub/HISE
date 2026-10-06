@@ -4203,6 +4203,18 @@ int ScriptingObjects::ScriptedLookAndFeel::Laf::getAlertWindowMargin()
 	return 0;
 }
 
+int ScriptingObjects::ScriptedLookAndFeel::Laf::getAlertBoxWindowFlags()
+{
+	auto flags = GlobalHiseLookAndFeel::getAlertBoxWindowFlags();
+
+	// The native drop shadow would be drawn around the full window bounds including the
+	// transparent margin, so remove it and let the script draw its own shadow if needed.
+	if (functionDefined("drawAlertWindow"))
+		flags &= ~ComponentPeer::windowHasDropShadow;
+
+	return flags;
+}
+
 void ScriptingObjects::ScriptedLookAndFeel::Laf::getIdealPopupMenuItemSize(const String &text, bool isSeparator, int standardMenuItemHeight, int &idealWidth, int &idealHeight)
 {
     if (functionDefined("getIdealPopupMenuItemSize"))
