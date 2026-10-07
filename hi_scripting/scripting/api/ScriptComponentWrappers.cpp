@@ -1241,6 +1241,10 @@ void ScriptCreatedComponentWrappers::ComboBoxWrapper::updateItems(HiComboBox * c
     
     auto currentValue = (int)getScriptComponent()->getValue();
     cb->setSelectedId(currentValue, dontSendNotification);
+
+	// rebuildPopupMenu() ran while clear() had reset the selection to 0: tick the
+	// submenu of the restored value now.
+	cb->refreshTickState();
 }
 
 void ScriptCreatedComponentWrappers::ComboBoxWrapper::updateColours(HiComboBox * cb)
@@ -1255,6 +1259,11 @@ void ScriptCreatedComponentWrappers::ComboBoxWrapper::updateValue(var newValue)
 {
 	HiComboBox *cb = dynamic_cast<HiComboBox*>(component.get());
 	cb->updateValue(dontSendNotification);
+
+	// A value set from script selects silently, so the Updater listener that refreshes the
+	// submenu ticks on a mouse selection never fires: the submenu header kept the tick of
+	// the last item picked by hand.
+	cb->refreshTickState();
 }
 
 ScriptCreatedComponentWrappers::ButtonWrapper::ButtonWrapper(ScriptContentComponent *content, ScriptingApi::Content::ScriptButton *sb, int index) :
