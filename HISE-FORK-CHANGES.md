@@ -4,7 +4,7 @@ Liste des modifications du fork `Matt-Dub/HISE` (branche `custom-develop`) par r
 `christophhart/HISE` (`upstream/develop`). Notes de travail : `SOUNDFINGERS-NOTES.md`.
 Bugs moteur analyses en detail : `BUGS-NOTES.md`.
 
-Etat au 2026-10-06 (HEAD `280bfa008`). Dernier merge upstream : `07b0614ee` (2026-09-04).
+Etat au 2026-10-07 (HEAD `18f5d62eb`). Dernier merge upstream : `07b0614ee` (2026-09-04).
 
 Regenerer la liste brute :
 
@@ -42,6 +42,7 @@ Les modifs JUCE ne sont compilees que dans l'export (pas dans HISE.app) : un re-
 
 | Commit | Date | Changement |
 |--------|------|------------|
+| `18f5d62eb` | 2026-10-07 | ComboBox a sous-menus (`useCustomPopup`) : la categorie d'une valeur posee par script (`setValue`, `set("items")`) n'etait pas cochee, l'en-tete gardait la coche du dernier choix a la souris. `refreshTickState()` dans `ComboBoxWrapper::updateValue` et `updateItems`. |
 | `280bfa008` | 2026-10-06 | Alertes scriptees (`drawAlertWindow`) : plus d'ombre native Windows autour de la marge transparente de 50 px (`ScriptedLookAndFeel::Laf::getAlertBoxWindowFlags`). |
 | `ae96c8396` | 2026-10-01 | `ScopedNoDenormals` sans effet sur arm64 -> pose FPCR.FZ. IR de convolution reechantillonnee sans compensation de gain (+6.8 dB pour une IR 44.1 kHz a 96 kHz). `setDamping` reconstruisait l'IR a chaque ecriture. |
 | `1ea0f1335` | 2026-09-27 | Convolution : crash au changement d'IR avec un chemin mono. |
