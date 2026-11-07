@@ -151,3 +151,5 @@ When working on the REST API (`hi_backend/backend/ai_tools/`):
 ## Further Reading
 
 Detailed guidelines in `guidelines/`: `development/build-configurations.md` (backend/frontend/DLL architecture), `development/threading-system.md` (threading system), `development/cpp-architecture.md` (architecture), `development/unit-testing.md` (test patterns), `development/voice-setter-system.md` (UIUpdater/voice protection), `style/cpp-ui.md` (UI conventions), `style/hisescript.md` (HISEScript quirks), `api/rest-api.md` (full REST API spec), `api/rest-api-development.md` (adding endpoints).
+
+SilverBullet: Projects/HISE Fork/
