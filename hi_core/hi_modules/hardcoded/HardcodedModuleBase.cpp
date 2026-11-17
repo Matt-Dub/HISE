@@ -1327,8 +1327,11 @@ void HardcodedSwappableEffect::DataWithListener::updateData()
 
 void HardcodedSwappableEffect::DataWithListener::onComplexDataEvent(ComplexDataUIUpdaterBase::EventType t, var newValue)
 {
-	if (t == ComplexDataUIUpdaterBase::EventType::ContentRedirected ||
-		t == ComplexDataUIUpdaterBase::EventType::ContentChange)
+	// Only rebind on ContentRedirected (new buffer or resize). A ContentChange only means the values
+	// changed in place: the node already points at this data, and rebinding takes the write lock.
+	// If it lands between the two nested read locks of an audio-thread writer (e.g. pack_writer ->
+	// SliderPackData::setValue), the audio and message threads deadlock.
+	if (t == ComplexDataUIUpdaterBase::EventType::ContentRedirected)
 	{
 		updateData();
 	}
