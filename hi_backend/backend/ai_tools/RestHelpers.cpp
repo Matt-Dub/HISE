@@ -464,7 +464,18 @@ RestServer::Response RestHelpers::handleRecompile(MainController* mc, RestServer
 
 	if (auto jp = getScriptProcessor(mc, req))
 	{
-		mc->refreshExternalFiles(true);
+		// Reload the external script files on the message thread: replaceAllContent() notifies the
+		// CodeDocument listeners synchronously (the mcl editors update their glyph cache), so doing
+		// this from the HTTP thread races with the editor painting and crashes in
+		// mcl::TextDocument::getBoundsOnRow(). Only files changed on disk are reloaded (no force)
+		// so that unchanged documents are not rebuilt and unsaved editor changes are kept.
+		auto reloaded = SafeAsyncCall::callAsyncAndWait<Processor>(*dynamic_cast<Processor*>(jp), [mc](Processor&)
+		{
+			mc->refreshExternalFiles(false);
+		}, 5000);
+
+		if (!reloaded)
+			return req->fail(503, "timeout while reloading external script files on the message thread");
 
 		mc->getKillStateHandler().killVoicesAndCall(dynamic_cast<Processor*>(jp), [req, forceSync, mc](Processor* p)
 		{
