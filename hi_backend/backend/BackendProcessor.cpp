@@ -746,18 +746,25 @@ void BackendProcessor::projectChanged(const File& /*newRootDirectory*/)
 	auto tmp = getCurrentSampleMapPool();
 	auto tmp2 = getCurrentMidiFilePool();
 
-	auto f = [tmp, tmp2](Processor*)
+	// The project DLL must be reloaded on the loading thread, not here on the message thread:
+	// a project switch first queues clearPreset() + createInterface() on the loading thread and
+	// then calls setWorkingProject() synchronously. The new interface processor calls
+	// loadDll(false) from its constructor, so reloading here raced on projectDll and on the
+	// listeners' ProjectDll::Ptr, which double-freed the old ProjectDll (heap corruption).
+	// The loading thread is FIFO, so this job runs after the clearPreset job.
+	BackendDllManager::Ptr dllManagerToUse = dllManager;
+
+	auto f = [tmp, tmp2, dllManagerToUse](Processor*)
 	{
 		tmp->loadAllFilesFromProjectFolder();
 		tmp2->loadAllFilesFromProjectFolder();
+		dllManagerToUse->loadDll(true);
 		return SafeFunctionCall::OK;
 	};
 
 	getKillStateHandler().killVoicesAndCall(getMainSynthChain(), f, MainController::KillStateHandler::TargetThread::SampleLoadingThread);
 
 	refreshExpansionType();
-	
-    dllManager->loadDll(true);
 }
 
 void BackendProcessor::refreshExpansionType()
