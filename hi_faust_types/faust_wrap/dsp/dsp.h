@@ -36,14 +36,22 @@
     the real faust headers exactly. A missing virtual shifts every following
     vtable slot by one and silently dispatches calls to the wrong function.
 
-    Current faust releases (verified against 2.88.0) declare getJSON() in
-    dsp_factory between getWarningMessages() and createDSPInstance(). Without it
-    createDSPInstance() lands on getJSON(), which reads "this" from the wrong
-    register and segfaults. Set this to 0 when linking an older libfaust whose
-    dsp_factory does not declare getJSON().
+    Faust added getJSON() to dsp_factory, between getWarningMessages() and
+    createDSPInstance(), in commit 8cee6f7047 (2026-01-29). The version string
+    was 2.83.10 at that point and the first version entirely after it is 2.84.0:
+    2.83.1 (last release before) lacks it, 2.85.5 and 2.88.0 have it.
+
+    The flag therefore follows the linked libfaust version from faust/export.h.
+    Getting it wrong in either direction shifts createDSPInstance() by one slot
+    and crashes as soon as a Faust node is loaded. Define it explicitly to
+    override (e.g. for a 2.83.10 development build).
 */
 #ifndef HISE_FAUST_DSP_FACTORY_HAS_JSON
+#if (FAUSTMAJORVERSION * 1000000 + FAUSTMINORVERSION * 1000 + FAUSTPATCHVERSION) >= 2084000
 #define HISE_FAUST_DSP_FACTORY_HAS_JSON 1
+#else
+#define HISE_FAUST_DSP_FACTORY_HAS_JSON 0
+#endif
 #endif
 
 
