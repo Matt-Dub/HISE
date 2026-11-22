@@ -429,7 +429,12 @@ struct MarkdownParser::BulletPointList : public MarkdownParser::Element
 
 			g.setColour(parent->styleData.textColour);
 			g.setFont(font);
-			g.drawText(bp, ar.translated(0.0f, (float)-font.getHeight()), Justification::topLeft);
+
+			// The row's layout puts its first baseline at ar's top: lift the
+			// bullet by its ascent so both share that baseline. Lifting by the
+			// full height left it one descent too high, more so for fonts with
+			// a deep descent.
+			g.drawText(bp, ar.translated(0.0f, -font.getAscent()), Justification::topLeft);
 
 			r.l.drawCopyWithOffset(g, ar);
 		}
@@ -581,11 +586,12 @@ struct MarkdownParser::EnumerationList : public MarkdownParser::BulletPointList
 			bp << rowIndex++ << ".";
 
 			float xDelta = 5.0f;
-			float yDelta = 3.0f;
 
 			g.setColour(parent->styleData.textColour.withMultipliedAlpha(0.8f));
 			g.setFont(font);
-			g.drawText(bp, ar.translated(xDelta, yDelta + (float)-font.getHeight()), Justification::topLeft);
+
+			// Same baseline as the row's first line (see BulletPointList::draw).
+			g.drawText(bp, ar.translated(xDelta, -font.getAscent()), Justification::topLeft);
 
 			r.l.drawCopyWithOffset(g, ar);
 		}
