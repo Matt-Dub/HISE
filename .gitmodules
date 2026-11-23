@@ -4,8 +4,8 @@
 	branch = custom-develop
 [submodule "tools/mcp_server"]
 	path = tools/mcp_server
-	url = https://github.com/christoph-hart/hise_mcp_server.git
-	branch = master
+	url = https://github.com/Matt-Dub/hise_mcp_server.git
+	branch = custom-develop
 [submodule "tools/api generator"]
 	path = tools/api generator
 	url = https://github.com/christoph-hart/hise_api_generator.git
