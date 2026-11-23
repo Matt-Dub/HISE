@@ -11,4 +11,5 @@
 	url = https://github.com/christoph-hart/hise_api_generator.git
 [submodule "tools/hise_lsp_server"]
 	path = tools/hise_lsp_server
-	url = https://github.com/christoph-hart/hise_lsp_server.git
+	url = https://github.com/Matt-Dub/hise_lsp_server.git
+	branch = custom-develop
