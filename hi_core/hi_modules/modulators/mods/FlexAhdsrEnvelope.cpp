@@ -265,11 +265,13 @@ float FlexAhdsrEnvelope::startVoice(int voiceIndex)
 
 		auto ownerSynth = static_cast<ModulatorSynth*>(getParentProcessor(true));
 		auto ownerVoice = static_cast<ModulatorSynthVoice*>(ownerSynth->getVoice(voiceIndex));
-		auto e = ownerVoice->getCurrentHiseEvent();
 
 		// reset the smoothers
 		obj.reset();
-		obj.handleHiseEvent(e);
+
+		// SoundFingers: getVoice() returns nullptr when voiceIndex is past the owner synth's voices
+		if (ownerVoice != nullptr)
+			obj.handleHiseEvent(ownerVoice->getCurrentHiseEvent());
 	}
 
 	span<float, 1> data = { 1.0f };
@@ -308,6 +310,11 @@ void FlexAhdsrEnvelope::stopVoice(int voiceIndex)
 
 		auto ownerSynth = static_cast<ModulatorSynth*>(getParentProcessor(true));
 		auto ownerVoice = static_cast<ModulatorSynthVoice*>(ownerSynth->getVoice(voiceIndex));
+		// SoundFingers: the modulation chain iterates over all its voices (allNotesOff),
+		// but the owner synth may have fewer voices (e.g. VoiceAmount=2) -> getVoice() returns nullptr.
+		if (ownerVoice == nullptr)
+			return;
+
 		auto e = ownerVoice->getCurrentHiseEvent();
 		e.setType(HiseEvent::Type::NoteOff);
 		obj.handleHiseEvent(e);
