@@ -271,7 +271,10 @@ float FlexAhdsrEnvelope::startVoice(int voiceIndex)
 
 		// SoundFingers: getVoice() returns nullptr when voiceIndex is past the owner synth's voices
 		if (ownerVoice != nullptr)
-			obj.handleHiseEvent(ownerVoice->getCurrentHiseEvent());
+		{
+			auto e = ownerVoice->getCurrentHiseEvent();
+			obj.handleHiseEvent(e);
+		}
 	}
 
 	span<float, 1> data = { 1.0f };
